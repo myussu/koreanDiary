@@ -1,0 +1,303 @@
+package com.jorge.koreandiary.ui.page
+
+import android.content.Intent
+import androidx.compose.ui.geometry.Offset
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.ai.CorrectionParser
+import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.ai.ParseException
+import com.jorge.koreandiary.ai.Prompts
+import com.jorge.koreandiary.ai.ProviderException
+import com.jorge.koreandiary.ai.ShareFlow
+import com.jorge.koreandiary.data.ItemRef
+import com.jorge.koreandiary.data.db.Correction
+import com.jorge.koreandiary.data.db.CorrectionStatus
+import com.jorge.koreandiary.data.db.DiaryPage
+import com.jorge.koreandiary.data.db.ItemType
+import com.jorge.koreandiary.data.db.PageStatus
+import com.jorge.koreandiary.ink.InkSerializer
+import com.jorge.koreandiary.ink.InkStroke
+import com.jorge.koreandiary.ink.renderPage
+import com.jorge.koreandiary.ink.strokesNear
+import com.jorge.koreandiary.settings.ProviderId
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+sealed interface Phase {
+    data object Writing : Phase
+    data class Busy(val message: String) : Phase
+    data class Confirm(val text: String) : Phase
+    data object AwaitingPaste : Phase
+}
+
+data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean)
+
+data class PageUiState(
+    val page: DiaryPage? = null,
+    val strokes: List<InkStroke> = emptyList(),
+    val suggestions: List<SuggestionChip> = emptyList(),
+    val phase: Phase = Phase.Writing,
+    val message: String? = null,
+    val canUndo: Boolean = false,
+)
+
+class PageViewModel(private val c: AppContainer, private val pageId: Long) : ViewModel() {
+
+    private val _state = MutableStateFlow(PageUiState())
+    val state: StateFlow<PageUiState> = _state.asStateFlow()
+
+    val corrections: StateFlow<List<Correction>> = c.diary.corrections(pageId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _shareIntents = Channel<Intent>(Channel.BUFFERED)
+    val shareIntents = _shareIntents.receiveAsFlow()
+
+    private var width = 0f
+    private var height = 0f
+    private var lineHeight = 0f
+    private var strokesLoaded = false
+    private val undoStack = ArrayDeque<List<InkStroke>>()
+    private var saveJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            val page = c.diary.page(pageId) ?: return@launch
+            _state.update { it.copy(page = page, suggestions = loadSuggestions(page)) }
+            tryLoadStrokes()
+        }
+    }
+
+    fun onCanvasSized(w: Float, h: Float, line: Float) {
+        if (w <= 0f || h <= 0f) return
+        width = w
+        height = h
+        lineHeight = line
+        tryLoadStrokes()
+    }
+
+    private fun tryLoadStrokes() {
+        val page = _state.value.page ?: return
+        if (strokesLoaded || width <= 0f) return
+        strokesLoaded = true
+        _state.update { it.copy(strokes = InkSerializer.fromJson(page.inkJson, width)) }
+    }
+
+    private suspend fun loadSuggestions(page: DiaryPage): List<SuggestionChip> {
+        val refs = ItemRef.decodeList(page.suggestedItems)
+        val dao = c.database.studyDao()
+        val words = dao.wordsByIds(refs.filter { it.type == ItemType.WORD }.map { it.id })
+            .map { SuggestionChip(it.baseForm, listOfNotNull(it.type, it.meaning).joinToString(" · "), false) }
+        val grammar = dao.grammarByIds(refs.filter { it.type == ItemType.GRAMMAR }.map { it.id })
+            .map { g -> SuggestionChip(g.pattern, listOfNotNull(g.meaning, g.example).joinToString(" — ").ifEmpty { "Gramática ${g.level}" }, true) }
+        return words + grammar
+    }
+
+    // ---------- Trazos ----------
+
+    fun addStroke(stroke: InkStroke) = mutate { it + stroke }
+
+    fun eraseAt(point: Offset) {
+        val hits = strokesNear(_state.value.strokes, point, ERASE_RADIUS)
+        if (hits.isNotEmpty()) mutate { strokes -> strokes.filterIndexed { i, _ -> i !in hits } }
+    }
+
+    fun undo() {
+        val previous = undoStack.removeLastOrNull() ?: return
+        _state.update { it.copy(strokes = previous, canUndo = undoStack.isNotEmpty()) }
+        scheduleSave()
+    }
+
+    private fun mutate(transform: (List<InkStroke>) -> List<InkStroke>) {
+        val current = _state.value.strokes
+        undoStack.addLast(current)
+        if (undoStack.size > 60) undoStack.removeFirst()
+        _state.update { it.copy(strokes = transform(current), canUndo = true) }
+        scheduleSave()
+    }
+
+    private fun scheduleSave() {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            delay(400)
+            persist()
+        }
+    }
+
+    private suspend fun persist(transform: (DiaryPage) -> DiaryPage = { it }): DiaryPage? {
+        val page = _state.value.page ?: return null
+        val updated = transform(page).copy(
+            inkJson = InkSerializer.toJson(_state.value.strokes, width),
+            canvasWidth = width.toInt(),
+            updatedAt = System.currentTimeMillis(),
+        )
+        c.diary.save(updated)
+        _state.update { it.copy(page = updated) }
+        return updated
+    }
+
+    fun dismissMessage() = _state.update { it.copy(message = null) }
+
+    // ---------- Revisión ----------
+
+    fun review() {
+        if (_state.value.strokes.isEmpty()) {
+            _state.update { it.copy(message = "La página está vacía.") }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                if (!c.recognizer.isModelDownloaded()) {
+                    setPhase(Phase.Busy("Descargando el modelo de escritura coreana (solo la primera vez)…"))
+                    c.recognizer.downloadModel()
+                }
+                setPhase(Phase.Busy("Leyendo tu letra…"))
+                val lines = c.recognizer.recognizeLines(_state.value.strokes, lineHeight, width)
+                if (lines.isEmpty()) {
+                    setPhase(Phase.Writing, "No se reconoció texto.")
+                    return@launch
+                }
+                val text = lines.joinToString("\n") { it.text }
+                persist { it.copy(recognizedText = text, reviewedLineCount = lines.maxOf { l -> l.line } + 1) }
+                setPhase(Phase.Confirm(text))
+            } catch (e: Exception) {
+                setPhase(Phase.Writing, "No se pudo reconocer la escritura: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    fun cancelConfirm() = setPhase(Phase.Writing)
+
+    fun confirm(text: String, provider: String) {
+        viewModelScope.launch {
+            val page = persist {
+                it.copy(
+                    confirmedText = text.trim(),
+                    status = if (it.status == PageStatus.REVIEWED) PageStatus.REVIEWED else PageStatus.PENDING,
+                )
+            } ?: return@launch
+            val settings = c.settings.state.value
+            val items = c.study.promptItems(ItemRef.decodeList(page.suggestedItems))
+
+            if (provider == ProviderId.GEMINI) {
+                val gemini = c.geminiProvider()
+                if (gemini == null) {
+                    setPhase(Phase.Writing, "Falta tu clave de Gemini en Configuración. La página quedó pendiente.")
+                    return@launch
+                }
+                if (c.settings.usageToday(ProviderId.GEMINI) >= settings.geminiDailyLimit) {
+                    setPhase(Phase.Writing, "Llegaste al límite diario de Gemini (${settings.geminiDailyLimit}). Usa “Compartir con un chat”.")
+                    return@launch
+                }
+                setPhase(Phase.Busy("Gemini está revisando tu página…"))
+                try {
+                    val prompt = Prompts.correction(settings.profile, settings.level, items, text, hasImage = false)
+                    val raw = gemini.complete(CorrectionRequest(prompt))
+                    c.settings.registerUse(ProviderId.GEMINI)
+                    applyResponse(raw)
+                } catch (e: ProviderException) {
+                    val msg = if (e.offline) "Sin conexión. La página quedó pendiente de revisión." else e.message
+                    setPhase(Phase.Writing, msg)
+                } catch (e: ParseException) {
+                    setPhase(Phase.Writing, "La respuesta de Gemini no se pudo leer: ${e.message}")
+                }
+            } else {
+                val prompt = Prompts.correction(settings.profile, settings.level, items, text, hasImage = true)
+                val bitmap = renderPage(_state.value.strokes, width.toInt(), height.toInt(), lineHeight)
+                _shareIntents.send(ShareFlow.buildIntent(c.app, prompt, bitmap))
+                setPhase(Phase.AwaitingPaste, "El prompt también quedó copiado. Pégalo en el chat si no aparece.")
+            }
+        }
+    }
+
+    fun openPaste() = setPhase(Phase.AwaitingPaste)
+
+    fun submitPasted(raw: String) {
+        viewModelScope.launch {
+            try {
+                applyResponse(raw)
+            } catch (e: ParseException) {
+                _state.update { it.copy(message = "No se pudo leer la respuesta: ${e.message}") }
+            }
+        }
+    }
+
+    private suspend fun applyResponse(raw: String) {
+        val response = CorrectionParser.parse(raw)
+        val page = _state.value.page ?: return
+        val summary = c.study.applyCorrection(page, response, System.currentTimeMillis())
+        persist { it.copy(status = PageStatus.REVIEWED) }
+        val parts = buildList {
+            add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
+            if (summary.reviewed > 0) add("${summary.reviewed} ítems repasados")
+            if (summary.newWords > 0) add("${summary.newWords} palabras nuevas")
+            if (summary.pendingWords > 0) add("${summary.pendingWords} por revisar en Estudio")
+        }
+        val hint = if (summary.corrections > 0) " Reescribe las correcciones debajo y pulsa “Verificar”." else ""
+        setPhase(Phase.Writing, parts.joinToString(" · ") + "." + hint)
+    }
+
+    /** Compara lo escrito debajo de la parte revisada con las sugerencias pendientes. Sin IA. */
+    fun verifyRewrite() {
+        val page = _state.value.page ?: return
+        viewModelScope.launch {
+            val pending = c.diary.correctionsNow(pageId).filter { it.status == CorrectionStatus.PENDING }
+            if (pending.isEmpty()) {
+                setPhase(Phase.Writing, "No hay correcciones pendientes.")
+                return@launch
+            }
+            setPhase(Phase.Busy("Leyendo tu reescritura…"))
+            try {
+                val lines = c.recognizer.recognizeLines(_state.value.strokes, lineHeight, width, fromLine = page.reviewedLineCount)
+                if (lines.isEmpty()) {
+                    setPhase(Phase.Writing, "Escribe las correcciones debajo de la zona sombreada.")
+                    return@launch
+                }
+                val written = lines.map { normalize(it.text) }
+                var ok = 0
+                for (corr in pending) {
+                    val target = normalize(corr.suggestion)
+                    if (target.isNotEmpty() && written.any { it.contains(target) }) {
+                        c.diary.markRewritten(corr)
+                        ok++
+                    }
+                }
+                val read = lines.joinToString(" / ") { it.text }
+                setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
+            } catch (e: Exception) {
+                setPhase(Phase.Writing, "No se pudo reconocer: ${e.message}")
+            }
+        }
+    }
+
+    private fun normalize(s: String) = s.filter { it.isLetterOrDigit() }
+
+    private fun setPhase(phase: Phase, message: String? = _state.value.message) =
+        _state.update { it.copy(phase = phase, message = message) }
+
+    override fun onCleared() {
+        // Guardado final: el scope del ViewModel ya se canceló, así que se usa el de la app.
+        val page = _state.value.page ?: return
+        val strokes = _state.value.strokes
+        val w = width
+        if (w > 0f) {
+            c.appScope.launch {
+                c.diary.save(page.copy(inkJson = InkSerializer.toJson(strokes, w), canvasWidth = w.toInt(), updatedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    companion object {
+        private const val ERASE_RADIUS = 28f
+    }
+}
