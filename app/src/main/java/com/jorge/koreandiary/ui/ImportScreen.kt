@@ -14,13 +14,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,7 +68,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Estudio") }
+            AppTextButton(onClick = onBack) { Text("‹ Estudio") }
             Text("Importar", style = MaterialTheme.typography.titleLarge)
         }
 
@@ -83,7 +80,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(value = level, onValueChange = { level = it }, label = { Text("Nivel de las unidades (p. ej. 3A)") }, singleLine = true)
-                Button(onClick = { picker.launch(arrayOf("text/*")) }) { Text("Elegir archivo TXT") }
+                AppButton(onClick = { picker.launch(arrayOf("text/*")) }) { Text("Elegir archivo TXT") }
                 Text("…o pega el contenido aquí:", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     value = pastedTxt,
@@ -91,7 +88,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                     label = { Text("Texto de la lista de gramática") },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 240.dp),
                 )
-                OutlinedButton(onClick = {
+                AppOutlinedButton(onClick = {
                     try {
                         preview = GrammarTxtParser.parse(pastedTxt, level.trim().ifEmpty { "3A" })
                         message = null
@@ -109,7 +106,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                     "Copia el prompt, pégalo en Claude o ChatGPT junto con tu lista (texto o fotos) y pega aquí la respuesta.",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                OutlinedButton(onClick = {
+                AppOutlinedButton(onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("prompt", Prompts.importList("(pega tu lista aquí)")))
                     message = "Prompt copiado. Reemplaza “(pega tu lista aquí)” con tu lista."
@@ -120,7 +117,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                     label = { Text("Respuesta JSON del chat") },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 240.dp),
                 )
-                Button(onClick = {
+                AppButton(onClick = {
                     try {
                         preview = ImportParser.parse(pasted)
                         message = null
@@ -140,7 +137,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                     Text("${payload.words.size} palabras · ${payload.grammar.size} puntos de gramática")
                     (payload.words.take(5).map { "${it.baseForm} (${it.type})" } + payload.grammar.take(5).map { it.pattern })
                         .forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                    Button(onClick = {
+                    AppButton(onClick = {
                         scope.launch {
                             val r = container.study.import(payload)
                             message = "Guardado: ${r.wordsAdded} palabras y ${r.grammarAdded} puntos de gramática. ${r.duplicates} repetidos omitidos."

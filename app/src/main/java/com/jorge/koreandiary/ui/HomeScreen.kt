@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,8 +52,8 @@ fun HomeScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("일기", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-            OutlinedButton(onClick = onStudy) { Text("Estudio") }
-            OutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
+            AppOutlinedButton(onClick = onStudy) { Text("Estudio") }
+            AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
         }
         if (tenses.isNotEmpty()) {
             val byTense = tenses.associate { it.tense to it.total }
@@ -65,7 +63,7 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
-        Button(
+        AppButton(
             onClick = {
                 creating = true
                 scope.launch {

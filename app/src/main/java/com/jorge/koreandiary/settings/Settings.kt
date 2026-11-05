@@ -14,6 +14,20 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+object ThemeMode {
+    const val SYSTEM = "sistema"
+    const val LIGHT = "claro"
+    const val DARK = "oscuro"
+}
+
+/** Fondo del lienzo en modo oscuro. */
+object DarkPaper {
+    /** Papel negro de caligrafía: negro cálido con fibras y líneas ocres. */
+    const val CALLIGRAPHY = "caligrafia"
+    /** Negro puro (#000), ideal para pantallas AMOLED. */
+    const val PURE_BLACK = "negro"
+}
+
 object ProviderId {
     const val GEMINI = "gemini"
     const val SHARE = "share"
@@ -28,6 +42,8 @@ data class AppSettings(
     val geminiModel: String = "gemini-3.5-flash-lite",
     val geminiDailyLimit: Int = 30,
     val stylusOnly: Boolean = true,
+    val themeMode: String = ThemeMode.SYSTEM,
+    val darkPaper: String = DarkPaper.CALLIGRAPHY,
 ) {
     val grammarLevelList get() = grammarLevels.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 }
@@ -46,6 +62,8 @@ class SettingsStore(context: Context) {
         geminiModel = prefs.getString("geminiModel", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite",
         geminiDailyLimit = prefs.getInt("geminiDailyLimit", 30),
         stylusOnly = prefs.getBoolean("stylusOnly", true),
+        themeMode = prefs.getString("themeMode", ThemeMode.SYSTEM) ?: ThemeMode.SYSTEM,
+        darkPaper = prefs.getString("darkPaper", DarkPaper.CALLIGRAPHY) ?: DarkPaper.CALLIGRAPHY,
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -58,6 +76,8 @@ class SettingsStore(context: Context) {
             .putString("geminiModel", s.geminiModel)
             .putInt("geminiDailyLimit", s.geminiDailyLimit)
             .putBoolean("stylusOnly", s.stylusOnly)
+            .putString("themeMode", s.themeMode)
+            .putString("darkPaper", s.darkPaper)
             .apply()
         _state.value = s
     }

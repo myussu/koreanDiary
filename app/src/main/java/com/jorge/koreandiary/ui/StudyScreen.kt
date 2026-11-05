@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,12 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,16 +44,16 @@ fun StudyScreen(container: AppContainer, onBack: () -> Unit, onImport: () -> Uni
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Diario") }
+            AppTextButton(onClick = onBack) { Text("‹ Diario") }
             Text("Estudio", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            Button(onClick = onImport) { Text("Importar") }
+            AppButton(onClick = onImport) { Text("Importar") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(vertical = 8.dp).horizontalScroll(rememberScrollState()),
+        ) {
             listOf("Vocabulario (${words.size})", "Gramática (${grammar.size})", "Por revisar (${pending.size})")
-                .forEachIndexed { i, label ->
-                    if (tab == i) Button(onClick = { tab = i }) { Text(label) }
-                    else OutlinedButton(onClick = { tab = i }) { Text(label) }
-                }
+                .forEachIndexed { i, label -> AppToggle(label, tab == i) { tab = i } }
         }
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
             when (tab) {
@@ -78,8 +77,8 @@ fun StudyScreen(container: AppContainer, onBack: () -> Unit, onImport: () -> Uni
                             Text(p.baseForm, style = MaterialTheme.typography.titleMedium)
                             Text(listOfNotNull(p.type, p.meaning).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
                         }
-                        TextButton(onClick = { scope.launch { container.study.rejectPendingWord(p) } }) { Text("Descartar") }
-                        Button(onClick = { scope.launch { container.study.approvePendingWord(p, System.currentTimeMillis()) } }) { Text("Agregar") }
+                        AppTextButton(onClick = { scope.launch { container.study.rejectPendingWord(p) } }) { Text("Descartar") }
+                        AppButton(onClick = { scope.launch { container.study.approvePendingWord(p, System.currentTimeMillis()) } }) { Text("Agregar") }
                     }
                     HorizontalDivider()
                 }

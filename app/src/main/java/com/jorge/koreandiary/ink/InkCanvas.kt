@@ -25,9 +25,6 @@ import kotlin.math.hypot
 
 enum class InkTool { PEN, ERASER }
 
-private val InkColor = Color(0xFF1A1A2E)
-private val LineColor = Color(0xFFB8C4D6)
-private val ReviewedTint = Color(0x14000000)
 
 /**
  * Lienzo de escritura. Con [stylusOnly] solo el S Pen dibuja (el dedo y la palma se ignoran).
@@ -40,6 +37,9 @@ fun InkCanvas(
     stylusOnly: Boolean,
     lineHeightPx: Float,
     reviewedLines: Int,
+    inkColor: Color,
+    lineColor: Color,
+    reviewedTint: Color,
     onStrokeFinished: (InkStroke) -> Unit,
     onErase: (Offset) -> Unit,
     modifier: Modifier = Modifier,
@@ -84,16 +84,16 @@ fun InkCanvas(
         },
     ) {
         if (reviewedLines > 0) {
-            drawRect(ReviewedTint, size = size.copy(height = (reviewedLines * lineHeightPx).coerceAtMost(size.height)))
+            drawRect(reviewedTint, size = size.copy(height = (reviewedLines * lineHeightPx).coerceAtMost(size.height)))
         }
         var y = lineHeightPx
         while (y < size.height) {
-            drawLine(LineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
+            drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
             y += lineHeightPx
         }
         val style = Stroke(width = 4.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        strokePaths.forEach { drawPath(it, InkColor, style = style) }
-        if (live.size >= 2) drawPath(InkStroke(live.toList()).toPath(), InkColor, style = style)
+        strokePaths.forEach { drawPath(it, inkColor, style = style) }
+        if (live.size >= 2) drawPath(InkStroke(live.toList()).toPath(), inkColor, style = style)
     }
 }
 
@@ -116,7 +116,7 @@ fun strokesNear(strokes: List<InkStroke>, point: Offset, radius: Float): Set<Int
         strokes[i].points.any { hypot(it.x - point.x, it.y - point.y) <= radius }
     }.toSet()
 
-/** Dibuja la página en un bitmap blanco, para compartirla con un chat. */
+/** Dibuja la página en un bitmap blanco con tinta oscura (aunque uses modo oscuro): así la IA la lee mejor. */
 fun renderPage(strokes: List<InkStroke>, width: Int, height: Int, lineHeight: Float): Bitmap {
     val bmp = Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bmp)

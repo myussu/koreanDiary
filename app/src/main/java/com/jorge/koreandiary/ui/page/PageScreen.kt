@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,18 +18,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,7 +34,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -56,9 +50,14 @@ import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkTool
 import com.jorge.koreandiary.settings.ProviderId
+import com.jorge.koreandiary.ui.AppButton
+import com.jorge.koreandiary.ui.AppOutlinedButton
+import com.jorge.koreandiary.ui.AppTag
+import com.jorge.koreandiary.ui.AppTextButton
+import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.LocalPaperStyle
 import com.jorge.koreandiary.ui.formatDate
-
-private val PaperColor = Color(0xFFFFFDF7)
+import com.jorge.koreandiary.ui.paperBackground
 
 @Composable
 fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
@@ -66,6 +65,8 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val corrections by vm.corrections.collectAsStateWithLifecycle()
     val settings by container.settings.state.collectAsStateWithLifecycle()
+    val paper = LocalPaperStyle.current
+    val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
     var tool by remember { mutableStateOf(InkTool.PEN) }
     val lineHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
@@ -77,18 +78,18 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val page = state.page
     val pendingCorrections = corrections.count { it.status == CorrectionStatus.PENDING }
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(Modifier.fillMaxSize().background(scheme.background)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onBack) { Text("‹ Diario") }
+            AppTextButton(onClick = onBack) { Text("‹ Diario") }
             Text(
                 page?.let { formatDate(it.createdAt) } ?: "",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            page?.let { StatusPill(it.status) }
+            page?.let { AppTag(it.status, accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
         }
 
         SuggestionsBar(state.suggestions)
@@ -97,20 +98,24 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 
         state.message?.let { msg ->
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = scheme.surfaceContainerHigh,
                 modifier = Modifier.fillMaxWidth().clickable { vm.dismissMessage() },
             ) {
                 Text(msg, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
             }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth().background(PaperColor)) {
+        HorizontalDivider(color = scheme.outlineVariant)
+        Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper)) {
             InkCanvas(
                 strokes = state.strokes,
                 tool = tool,
                 stylusOnly = settings.stylusOnly,
                 lineHeightPx = lineHeightPx,
                 reviewedLines = page?.takeIf { it.status != PageStatus.DRAFT }?.reviewedLineCount ?: 0,
+                inkColor = paper.ink,
+                lineColor = paper.line,
+                reviewedTint = paper.reviewedTint,
                 onStrokeFinished = vm::addStroke,
                 onErase = vm::eraseAt,
                 modifier = Modifier.fillMaxSize().onSizeChanged {
@@ -118,15 +123,12 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 },
             )
             (state.phase as? Phase.Busy)?.let { busy ->
-                Surface(
-                    color = Color(0xCCFFFFFF),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
+                Surface(color = scheme.background.copy(alpha = 0.85f), modifier = Modifier.fillMaxSize()) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = scheme.primary, strokeWidth = 2.dp)
                         Spacer(Modifier.padding(8.dp))
                         Text(busy.message, Modifier.padding(horizontal = 32.dp))
                     }
@@ -134,25 +136,25 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(color = scheme.outlineVariant)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            ToolButton("Lápiz", tool == InkTool.PEN) { tool = InkTool.PEN }
-            ToolButton("Borrar", tool == InkTool.ERASER) { tool = InkTool.ERASER }
-            TextButton(onClick = vm::undo, enabled = state.canUndo) { Text("Deshacer") }
+            AppToggle("Lápiz", tool == InkTool.PEN) { tool = InkTool.PEN }
+            AppToggle("Borrar", tool == InkTool.ERASER) { tool = InkTool.ERASER }
+            AppTextButton(onClick = vm::undo, enabled = state.canUndo) { Text("Deshacer") }
             Spacer(Modifier.weight(1f))
             val busy = state.phase is Phase.Busy
             if (page?.status == PageStatus.PENDING) {
-                TextButton(onClick = vm::openPaste, enabled = !busy) { Text("Pegar") }
+                AppTextButton(onClick = vm::openPaste, enabled = !busy) { Text("Pegar") }
             }
             if (pendingCorrections > 0) {
-                OutlinedButton(onClick = vm::review, enabled = !busy) { Text("Revisar") }
-                Button(onClick = vm::verifyRewrite, enabled = !busy) { Text("Verificar") }
+                AppOutlinedButton(onClick = vm::review, enabled = !busy) { Text("Revisar") }
+                AppButton(onClick = vm::verifyRewrite, enabled = !busy) { Text("Verificar") }
             } else {
-                Button(onClick = vm::review, enabled = !busy) { Text("Revisar") }
+                AppButton(onClick = vm::review, enabled = !busy) { Text("Revisar") }
             }
         }
     }
@@ -170,31 +172,13 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun StatusPill(status: String) {
-    val color = when (status) {
-        PageStatus.REVIEWED -> Color(0xFF2E7D4F)
-        PageStatus.PENDING -> Color(0xFFB7791F)
-        else -> Color(0xFF6B7280)
-    }
-    Surface(color = color.copy(alpha = 0.12f), shape = RoundedCornerShape(50)) {
-        Text(status, color = color, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
-    }
-}
-
-@Composable
-private fun ToolButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 14.dp)) { Text(label) }
-    else OutlinedButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 14.dp)) { Text(label) }
-}
-
-@Composable
 private fun SuggestionsBar(chips: List<SuggestionChip>) {
     var expanded by remember { mutableStateOf(true) }
     var selected by remember { mutableStateOf<SuggestionChip?>(null) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sugerencias", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }
+            Text("SUGERENCIAS", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+            AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }
         }
         if (!expanded) return@Column
         if (chips.isEmpty()) {
@@ -208,22 +192,13 @@ private fun SuggestionsBar(chips: List<SuggestionChip>) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(chips) { chip ->
                 val isSelected = chip == selected
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = when {
-                        isSelected -> MaterialTheme.colorScheme.primary
-                        chip.isGrammar -> Color(0xFFF6E7E2)
-                        else -> Color(0xFFE6ECF8)
-                    },
-                    modifier = Modifier.clickable { selected = if (isSelected) null else chip },
-                ) {
-                    Text(
-                        chip.label,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else Color(0xFF1F2937),
-                        fontSize = 17.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    )
-                }
+                AppTag(
+                    text = chip.label,
+                    selected = isSelected,
+                    accent = chip.isGrammar,
+                    fontSize = 17.sp,
+                    onClick = { selected = if (isSelected) null else chip },
+                )
             }
         }
         selected?.let {
@@ -235,23 +210,29 @@ private fun SuggestionsBar(chips: List<SuggestionChip>) {
 
 @Composable
 private fun CorrectionsPanel(corrections: List<Correction>) {
-    Surface(color = Color(0xFFFFF7E6), modifier = Modifier.fillMaxWidth()) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(color = scheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         LazyColumn(
             Modifier.heightIn(max = 190.dp).padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(vertical = 6.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(corrections, key = { it.id }) { c ->
                 val done = c.status == CorrectionStatus.REWRITTEN
                 Row {
-                    Text(if (done) "✓" else "•", color = if (done) Color(0xFF2E7D4F) else Color(0xFFB7791F), modifier = Modifier.width(18.dp))
+                    Text(
+                        if (done) "✓" else "·",
+                        color = if (done) scheme.tertiary else scheme.secondary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(18.dp),
+                    )
                     Column {
                         Row {
-                            Text(c.original, textDecoration = TextDecoration.LineThrough, color = Color(0xFF9B2C2C))
-                            Text("  →  ")
-                            Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = Color(0xFF22543D))
+                            Text(c.original, textDecoration = TextDecoration.LineThrough, color = scheme.error)
+                            Text("  →  ", color = scheme.onSurfaceVariant)
+                            Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.tertiary)
                         }
-                        Text("${c.type} · ${c.explanation}", style = MaterialTheme.typography.bodySmall)
+                        Text("${c.type} · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                     }
                 }
             }
@@ -281,15 +262,15 @@ private fun ConfirmDialog(
             val geminiFirst = defaultProvider == ProviderId.GEMINI
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (geminiFirst) {
-                    OutlinedButton(onClick = { onConfirm(text, ProviderId.SHARE) }) { Text("Compartir") }
-                    Button(onClick = { onConfirm(text, ProviderId.GEMINI) }) { Text("Gemini") }
+                    AppOutlinedButton(onClick = { onConfirm(text, ProviderId.SHARE) }) { Text("Compartir") }
+                    AppButton(onClick = { onConfirm(text, ProviderId.GEMINI) }) { Text("Gemini") }
                 } else {
-                    OutlinedButton(onClick = { onConfirm(text, ProviderId.GEMINI) }) { Text("Gemini") }
-                    Button(onClick = { onConfirm(text, ProviderId.SHARE) }) { Text("Compartir") }
+                    AppOutlinedButton(onClick = { onConfirm(text, ProviderId.GEMINI) }) { Text("Gemini") }
+                    AppButton(onClick = { onConfirm(text, ProviderId.SHARE) }) { Text("Compartir") }
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { AppTextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }
 
@@ -303,7 +284,7 @@ private fun PasteDialog(onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
         text = {
             Column {
                 Text("Copia toda la respuesta (el JSON) y pégala aquí.", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = {
+                AppTextButton(onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.let { text = it }
                 }) { Text("Pegar del portapapeles") }
@@ -314,7 +295,7 @@ private fun PasteDialog(onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
                 )
             }
         },
-        confirmButton = { Button(onClick = { onSubmit(text) }, enabled = text.isNotBlank()) { Text("Procesar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        confirmButton = { AppButton(onClick = { onSubmit(text) }, enabled = text.isNotBlank()) { Text("Procesar") } },
+        dismissButton = { AppTextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
 }
