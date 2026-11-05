@@ -22,6 +22,7 @@ import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkSerializer
 import com.jorge.koreandiary.ink.InkStroke
+import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
 import com.jorge.koreandiary.ink.strokesNear
 import com.jorge.koreandiary.settings.ProviderId
@@ -419,7 +420,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 var ok = 0
                 for (corr in pending) {
                     val target = normalize(corr.suggestion)
-                    if (target.isNotEmpty() && written.contains(target)) {
+                    // Tolerancia a un error puntual del reconocimiento (p. ej. una sílaba mal leída).
+                    if (target.isNotEmpty() && TextMatch.approxContains(written, target)) {
                         c.diary.markRewritten(corr)
                         ok++
                     }
@@ -433,6 +435,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     private fun normalize(s: String) = s.filter { it.isLetterOrDigit() }
+
+    /** Para cuando el reconocimiento falla aunque lo hayas reescrito bien. */
+    fun markRewritten(correction: Correction) {
+        viewModelScope.launch { c.diary.markRewritten(correction) }
+    }
 
     private fun providerName(id: String) = when (id) {
         ProviderId.GEMINI -> "Gemini"

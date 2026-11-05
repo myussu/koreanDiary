@@ -125,7 +125,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             )
         }
 
-        if (corrections.isNotEmpty()) CorrectionsPanel(corrections)
+        if (corrections.isNotEmpty()) CorrectionsPanel(corrections, onMarkDone = vm::markRewritten)
 
         state.message?.let { msg ->
             Surface(
@@ -398,7 +398,7 @@ private fun AnnotatedTags(tags: List<AnnotatedItem>) {
 }
 
 @Composable
-private fun CorrectionsPanel(corrections: List<Correction>) {
+private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correction) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(true) }
     val pending = corrections.count { it.status == CorrectionStatus.PENDING }
@@ -437,7 +437,7 @@ private fun CorrectionsPanel(corrections: List<Correction>) {
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.width(18.dp),
                         )
-                        Column {
+                        Column(Modifier.weight(1f)) {
                             Row {
                                 Text(c.original, textDecoration = TextDecoration.LineThrough, color = scheme.error)
                                 Text("  →  ", color = scheme.onSurfaceVariant)
@@ -445,6 +445,8 @@ private fun CorrectionsPanel(corrections: List<Correction>) {
                             }
                             Text("${c.type} · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                         }
+                        // Si "Verificar" no la detecta aunque esté bien reescrita, se marca a mano.
+                        if (!done) AppTextButton(onClick = { onMarkDone(c) }) { Text("Hecho") }
                     }
                 }
             }

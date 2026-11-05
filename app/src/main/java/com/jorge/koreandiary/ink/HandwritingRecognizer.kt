@@ -55,7 +55,8 @@ class HandwritingRecognizer {
         for ((line, lineStrokes) in byLine) {
             val offsetY = line * lineHeight
             val inkBuilder = Ink.builder()
-            for (s in lineStrokes) {
+            // Orden espacial y tiempos coherentes: la reescritura en el lugar no confunde al reconocedor.
+            for (s in InkOrdering.spatialOrder(lineStrokes)) {
                 val sb = Ink.Stroke.builder()
                 for (p in s.points) sb.addPoint(Ink.Point.create(p.x, p.y - offsetY, p.t))
                 inkBuilder.addStroke(sb.build())
