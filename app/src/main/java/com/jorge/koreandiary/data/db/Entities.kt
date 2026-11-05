@@ -8,6 +8,9 @@ import androidx.room3.PrimaryKey
 object ItemType {
     const val WORD = "word"
     const val GRAMMAR = "grammar"
+    /** Ítems del catálogo estándar que aún no están en tu base (sugerencias de laguna). */
+    const val STD_WORD = "stdword"
+    const val STD_GRAMMAR = "stdgrammar"
 }
 
 /** Punto de gramática. Sube por niveles (a diferencia del vocabulario). */
@@ -136,6 +139,8 @@ data class DiaryPage(
 object CorrectionStatus {
     const val PENDING = "pendiente"
     const val REWRITTEN = "reescrita"
+    /** Mejora sugerida: informativa, no hay que reescribirla. */
+    const val SUGGESTION = "sugerencia"
 }
 
 @Entity(tableName = "corrections", indices = [Index(value = ["pageId"])])

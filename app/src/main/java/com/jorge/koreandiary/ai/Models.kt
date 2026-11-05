@@ -4,8 +4,10 @@ package com.jorge.koreandiary.ai
 data class CorrectionResponse(
     val sentences: List<SentenceDto>,
     val corrections: List<CorrectionDto>,
+    /** Todo lo usado: palabras en forma de diccionario y gramática en notación estándar. */
     val used: List<UsedItemDto>,
-    val newWords: List<NewWordDto>,
+    /** Estructuras de su nivel que encajarían mejor donde escribió algo demasiado básico. */
+    val improvements: List<ImprovementDto> = emptyList(),
 )
 
 data class SentenceDto(val number: Int, val text: String, val tense: String)
@@ -20,9 +22,20 @@ data class CorrectionDto(
     val itemRef: String?,
 )
 
-data class UsedItemDto(val itemRef: String, val baseForm: String, val correct: Boolean)
+data class UsedItemDto(
+    /** "w12", "g3", "sv465", "sg12" si coincide con un ítem de la lista; si no, null. */
+    val itemRef: String?,
+    /** Forma de diccionario ("자다") o gramática estándar ("-어서", "이라도"). */
+    val form: String,
+    /** sustantivo, verbo, adjetivo, adverbio, gramatica u otro. */
+    val kind: String,
+    val correct: Boolean,
+    val meaning: String? = null,
+) {
+    val isGrammar get() = kind == "gramatica"
+}
 
-data class NewWordDto(val baseForm: String, val type: String, val meaning: String?)
+data class ImprovementDto(val sentence: Int, val structure: String, val example: String, val explanation: String)
 
 /** Resultado del prompt de importación. */
 data class ImportPayload(val words: List<ImportWord>, val grammar: List<ImportGrammar>)

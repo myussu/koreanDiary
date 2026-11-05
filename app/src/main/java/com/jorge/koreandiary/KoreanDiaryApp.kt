@@ -7,6 +7,7 @@ import com.jorge.koreandiary.ai.GeminiProvider
 import com.jorge.koreandiary.data.DiaryRepository
 import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
+import com.jorge.koreandiary.data.standard.StandardCatalog
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.SecretStore
@@ -20,9 +21,11 @@ import kotlinx.coroutines.SupervisorJob
 /** Inyección de dependencias manual: suficiente para una app de este tamaño. */
 class AppContainer(val app: Application) {
     val database = AppDatabase.create(app)
-    val study = StudyRepository(database)
+    /** Catálogo estándar del 국립국어원 (en assets); se carga la primera vez que se usa. */
+    val catalog = StandardCatalog(app.assets)
+    val study = StudyRepository(database, catalog)
     val diary = DiaryRepository(database)
-    val suggestions = SuggestionEngine(database.studyDao(), database.memoryDao())
+    val suggestions = SuggestionEngine(database.studyDao(), database.memoryDao(), catalog)
     val settings = SettingsStore(app)
     val secrets = SecretStore(app)
     val recognizer by lazy { HandwritingRecognizer() }

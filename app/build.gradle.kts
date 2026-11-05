@@ -68,4 +68,6 @@ dependencies {
     implementation(libs.mlkit.digital.ink)
 
     testImplementation(libs.junit)
+    // org.json real para los tests de JVM (el de android.jar es un stub que lanza excepciones).
+    testImplementation(libs.json)
 }

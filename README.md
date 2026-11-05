@@ -23,6 +23,10 @@ Desde la versión 0.1.4 la app se actualiza sola: al abrirla consulta `version.j
    - **Gemini:** corrección automática con tu clave gratuita de Google AI Studio.
 4. Reescribe las correcciones debajo de la zona sombreada y pulsa **Verificar**.
 
+## Datos
+
+Los niveles de vocabulario y gramática vienen del 국립국어원: «2017년 국제 통용 한국어 표준 교육과정 적용 연구(4단계) 어휘, 문법 등급 목록» (rev. 2020-11-17), bajo 공공누리 제1유형 (uso libre con atribución). Detalles en `app/src/main/assets/standard/FUENTE.txt`; se regenera con `tools/build_standard_catalog.py`.
+
 ## Stack
 
 Kotlin · Jetpack Compose · Room 3 · ML Kit Digital Ink · FSRS-6 · AGP 9.5 (Kotlin integrado) · Gradle 9.6.

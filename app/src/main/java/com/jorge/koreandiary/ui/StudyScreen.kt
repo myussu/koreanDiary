@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.data.ItemSource
 import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.data.db.MemoryState
 import com.jorge.koreandiary.srs.Fsrs
@@ -60,14 +61,20 @@ fun StudyScreen(container: AppContainer, onBack: () -> Unit, onImport: () -> Uni
                 0 -> items(words, key = { "w${it.id}" }) { w ->
                     ItemRow(
                         title = w.baseForm,
-                        subtitle = listOfNotNull(w.type, w.meaning, w.irregular?.let { "irregular $it" }).joinToString(" · "),
+                        subtitle = listOfNotNull(
+                            w.type,
+                            w.level.takeUnless { it == "desconocido" },
+                            w.meaning,
+                            w.irregular?.let { "irregular $it" },
+                            sourceLabel(w.source),
+                        ).joinToString(" · "),
                         memory = stateMap[ItemType.WORD to w.id], now = now,
                     )
                 }
                 1 -> items(grammar, key = { "g${it.id}" }) { g ->
                     ItemRow(
                         title = g.pattern,
-                        subtitle = listOfNotNull(g.level + (g.unit?.let { " · U$it" } ?: ""), g.meaning).joinToString(" · "),
+                        subtitle = listOfNotNull(g.level + (g.unit?.let { " · U$it" } ?: ""), g.meaning, sourceLabel(g.source)).joinToString(" · "),
                         memory = stateMap[ItemType.GRAMMAR to g.id], now = now,
                     )
                 }
@@ -97,6 +104,12 @@ private fun ItemRow(title: String, subtitle: String, memory: MemoryState?, now: 
         if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall)
     }
     HorizontalDivider()
+}
+
+private fun sourceLabel(source: String): String? = when (source) {
+    ItemSource.DIARY -> "detectada en el diario"
+    ItemSource.GAP -> "laguna cubierta"
+    else -> null
 }
 
 private fun memoryLabel(m: MemoryState?, now: Long): String {

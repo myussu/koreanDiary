@@ -6,42 +6,51 @@ package com.jorge.koreandiary.ai
  */
 object Prompts {
 
+    /**
+     * Prompt de corrección. Pensado para gastar pocos tokens: instrucciones compactas y
+     * claves cortas en "usados", que es la lista más larga de la respuesta.
+     * [standardLevel] es el nivel 1–6 del estándar del 국립국어원 para las mejoras.
+     */
     fun correction(
         profile: String,
         level: String,
+        standardLevel: Int,
         items: List<PromptItem>,
         text: String,
         hasImage: Boolean,
     ): String = buildString {
-        appendLine("Eres un profesor de coreano que corrige el diario escrito a mano de un estudiante hispanohablante de nivel intermedio. Responde SOLO con un objeto JSON válido, sin texto antes ni después y sin bloques de código.")
+        appendLine("Eres profesor de coreano y corriges el diario manuscrito de un estudiante hispanohablante. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
-        appendLine("PERFIL DEL ESTUDIANTE:")
-        appendLine(profile.ifBlank { "(sin perfil)" })
-        appendLine("Nivel de gramática actual: ${level.ifBlank { "intermedio" }}")
+        appendLine("ESTUDIANTE: ${profile.ifBlank { "(sin perfil)" }}")
+        appendLine("Nivel: $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정)")
         appendLine()
-        appendLine("ÍTEMS QUE EL ESTUDIANTE ESTÁ REPASANDO (id | forma base | tipo):")
+        appendLine("SUGERIDOS EN ESTA PÁGINA (id | forma | tipo):")
         if (items.isEmpty()) appendLine("(ninguno)")
         items.forEach { appendLine("${it.ref} | ${it.label} | ${it.kind}") }
         appendLine()
-        appendLine("TEXTO DEL DIARIO:")
+        appendLine("TEXTO:")
         appendLine(text)
-        if (hasImage) appendLine("(Hay una imagen adjunta de la página manuscrita: úsala como fuente principal y el texto como referencia.)")
+        if (hasImage) appendLine("(Hay una imagen de la página manuscrita: es la fuente principal; el texto es referencia.)")
         appendLine()
         appendLine(
             """
             TAREAS:
-            1. Divide el texto en oraciones. Para cada una indica su tiempo: "pasado", "presente" o "futuro". Si mezcla tiempos, usa el principal.
-            2. Corrige ortografía, partículas, conjugación, gramática y naturalidad. No cambies lo que ya es correcto ni reescribas por estilo. Si una oración está bien, no generes corrección.
-            3. Explica cada corrección en español, en una o dos frases, citando la regla si aplica.
-            4. Detecta qué ítems de la lista se usaron, aunque estén conjugados (먹었어요 = 먹다). Indica "correcto" o "incorrecto".
-            5. Lista en "nuevos" las palabras de contenido (sustantivos, verbos, adjetivos, adverbios) que se usaron y NO están en la lista, en forma de diccionario. No incluyas partículas ni terminaciones.
+            1. "oraciones": divide en oraciones y da el tiempo principal: "pasado", "presente" o "futuro".
+            2. "correcciones": ortografía, partículas, conjugación, gramática y naturalidad. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases.
+            3. "usados": TODO lo que usó, una vez cada cosa:
+               - Palabras de contenido en forma de diccionario (먹었어요 → 먹다).
+               - Gramática (terminaciones, partículas y expresiones) en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -으니까, -을 것 같다, -는 바람에); partículas sin guion (이라도, 처럼).
+               - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
+               - "id": el de la lista de sugeridos si coincide; si no, null.
+               - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
+            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].
 
-            FORMATO DE SALIDA:
+            FORMATO:
             {
               "oraciones": [{"n": 1, "texto": "...", "tiempo": "pasado"}],
-              "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "ortografia|particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": "w42 o null"}],
-              "usados": [{"id": "w42", "forma_base": "...", "resultado": "correcto|incorrecto"}],
-              "nuevos": [{"forma_base": "...", "tipo": "sustantivo|verbo|adjetivo|adverbio", "significado": "..."}]
+              "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "ortografia|particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": null}],
+              "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}, {"f": "-어서", "t": "g", "ok": true, "id": null}],
+              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]
             }
             """.trimIndent()
         )

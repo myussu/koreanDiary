@@ -212,6 +212,15 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             TestConnection(container, ProviderId.AZURE, beforeTest = ::save)
         }
 
+        Section("Fuentes") {
+            Text(
+                "Niveles de vocabulario y gramática: 국립국어원, «2017년 국제 통용 한국어 표준 교육과정 적용 연구(4단계) " +
+                    "어휘, 문법 등급 목록» (rev. 2020-11-17). Licencia 공공누리 제1유형 (uso libre con atribución).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Tu nivel ${s.level} se compara con el nivel ${s.standardLevel} de 6 del estándar.", style = MaterialTheme.typography.bodySmall)
+        }
+
         AppButton(onClick = { save(); onBack() }, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) { Text("Guardar ajustes") }
     }
 }

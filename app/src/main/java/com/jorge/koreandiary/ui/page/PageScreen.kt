@@ -202,7 +202,7 @@ private fun SuggestionsBar(chips: List<SuggestionChip>) {
             items(chips) { chip ->
                 val isSelected = chip == selected
                 AppTag(
-                    text = chip.label,
+                    text = if (chip.isGap) "+ ${chip.label}" else chip.label,
                     selected = isSelected,
                     accent = chip.isGrammar,
                     fontSize = 17.sp,
@@ -212,6 +212,14 @@ private fun SuggestionsBar(chips: List<SuggestionChip>) {
         }
         selected?.let {
             Text(it.detail, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+        }
+        if (selected == null && chips.any { it.isGap }) {
+            Text(
+                "“+” = posible laguna: de tu nivel según el estándar, pero no está en tus listas.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
         Spacer(Modifier.padding(bottom = 4.dp))
     }
@@ -227,6 +235,16 @@ private fun CorrectionsPanel(corrections: List<Correction>) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(corrections, key = { it.id }) { c ->
+                if (c.status == CorrectionStatus.SUGGESTION) {
+                    Row {
+                        Text("+", color = scheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
+                        Column {
+                            Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
+                            Text("Mejora de tu nivel · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        }
+                    }
+                    return@items
+                }
                 val done = c.status == CorrectionStatus.REWRITTEN
                 Row {
                     Text(

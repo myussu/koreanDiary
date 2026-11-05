@@ -10,6 +10,7 @@ room3 = "3.0.3"
 sqlite = "2.7.1"
 mlkitDigitalInk = "19.0.0"
 junit = "4.13.2"
+orgJson = "20260814"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -26,6 +27,7 @@ androidx-room3-compiler = { group = "androidx.room3", name = "room3-compiler", v
 androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqlite" }
 mlkit-digital-ink = { group = "com.google.mlkit", name = "digital-ink-recognition", version.ref = "mlkitDigitalInk" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+json = { group = "org.json", name = "json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

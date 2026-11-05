@@ -1,0 +1,9 @@
+Catálogo estándar de vocabulario y gramática por niveles (1 a 6)
+
+Fuente: 국립국어원 (Instituto Nacional de la Lengua Coreana),
+«2017년 국제 통용 한국어 표준 교육과정 적용 연구(4단계) 어휘, 문법 등급 목록» (revisión 2020-11-17).
+https://www.korean.go.kr/front/reportData/reportDataView.do?mn_id=207&report_seq=932
+
+Licencia: 공공누리 제1유형 (Korea Open Government License, tipo 1: uso libre con atribución de la fuente).
+Conversión a JSON: https://github.com/dev-somi/skala-korean-tutor-supporter
+Formato TSV: tools/build_standard_catalog.py

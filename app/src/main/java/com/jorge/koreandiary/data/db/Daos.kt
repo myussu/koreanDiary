@@ -38,8 +38,17 @@ interface StudyDao {
     @Query("SELECT id FROM words")
     suspend fun allWordIds(): List<Long>
 
-    /** Gramática de un conjunto de niveles (p. ej. base y 3A cuando repasas 3A). */
-    @Query("SELECT id FROM grammar_points WHERE level IN (:levels)")
+    @Query("SELECT baseForm FROM words")
+    suspend fun allWordForms(): List<String>
+
+    @Query("SELECT * FROM grammar_points")
+    suspend fun allGrammar(): List<GrammarPoint>
+
+    /**
+     * Gramática a sugerir: la de los niveles elegidos (p. ej. base y 3A) más toda la que
+     * detectaste en tus diarios, que ya sabes que usas.
+     */
+    @Query("SELECT id FROM grammar_points WHERE level IN (:levels) OR source IN ('diario', 'laguna')")
     suspend fun grammarIdsForLevels(levels: List<String>): List<Long>
 
     @Insert

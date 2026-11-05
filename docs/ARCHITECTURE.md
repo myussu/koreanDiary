@@ -8,8 +8,11 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 - **Flujo:** página nueva → sugerencias FSRS (sin IA) → escribir con S Pen → Revisar → ML Kit reconoce línea por línea → confirmar texto → proveedor de IA → correcciones arriba → reescribir debajo → Verificar (comparación local, sin IA).
 - **Proveedores:** interfaz `CorrectionProvider`. Gemini (Interactions API, capa gratuita), Azure OpenAI (API v1 + Responses API, despliegue recomendado `gpt-5.6-luna` en Global Standard, razonamiento bajo) y “Compartir con un chat” (Claude/ChatGPT, copiar y pegar). Futuro: servidor propio.
 - **Contrato JSON:** `oraciones`, `correcciones`, `usados` (con ids `w12`/`g3`), `nuevos`. Ver `ai/Prompts.kt` y `ai/Parsers.kt`.
+- **Todo lo usado cuenta:** la IA devuelve en `usados` cada palabra (forma de diccionario) y cada gramática (notación estándar) de la página. La app las busca en tu base, luego en el catálogo estándar, y crea las que falten con su nivel (`N급`) y la fuente `diario`. Solo se omiten partículas y terminaciones básicas (이/가, 은/는, -어요...).
+- **Catálogo estándar (assets/standard):** lista oficial del 국립국어원 de vocabulario (10.635) y gramática (336) por niveles 1–6, 공공누리 제1유형. Se consulta en memoria: el nivel no cuesta tokens. Las gramáticas se comparan por claves normalizadas (`GrammarKeys`): sin A/V/N, con y sin (으), separando terminaciones de partículas.
+- **Lagunas:** en cada página nueva se sugiere 1 palabra y 1 gramática del estándar de tu nivel o del anterior que no están en tu base (marcadas con “+”). Además la IA puede proponer hasta 2 `mejoras`: estructuras de tu nivel donde escribiste algo demasiado básico.
 - **FSRS-6:** el uso en el diario es el repaso. Correcto sin sugerencia = Good; correcto tras verlo sugerido = Hard; incorrecto = Again; sugerido y no usado = sin calificación.
-- **Palabras nuevas:** se agregan solas si son hangul válido; si no, quedan en “Por revisar”. Pendiente: validar con la API del 한국어기초사전.
+- **Palabras fuera del estándar:** se agregan solas si son hangul válido; si no, quedan en “Por revisar”. Pendiente: validar con la API del 한국어기초사전.
 
 ## Distribución y actualizaciones
 

@@ -22,6 +22,7 @@ import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.renderPage
 import com.jorge.koreandiary.ink.strokesNear
 import com.jorge.koreandiary.settings.ProviderId
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface Phase {
     data object Writing : Phase
@@ -41,7 +43,7 @@ sealed interface Phase {
     data object AwaitingPaste : Phase
 }
 
-data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean)
+data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean, val isGap: Boolean = false)
 
 data class PageUiState(
     val page: DiaryPage? = null,
@@ -100,7 +102,21 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             .map { SuggestionChip(it.baseForm, listOfNotNull(it.type, it.meaning).joinToString(" · "), false) }
         val grammar = dao.grammarByIds(refs.filter { it.type == ItemType.GRAMMAR }.map { it.id })
             .map { g -> SuggestionChip(g.pattern, listOfNotNull(g.meaning, g.example).joinToString(" — ").ifEmpty { "Gramática ${g.level}" }, true) }
-        return words + grammar
+        val gaps = withContext(Dispatchers.Default) {
+            refs.mapNotNull { ref ->
+                when (ref.type) {
+                    ItemType.STD_WORD -> c.catalog.wordById(ref.id.toInt())?.let {
+                        SuggestionChip(it.word, "Posible laguna · nivel ${it.level} del estándar · ${it.type} · ej.: ${it.guide}", false, isGap = true)
+                    }
+                    ItemType.STD_GRAMMAR -> c.catalog.grammarById(ref.id.toInt())?.let {
+                        val extra = listOf(it.category, it.meaning).filter { s -> s.isNotBlank() }.joinToString(" · ")
+                        SuggestionChip(it.form, "Posible laguna · nivel ${it.level} del estándar · $extra", true, isGap = true)
+                    }
+                    else -> null
+                }
+            }
+        }
+        return words + grammar + gaps
     }
 
     // ---------- Trazos ----------
@@ -203,7 +219,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 }
                 setPhase(Phase.Busy("$name está revisando tu página…"))
                 try {
-                    val prompt = Prompts.correction(settings.profile, settings.level, items, text, hasImage = false)
+                    val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false)
                     val raw = api.complete(CorrectionRequest(prompt))
                     c.settings.registerUse(provider)
                     applyResponse(raw)
@@ -218,7 +234,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     setPhase(Phase.Writing, "Error inesperado con $name: ${e.message ?: e.javaClass.simpleName}")
                 }
             } else {
-                val prompt = Prompts.correction(settings.profile, settings.level, items, text, hasImage = true)
+                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true)
                 val bitmap = renderPage(_state.value.strokes, width.toInt(), height.toInt(), lineHeight)
                 _shareIntents.send(ShareFlow.buildIntent(c.app, prompt, bitmap))
                 setPhase(Phase.AwaitingPaste, "El prompt también quedó copiado. Pégalo en el chat si no aparece.")
@@ -247,6 +263,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
             if (summary.reviewed > 0) add("${summary.reviewed} ítems repasados")
             if (summary.newWords > 0) add("${summary.newWords} palabras nuevas")
+            if (summary.newGrammar > 0) add("${summary.newGrammar} gramáticas nuevas")
+            if (summary.improvements > 0) add("${summary.improvements} mejoras sugeridas")
             if (summary.pendingWords > 0) add("${summary.pendingWords} por revisar en Estudio")
         }
         val hint = if (summary.corrections > 0) " Reescribe las correcciones debajo y pulsa “Verificar”." else ""

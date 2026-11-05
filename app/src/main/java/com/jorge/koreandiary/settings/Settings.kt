@@ -55,6 +55,9 @@ data class AppSettings(
 ) {
     val grammarLevelList get() = grammarLevels.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
+    /** Nivel 1–6 del estándar del 국립국어원 a partir del nivel del libro ("3A" → 3). */
+    val standardLevel: Int get() = level.firstOrNull { it.isDigit() }?.digitToInt()?.coerceIn(1, 6) ?: 3
+
     fun dailyLimit(provider: String): Int = when (provider) {
         ProviderId.GEMINI -> geminiDailyLimit
         ProviderId.AZURE -> azureDailyLimit

@@ -3,6 +3,7 @@ package com.jorge.koreandiary.data
 import com.jorge.koreandiary.ai.CorrectionResponse
 import com.jorge.koreandiary.ai.ImportPayload
 import com.jorge.koreandiary.ai.PromptItem
+import com.jorge.koreandiary.ai.UsedItemDto
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
@@ -17,28 +18,63 @@ import com.jorge.koreandiary.data.db.PendingWord
 import com.jorge.koreandiary.data.db.ReviewEvent
 import com.jorge.koreandiary.data.db.Sentence
 import com.jorge.koreandiary.data.db.Word
+import com.jorge.koreandiary.data.standard.GrammarKeys
+import com.jorge.koreandiary.data.standard.StandardCatalog
+import com.jorge.koreandiary.data.standard.StdGrammar
+import com.jorge.koreandiary.data.standard.StdWord
 import com.jorge.koreandiary.srs.Fsrs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 data class ImportSummary(val wordsAdded: Int, val grammarAdded: Int, val duplicates: Int)
 
-data class ApplySummary(val corrections: Int, val reviewed: Int, val newWords: Int, val pendingWords: Int)
+data class ApplySummary(
+    val corrections: Int,
+    val reviewed: Int,
+    val newWords: Int,
+    val newGrammar: Int,
+    val pendingWords: Int,
+    val improvements: Int,
+)
 
-/** Referencia a un ítem: "w12" ↔ (word, 12). */
+/** Fuentes de un ítem en la base. */
+object ItemSource {
+    const val IMPORT = "import"
+    /** Detectado en un diario (lo usaste sin tenerlo en tus listas). */
+    const val DIARY = "diario"
+    /** Sugerido como posible laguna del estándar y usado después. */
+    const val GAP = "laguna"
+}
+
+/**
+ * Referencia a un ítem: "w12" (palabra), "g3" (gramática) en tu base;
+ * "sv465" / "sg12" en el catálogo estándar (aún no están en tu base).
+ */
 data class ItemRef(val type: String, val id: Long) {
-    val code get() = (if (type == ItemType.WORD) "w" else "g") + id
+    val code: String
+        get() = when (type) {
+            ItemType.WORD -> "w$id"
+            ItemType.GRAMMAR -> "g$id"
+            ItemType.STD_WORD -> "sv$id"
+            else -> "sg$id"
+        }
+
+    val isStandard get() = type == ItemType.STD_WORD || type == ItemType.STD_GRAMMAR
 
     companion object {
         fun parse(code: String): ItemRef? {
-            val id = code.drop(1).toLongOrNull() ?: return null
-            return when (code.firstOrNull()) {
-                'w' -> ItemRef(ItemType.WORD, id)
-                'g' -> ItemRef(ItemType.GRAMMAR, id)
-                else -> null
+            val (type, digits) = when {
+                code.startsWith("sv") -> ItemType.STD_WORD to code.drop(2)
+                code.startsWith("sg") -> ItemType.STD_GRAMMAR to code.drop(2)
+                code.startsWith("w") -> ItemType.WORD to code.drop(1)
+                code.startsWith("g") -> ItemType.GRAMMAR to code.drop(1)
+                else -> return null
             }
+            return digits.toLongOrNull()?.let { ItemRef(type, it) }
         }
 
-        /** "word:12,grammar:3" → lista de referencias. */
+        /** "word:12,grammar:3,stdword:465" → lista de referencias. */
         fun decodeList(encoded: String): List<ItemRef> = encoded.split(',').mapNotNull { part ->
             val (type, id) = part.split(':').takeIf { it.size == 2 } ?: return@mapNotNull null
             id.toLongOrNull()?.let { ItemRef(type, it) }
@@ -46,7 +82,7 @@ data class ItemRef(val type: String, val id: Long) {
     }
 }
 
-class StudyRepository(private val db: AppDatabase) {
+class StudyRepository(private val db: AppDatabase, private val catalog: StandardCatalog) {
     private val study = db.studyDao()
     private val memory = db.memoryDao()
 
@@ -55,14 +91,17 @@ class StudyRepository(private val db: AppDatabase) {
     val pendingWords = study.observePendingWords()
     val memoryStates = memory.observeAll()
 
-    suspend fun import(payload: ImportPayload, source: String = "import"): ImportSummary {
+    suspend fun import(payload: ImportPayload, source: String = ItemSource.IMPORT): ImportSummary {
         var words = 0
         var grammar = 0
         var dupes = 0
         for (w in payload.words) {
             val base = w.baseForm.trim()
             if (base.isEmpty() || study.findWord(base) != null) { dupes++; continue }
-            study.insertWord(Word(baseForm = base, type = w.type, meaning = w.meaning, level = w.level, irregular = w.irregular, source = source))
+            // Si no trae nivel, se toma del estándar.
+            val level = w.level.takeUnless { it.isBlank() || it == "desconocido" }
+                ?: standardWord(base)?.let { "${it.level}급" } ?: "desconocido"
+            study.insertWord(Word(baseForm = base, type = w.type, meaning = w.meaning, level = level, irregular = w.irregular, source = source))
             words++
         }
         for (g in payload.grammar) {
@@ -84,13 +123,22 @@ class StudyRepository(private val db: AppDatabase) {
     suspend fun promptItems(refs: List<ItemRef>): List<PromptItem> {
         val words = study.wordsByIds(refs.filter { it.type == ItemType.WORD }.map { it.id })
         val grammar = study.grammarByIds(refs.filter { it.type == ItemType.GRAMMAR }.map { it.id })
+        val std = withContext(Dispatchers.Default) {
+            refs.mapNotNull { ref ->
+                when (ref.type) {
+                    ItemType.STD_WORD -> catalog.wordById(ref.id.toInt())?.let { PromptItem(ref.code, it.word, it.type) }
+                    ItemType.STD_GRAMMAR -> catalog.grammarById(ref.id.toInt())?.let { PromptItem(ref.code, it.form, "gramática") }
+                    else -> null
+                }
+            }
+        }
         return words.map { PromptItem("w${it.id}", it.baseForm, it.type) } +
-            grammar.map { PromptItem("g${it.id}", it.pattern, "gramática") }
+            grammar.map { PromptItem("g${it.id}", it.pattern, "gramática") } + std
     }
 
     suspend fun approvePendingWord(p: PendingWord, now: Long) {
         if (study.findWord(p.baseForm) == null) {
-            val id = study.insertWord(Word(baseForm = p.baseForm, type = p.type, meaning = p.meaning, source = "diario"))
+            val id = study.insertWord(Word(baseForm = p.baseForm, type = p.type, meaning = p.meaning, source = ItemSource.DIARY))
             review(ItemRef(ItemType.WORD, id), Fsrs.Rating.GOOD, EventKind.DISCOVERED, now, p.pageId)
         }
         study.deletePendingWord(p.id)
@@ -99,7 +147,8 @@ class StudyRepository(private val db: AppDatabase) {
     suspend fun rejectPendingWord(p: PendingWord) = study.deletePendingWord(p.id)
 
     /**
-     * Aplica la respuesta de la IA: guarda correcciones y oraciones y actualiza FSRS.
+     * Aplica la respuesta de la IA: guarda correcciones, mejoras y oraciones, y actualiza FSRS con
+     * TODO lo usado. Lo que no está en tu base se busca en el catálogo estándar (para su nivel) y se agrega.
      * FSRS solo se actualiza en la primera revisión de la página, para no contar dos veces.
      */
     suspend fun applyCorrection(page: DiaryPage, response: CorrectionResponse, now: Long): ApplySummary {
@@ -109,9 +158,10 @@ class StudyRepository(private val db: AppDatabase) {
         diary.deleteCorrections(page.id)
         diary.deleteSentences(page.id)
         val tenseBySentence = response.sentences.associate { it.number to it.tense }
+        val textBySentence = response.sentences.associate { it.number to it.text }
         response.sentences.forEach { diary.insertSentence(Sentence(pageId = page.id, number = it.number, text = it.text, tense = it.tense)) }
         response.corrections.forEach { c ->
-            val ref = c.itemRef?.let { ItemRef.parse(it) }
+            val ref = c.itemRef?.let { ItemRef.parse(it) }?.takeUnless { it.isStandard }
             diary.insertCorrection(
                 Correction(
                     pageId = page.id, sentence = c.sentence, original = c.original, suggestion = c.suggestion,
@@ -120,72 +170,169 @@ class StudyRepository(private val db: AppDatabase) {
                 )
             )
         }
+        response.improvements.forEach { m ->
+            diary.insertCorrection(
+                Correction(
+                    pageId = page.id, sentence = m.sentence, original = textBySentence[m.sentence].orEmpty(),
+                    suggestion = if (m.example.isBlank()) m.structure else "${m.structure} — ${m.example}",
+                    type = CorrectionType.IMPROVEMENT, explanation = m.explanation, tense = tenseBySentence[m.sentence],
+                    itemType = null, itemId = null, status = CorrectionStatus.SUGGESTION,
+                )
+            )
+        }
 
         var reviewed = 0
-        var added = 0
+        var newWords = 0
+        var newGrammar = 0
         var pending = 0
         if (firstReview) {
             val suggested = ItemRef.decodeList(page.suggestedItems).toSet()
-            val usedRefs = mutableSetOf<ItemRef>()
+            val myGrammar = study.allGrammar().toMutableList()
+            val counted = mutableSetOf<ItemRef>()
             for (u in response.used) {
-                val ref = ItemRef.parse(u.itemRef) ?: continue
-                if (!usedRefs.add(ref)) continue
-                val (rating, kind) = when {
-                    !u.correct -> Fsrs.Rating.AGAIN to EventKind.INCORRECT
+                val resolved = resolve(u, suggested, myGrammar, page.id, now, onPending = { pending++ }) ?: continue
+                if (!counted.add(resolved.ref)) continue
+                val rating = when {
+                    !u.correct -> Fsrs.Rating.AGAIN
                     // Usarlo tras verlo sugerido es reconocimiento, no recuerdo libre: cuenta como "Hard".
-                    ref in suggested -> Fsrs.Rating.HARD to EventKind.CORRECT_SUGGESTED
-                    else -> Fsrs.Rating.GOOD to EventKind.CORRECT_SPONTANEOUS
+                    resolved.wasSuggested -> Fsrs.Rating.HARD
+                    else -> Fsrs.Rating.GOOD
                 }
-                review(ref, rating, kind, now, page.id)
+                val kind = when {
+                    resolved.isNew -> EventKind.DISCOVERED
+                    !u.correct -> EventKind.INCORRECT
+                    resolved.wasSuggested -> EventKind.CORRECT_SUGGESTED
+                    else -> EventKind.CORRECT_SPONTANEOUS
+                }
+                review(resolved.ref, rating, kind, now, page.id)
                 reviewed++
+                if (resolved.isNew) {
+                    if (resolved.ref.type == ItemType.WORD) newWords++ else newGrammar++
+                }
             }
             // Sugerido y no usado: se registra sin calificación. No es un fallo.
-            (suggested - usedRefs).forEach { ref ->
+            (suggested.filterNot { it.isStandard }.toSet() - counted).forEach { ref ->
                 memory.insertEvent(ReviewEvent(itemType = ref.type, itemId = ref.id, at = now, kind = EventKind.SUGGESTED_UNUSED, rating = null, pageId = page.id))
             }
-            for (n in response.newWords) {
-                val base = n.baseForm.trim()
-                val existing = study.findWord(base)
-                if (existing != null) {
-                    val ref = ItemRef(ItemType.WORD, existing.id)
-                    if (usedRefs.add(ref)) {
-                        review(ref, Fsrs.Rating.GOOD, EventKind.CORRECT_SPONTANEOUS, now, page.id)
-                        reviewed++
-                    }
-                } else if (looksLikeKoreanWord(base)) {
-                    val id = study.insertWord(Word(baseForm = base, type = n.type, meaning = n.meaning, source = "diario"))
-                    review(ItemRef(ItemType.WORD, id), Fsrs.Rating.GOOD, EventKind.DISCOVERED, now, page.id)
-                    added++
-                } else if (study.findPendingWord(base) == null) {
-                    study.insertPendingWord(PendingWord(baseForm = base, type = n.type, meaning = n.meaning, pageId = page.id, createdAt = now))
-                    pending++
-                }
-            }
         }
-        return ApplySummary(response.corrections.size, reviewed, added, pending)
+        return ApplySummary(response.corrections.size, reviewed, newWords, newGrammar, pending, response.improvements.size)
     }
 
+    private data class Resolved(val ref: ItemRef, val isNew: Boolean, val wasSuggested: Boolean)
+
+    /** Encuentra o crea el ítem usado. Devuelve null si quedó en "Por revisar". */
+    private suspend fun resolve(
+        u: UsedItemDto,
+        suggested: Set<ItemRef>,
+        myGrammar: MutableList<GrammarPoint>,
+        pageId: Long,
+        now: Long,
+        onPending: () -> Unit,
+    ): Resolved? {
+        val explicit = u.itemRef?.let { ItemRef.parse(it) }
+        // 1. La IA lo identificó con un id de la lista.
+        if (explicit != null && !explicit.isStandard) {
+            val exists = when (explicit.type) {
+                ItemType.WORD -> study.wordsByIds(listOf(explicit.id)).isNotEmpty()
+                else -> study.grammarByIds(listOf(explicit.id)).isNotEmpty()
+            }
+            if (exists) return Resolved(explicit, isNew = false, wasSuggested = explicit in suggested)
+        }
+        val stdWord = if (explicit?.type == ItemType.STD_WORD) standardWordById(explicit.id) else null
+        val stdGrammar = if (explicit?.type == ItemType.STD_GRAMMAR) standardGrammarById(explicit.id) else null
+        val wasSuggested = explicit != null && explicit in suggested
+
+        // 2. Gramática: tu base primero (por claves), luego el estándar.
+        if (stdGrammar != null || (stdWord == null && u.isGrammar)) {
+            val forms = listOfNotNull(stdGrammar?.form, u.form.takeIf { stdGrammar == null }) + (stdGrammar?.related ?: emptyList())
+            myGrammar.firstOrNull { g -> GrammarKeys.matches(listOf(g.pattern) + g.variants.split(" | "), forms) }?.let {
+                return Resolved(ItemRef(ItemType.GRAMMAR, it.id), isNew = false, wasSuggested = wasSuggested)
+            }
+            val std = stdGrammar ?: standardGrammar(u.form)
+            if (std != null) {
+                myGrammar.firstOrNull { g -> GrammarKeys.matches(listOf(g.pattern) + g.variants.split(" | "), listOf(std.form) + std.related) }?.let {
+                    return Resolved(ItemRef(ItemType.GRAMMAR, it.id), isNew = false, wasSuggested = wasSuggested)
+                }
+            }
+            if (std == null && !looksLikeGrammar(u.form)) return null
+            val point = GrammarPoint(
+                unit = null,
+                level = std?.let { "${it.level}급" } ?: "?",
+                pattern = std?.form ?: u.form.trim(),
+                variants = (listOfNotNull(std?.form ?: u.form.trim()) + (std?.related ?: emptyList())).joinToString(" | "),
+                appliesTo = "",
+                meaning = u.meaning ?: std?.meaning?.takeIf { it.isNotBlank() },
+                source = if (wasSuggested) ItemSource.GAP else ItemSource.DIARY,
+            )
+            study.findGrammar(point.pattern)?.let { return Resolved(ItemRef(ItemType.GRAMMAR, it.id), false, wasSuggested) }
+            val id = study.insertGrammar(point)
+            myGrammar += point.copy(id = id)
+            return Resolved(ItemRef(ItemType.GRAMMAR, id), isNew = true, wasSuggested = wasSuggested)
+        }
+
+        // 3. Palabra: tu base, luego el estándar (para el nivel), luego validación simple.
+        val base = (stdWord?.word ?: u.form).trim()
+        study.findWord(base)?.let { return Resolved(ItemRef(ItemType.WORD, it.id), isNew = false, wasSuggested = wasSuggested) }
+        val std = stdWord ?: standardWord(base)
+        if (std == null && !looksLikeKoreanWord(base)) {
+            if (study.findPendingWord(base) == null) {
+                study.insertPendingWord(PendingWord(baseForm = base, type = u.kind, meaning = u.meaning, pageId = pageId, createdAt = now))
+                onPending()
+            }
+            return null
+        }
+        val type = if (u.kind in WORD_KINDS) u.kind else std?.type ?: "otro"
+        val id = study.insertWord(
+            Word(
+                baseForm = base, type = type, meaning = u.meaning,
+                level = std?.let { "${it.level}급" } ?: "desconocido",
+                source = if (wasSuggested) ItemSource.GAP else ItemSource.DIARY,
+            )
+        )
+        return Resolved(ItemRef(ItemType.WORD, id), isNew = true, wasSuggested = wasSuggested)
+    }
+
+    private suspend fun standardWord(form: String): StdWord? = withContext(Dispatchers.Default) { catalog.word(form) }
+    private suspend fun standardWordById(id: Long): StdWord? = withContext(Dispatchers.Default) { catalog.wordById(id.toInt()) }
+    private suspend fun standardGrammar(form: String): StdGrammar? = withContext(Dispatchers.Default) { catalog.grammar(listOf(form)) }
+    private suspend fun standardGrammarById(id: Long): StdGrammar? = withContext(Dispatchers.Default) { catalog.grammarById(id.toInt()) }
+
     private suspend fun review(ref: ItemRef, rating: Fsrs.Rating, kind: String, now: Long, pageId: Long?) {
-        val prev = memory.get(ref.type, ref.id)?.let { Fsrs.Memory(it.stability, it.difficulty, it.lastReviewAt, it.reps, it.lapses) }
+        val stored = memory.get(ref.type, ref.id)
+        val prev = stored?.let { Fsrs.Memory(it.stability, it.difficulty, it.lastReviewAt, it.reps, it.lapses) }
         val result = Fsrs.review(prev, rating, now)
-        val sentToAnki = memory.get(ref.type, ref.id)?.sentToAnki ?: false
         memory.upsert(
             MemoryState(
                 itemType = ref.type, itemId = ref.id,
                 stability = result.memory.stability, difficulty = result.memory.difficulty,
                 lastReviewAt = now, dueAt = result.dueAt,
-                reps = result.memory.reps, lapses = result.memory.lapses, sentToAnki = sentToAnki,
+                reps = result.memory.reps, lapses = result.memory.lapses, sentToAnki = stored?.sentToAnki ?: false,
             )
         )
         memory.insertEvent(ReviewEvent(itemType = ref.type, itemId = ref.id, at = now, kind = kind, rating = rating.value, pageId = pageId))
     }
 
     /**
-     * Validación provisional de palabras nuevas: solo sílabas hangul y largo razonable.
+     * Validación de palabras que no están en el estándar: solo sílabas hangul y largo razonable.
      * TODO: validar contra la API abierta del 한국어기초사전 (requiere clave gratuita).
      */
     private fun looksLikeKoreanWord(s: String): Boolean =
         s.length in 1..12 && s.all { it in '가'..'힣' }
+
+    /** Gramática fuera del estándar: debe tener hangul y no ser una frase entera. */
+    private fun looksLikeGrammar(s: String): Boolean {
+        val t = s.trim()
+        return t.length in 1..30 && t.any { it in '가'..'힣' || it in 'ㄱ'..'ㆎ' }
+    }
+
+    companion object {
+        private val WORD_KINDS = setOf("sustantivo", "verbo", "adjetivo", "adverbio")
+    }
+}
+
+object CorrectionType {
+    /** Sugerencia de estructura de su nivel; no exige reescritura. */
+    const val IMPROVEMENT = "mejora"
 }
 
 class DiaryRepository(private val db: AppDatabase) {

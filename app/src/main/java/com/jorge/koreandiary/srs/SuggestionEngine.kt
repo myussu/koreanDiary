@@ -6,13 +6,26 @@ import com.jorge.koreandiary.data.db.MemoryDao
 import com.jorge.koreandiary.data.db.MemoryState
 import com.jorge.koreandiary.data.db.StudyDao
 import com.jorge.koreandiary.data.db.Word
+import com.jorge.koreandiary.data.standard.GrammarKeys
+import com.jorge.koreandiary.data.standard.StandardCatalog
+import com.jorge.koreandiary.data.standard.StdGrammar
+import com.jorge.koreandiary.data.standard.StdWord
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-data class Suggestions(val words: List<Word>, val grammar: List<GrammarPoint>) {
-    val isEmpty get() = words.isEmpty() && grammar.isEmpty()
+data class Suggestions(
+    val words: List<Word>,
+    val grammar: List<GrammarPoint>,
+    /** Posibles lagunas: del estándar, de tu nivel o del anterior, que no están en tu base. */
+    val gapWords: List<StdWord> = emptyList(),
+    val gapGrammar: List<StdGrammar> = emptyList(),
+) {
+    val isEmpty get() = words.isEmpty() && grammar.isEmpty() && gapWords.isEmpty() && gapGrammar.isEmpty()
 
-    /** Formato guardado en DiaryPage.suggestedItems: "word:12,grammar:3". */
+    /** Formato guardado en DiaryPage.suggestedItems: "word:12,grammar:3,stdword:465,stdgrammar:12". */
     fun encode(): String =
-        (words.map { "${ItemType.WORD}:${it.id}" } + grammar.map { "${ItemType.GRAMMAR}:${it.id}" })
+        (words.map { "${ItemType.WORD}:${it.id}" } + grammar.map { "${ItemType.GRAMMAR}:${it.id}" } +
+            gapWords.map { "${ItemType.STD_WORD}:${it.id}" } + gapGrammar.map { "${ItemType.STD_GRAMMAR}:${it.id}" })
             .joinToString(",")
 }
 
@@ -28,25 +41,60 @@ data class Suggestions(val words: List<Word>, val grammar: List<GrammarPoint>) {
 class SuggestionEngine(
     private val studyDao: StudyDao,
     private val memoryDao: MemoryDao,
+    private val catalog: StandardCatalog,
 ) {
     suspend fun suggest(
         now: Long,
         grammarLevels: List<String>,
+        /** Nivel 1–6 del estándar para buscar lagunas. */
+        standardLevel: Int,
         wordCount: Int = 6,
         grammarCount: Int = 2,
         newWordsPerPage: Int = 2,
+        gapWordCount: Int = 1,
+        gapGrammarCount: Int = 1,
     ): Suggestions {
         val wordStates = memoryDao.allOfType(ItemType.WORD).associateBy { it.itemId }
         val wordIds = pick(studyDao.allWordIds(), wordStates, now, wordCount, newWordsPerPage)
         val words = balanceByType(studyDao.wordsByIds(wordIds), wordIds)
 
         val grammarStates = memoryDao.allOfType(ItemType.GRAMMAR).associateBy { it.itemId }
-        val grammarPool = if (grammarLevels.isEmpty()) emptyList()
-        else studyDao.grammarIdsForLevels(grammarLevels)
+        val grammarPool = studyDao.grammarIdsForLevels(grammarLevels)
         val grammarIds = pick(grammarPool, grammarStates, now, grammarCount, newPerPage = 1)
         val grammar = studyDao.grammarByIds(grammarIds).sortedBy { grammarIds.indexOf(it.id) }
 
-        return Suggestions(words, grammar)
+        val myWordForms = studyDao.allWordForms().toSet()
+        val myGrammar = studyDao.allGrammar()
+        val (gapWords, gapGrammar) = withContext(Dispatchers.Default) {
+            findGaps(myWordForms, myGrammar, standardLevel, gapWordCount, gapGrammarCount)
+        }
+        return Suggestions(words, grammar, gapWords, gapGrammar)
+    }
+
+    /**
+     * Lagunas: ítems del estándar de tu nivel o del anterior que no están en tu base ni has usado.
+     * Es el "punto medio": ni tan básicos como para sabértelos de memoria, ni por encima de tu nivel.
+     */
+    private fun findGaps(
+        myWordForms: Set<String>,
+        myGrammar: List<GrammarPoint>,
+        level: Int,
+        wordCount: Int,
+        grammarCount: Int,
+    ): Pair<List<StdWord>, List<StdGrammar>> {
+        val levels = (level - 1).coerceAtLeast(1)..level.coerceIn(1, 6)
+        val words = catalog.words.asSequence()
+            .filter { it.level in levels && it.type != "otro" && it.word !in myWordForms }
+            .distinctBy { it.word }
+            .toList()
+            .shuffled()
+            .take(wordCount)
+        val myKeys = myGrammar.flatMap { GrammarKeys.keys(listOf(it.pattern) + it.variants.split(" | ")) }.toSet()
+        val grammar = catalog.grammar
+            .filter { g -> g.level in levels && (g.primaryKeys + g.relatedKeys).none { it in myKeys } }
+            .shuffled()
+            .take(grammarCount)
+        return words to grammar
     }
 
     private fun pick(

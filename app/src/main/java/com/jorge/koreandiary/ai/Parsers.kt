@@ -71,20 +71,44 @@ object CorrectionParser {
             )
         }
         val used = json.optJSONArray("usados").mapObjects { o ->
-            val ref = o.str("id")?.takeIf { ITEM_REF.matches(it) } ?: return@mapObjects null
-            UsedItemDto(ref, o.str("forma_base") ?: "", o.str("resultado")?.lowercase() != "incorrecto")
+            // Formato compacto (f, t, ok) y el anterior (forma_base, resultado), por si un chat usa el viejo.
+            val ref = o.str("id")?.takeIf { ITEM_REF.matches(it) }
+            val form = o.str("f") ?: o.str("forma_base") ?: return@mapObjects null
+            val ok = when {
+                o.has("ok") -> o.optBoolean("ok", true)
+                else -> o.str("resultado")?.lowercase() != "incorrecto"
+            }
+            UsedItemDto(ref, form, normalizeKind(o.str("t") ?: o.str("tipo"), form), ok, o.str("significado"))
         }
-        val newWords = json.optJSONArray("nuevos").mapObjects { o ->
+        // Formato anterior: palabras nuevas aparte.
+        val legacyNew = json.optJSONArray("nuevos").mapObjects { o ->
             val base = o.str("forma_base") ?: return@mapObjects null
-            NewWordDto(base, o.str("tipo") ?: "otro", o.str("significado"))
+            UsedItemDto(null, base, normalizeKind(o.str("tipo"), base), true, o.str("significado"))
         }
-        if (sentences.isEmpty() && corrections.isEmpty() && used.isEmpty() && newWords.isEmpty()) {
-            throw ParseException("La respuesta no tiene oraciones, correcciones ni ítems.")
+        val improvements = json.optJSONArray("mejoras").mapObjects { o ->
+            val structure = o.str("estructura") ?: return@mapObjects null
+            ImprovementDto(o.optInt("oracion", 0), structure, o.str("ejemplo") ?: "", o.str("explicacion") ?: "")
+        }.take(2)
+        val allUsed = (used + legacyNew).distinctBy { it.itemRef ?: "${it.kind}:${it.form}" }
+        if (sentences.isEmpty() && corrections.isEmpty() && allUsed.isEmpty()) {
+            throw ParseException("La respuesta no tiene oraciones, correcciones ni ítems usados.")
         }
-        return CorrectionResponse(sentences, corrections, used, newWords)
+        return CorrectionResponse(sentences, corrections, allUsed, improvements)
     }
 
-    private val ITEM_REF = Regex("^[wg]\\d+$")
+    private val ITEM_REF = Regex("^(w|g|sv|sg)\\d+$")
+
+    /** Acepta las claves cortas (n, v, a, adv, g, o) y los nombres largos. */
+    private fun normalizeKind(t: String?, form: String): String = when (t?.lowercase()?.trim()) {
+        "n", "sustantivo", "noun" -> "sustantivo"
+        "v", "verbo", "verb" -> "verbo"
+        "a", "adj", "adjetivo", "adjective" -> "adjetivo"
+        "adv", "adverbio", "adverb" -> "adverbio"
+        "g", "gramatica", "gramática", "grammar" -> "gramatica"
+        "o", "otro", "other" -> "otro"
+        // Sin tipo: si empieza con guion es una terminación.
+        else -> if (form.trimStart().startsWith("-")) "gramatica" else "otro"
+    }
 
     private fun normalizeTense(t: String?): String = when (t?.lowercase()) {
         "pasado", "past" -> "pasado"

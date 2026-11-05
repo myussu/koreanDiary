@@ -69,7 +69,7 @@ fun HomeScreen(
                 creating = true
                 scope.launch {
                     val s = container.settings.state.value
-                    val suggestions = container.suggestions.suggest(System.currentTimeMillis(), s.grammarLevelList)
+                    val suggestions = container.suggestions.suggest(System.currentTimeMillis(), s.grammarLevelList, s.standardLevel)
                     val id = container.diary.newPage(System.currentTimeMillis(), suggestions.encode())
                     creating = false
                     onOpenPage(id)
