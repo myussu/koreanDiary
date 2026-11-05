@@ -59,7 +59,9 @@ import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkTool
 import com.jorge.koreandiary.ink.rememberInkScrollState
 import com.jorge.koreandiary.settings.ProviderId
+import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.ui.AppButton
+import com.jorge.koreandiary.ui.AppMascot
 import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
@@ -74,6 +76,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val corrections by vm.corrections.collectAsStateWithLifecycle()
     val howTo by vm.howTo.collectAsStateWithLifecycle()
+    val reaction by vm.mascotMood.collectAsStateWithLifecycle()
     var howToOpen by remember { mutableStateOf(false) }
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val paper = LocalPaperStyle.current
@@ -111,7 +114,15 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             page?.let { AppTag(it.status, accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
         }
 
-        SuggestionsBar(state.suggestions, onHowTo = { howToOpen = !howToOpen })
+        // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
+        val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking) MascotMood.THINKING else reaction
+        SuggestionsBar(
+            state.suggestions,
+            onHowTo = { howToOpen = !howToOpen },
+            mascot = if (settings.showMascot) {
+                { AppMascot(container.mascotPack, mascotMood, 36.dp, Modifier.padding(end = 6.dp)) }
+            } else null,
+        )
 
         if (howToOpen || howTo != HowTo.Idle) {
             HowToSayPanel(
@@ -237,11 +248,12 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SuggestionsBar(chips: List<SuggestionChip>, onHowTo: () -> Unit) {
+private fun SuggestionsBar(chips: List<SuggestionChip>, onHowTo: () -> Unit, mascot: (@Composable () -> Unit)? = null) {
     var expanded by remember { mutableStateOf(true) }
     var selected by remember { mutableStateOf<SuggestionChip?>(null) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            mascot?.invoke()
             Text("SUGERENCIAS", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
             AppTextButton(onClick = onHowTo) { Text("¿Cómo digo?") }
             AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }

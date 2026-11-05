@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,7 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import kotlinx.coroutines.launch
+import com.jorge.koreandiary.mascot.MascotBrain
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -46,6 +50,7 @@ fun HomeScreen(
 ) {
     val pages by container.diary.pageSummaries.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
+    val settings by container.settings.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var creating by remember { mutableStateOf(false) }
 
@@ -56,6 +61,9 @@ fun HomeScreen(
             AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
+        if (settings.showMascot) {
+            MascotGreeting(container, pages.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
+        }
         if (tenses.isNotEmpty()) {
             val byTense = tenses.associate { it.tense to it.total }
             Text(
@@ -103,6 +111,40 @@ fun HomeScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** La mascota saluda según tu racha y la hora. Toca el globo para ver la traducción. */
+@Composable
+private fun MascotGreeting(container: AppContainer, dates: List<LocalDate>) {
+    val today = LocalDate.now()
+    val line = remember(dates, today) { MascotBrain.greeting(dates, today, LocalTime.now().hour) }
+    val streak = remember(dates, today) { MascotBrain.streak(dates, today) }
+    var translated by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        AppMascot(container.mascotPack, line.mood, 88.dp)
+        Column(
+            Modifier.weight(1f).padding(start = 12.dp)
+                .border(1.dp, scheme.outlineVariant)
+                .clickable { translated = !translated }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text(line.korean, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (translated) line.spanish else "Toca para traducir",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+            if (streak > 0) {
+                Text(
+                    "Racha: $streak ${if (streak == 1) "día" else "días"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = scheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
         }
     }

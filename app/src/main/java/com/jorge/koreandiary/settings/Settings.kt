@@ -52,6 +52,7 @@ data class AppSettings(
     /** Esfuerzo de razonamiento: low, medium o high. */
     val azureEffort: String = "low",
     val azureDailyLimit: Int = 30,
+    val showMascot: Boolean = true,
 ) {
     val grammarLevelList get() = grammarLevels.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
@@ -85,6 +86,7 @@ class SettingsStore(context: Context) {
         azureDeployment = prefs.getString("azureDeployment", "") ?: "",
         azureEffort = prefs.getString("azureEffort", "low") ?: "low",
         azureDailyLimit = prefs.getInt("azureDailyLimit", 30),
+        showMascot = prefs.getBoolean("showMascot", true),
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -103,6 +105,7 @@ class SettingsStore(context: Context) {
             .putString("azureDeployment", s.azureDeployment)
             .putString("azureEffort", s.azureEffort)
             .putInt("azureDailyLimit", s.azureDailyLimit)
+            .putBoolean("showMascot", s.showMascot)
             .apply()
         _state.value = s
     }

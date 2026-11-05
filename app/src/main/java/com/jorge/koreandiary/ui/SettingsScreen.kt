@@ -35,7 +35,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.settings.DarkPaper
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.ThemeMode
@@ -120,6 +123,10 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 ) { container.settings.update { it.copy(darkPaper = DarkPaper.PURE_BLACK) } }
             }
+        }
+
+        Section("Mascota") {
+            MascotSettings(container)
         }
 
         Section("Escritura") {
@@ -223,6 +230,50 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
 
         AppButton(onClick = { save(); onBack() }, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) { Text("Guardar ajustes") }
     }
+}
+
+@Composable
+private fun MascotSettings(container: AppContainer) {
+    val s by container.settings.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val version by container.mascotPack.version.collectAsStateWithLifecycle()
+    val hasCustom = remember(version) { container.mascotPack.hasCustom() }
+    var result by remember { mutableStateOf<String?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val r = container.mascotPack.import(uris)
+            result = buildString {
+                if (r.imported.isEmpty()) append("No se reconoció ninguna imagen. ")
+                else append("Importadas: ${r.imported.joinToString { it.storedName }}. ")
+                if (r.imported.isNotEmpty() && r.missing.isNotEmpty()) append("Sin imagen (usarán “idle”): ${r.missing.joinToString { it.storedName }}. ")
+                if (MascotMood.IDLE !in r.imported && !container.mascotPack.hasCustom()) append("Falta idle.png, que es obligatoria. ")
+                if (r.ignored.isNotEmpty()) append("Ignoradas: ${r.ignored.take(5).joinToString()}.")
+            }.trim()
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        AppMascot(container.mascotPack, MascotMood.HAPPY, 56.dp)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text("Mostrar mascota")
+            Text("Saluda en coreano en el inicio y reacciona a tus revisiones.", style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = s.showMascot, onCheckedChange = { v -> container.settings.update { it.copy(showMascot = v) } })
+    }
+    Text(
+        "Mascota personalizada: elige imágenes PNG o un ZIP. Nómbralas idle, feliz, pensando, sorprendida, animo y dormida " +
+            "(solo idle es obligatoria). Se guardan solo en este celular.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        AppOutlinedButton(onClick = { picker.launch(arrayOf("image/*", "application/zip")) }) { Text("Importar mascota") }
+        if (hasCustom) AppTextButton(onClick = {
+            container.mascotPack.clear()
+            result = "Volviste a la gotita de tinta."
+        }) { Text("Usar la original") }
+    }
+    result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 }
 
 /** Campo para una clave cifrada: nunca se muestra, solo se reemplaza o se borra. */

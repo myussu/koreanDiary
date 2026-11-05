@@ -24,6 +24,7 @@ import com.jorge.koreandiary.ink.InkSerializer
 import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
+import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.ink.strokesNear
 import com.jorge.koreandiary.settings.ProviderId
 import kotlinx.coroutines.Dispatchers
@@ -80,6 +81,20 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     val corrections: StateFlow<List<Correction>> = c.diary.corrections(pageId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Reacción de la mascota; vuelve a "normal" sola tras unos segundos. */
+    private val _mascotMood = MutableStateFlow(MascotMood.IDLE)
+    val mascotMood: StateFlow<MascotMood> = _mascotMood.asStateFlow()
+    private var mascotJob: Job? = null
+
+    private fun react(mood: MascotMood, holdMs: Long = 7_000) {
+        mascotJob?.cancel()
+        _mascotMood.value = mood
+        mascotJob = viewModelScope.launch {
+            delay(holdMs)
+            _mascotMood.value = MascotMood.IDLE
+        }
+    }
 
     private val _howTo = MutableStateFlow<HowTo>(HowTo.Idle)
     val howTo: StateFlow<HowTo> = _howTo.asStateFlow()
@@ -306,6 +321,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val naturalTags = r.natural?.let { c.study.annotate(it.grammar, emptyList()) } ?: emptyList()
         val wordTags = c.study.annotate(emptyList(), r.words)
         _howTo.value = HowTo.Result(r, mineTags, naturalTags, wordTags)
+        react(MascotMood.SURPRISED, holdMs = 4_000)
         // Lo que viste aquí pasa a "sugerido" en esta página: si luego lo usas, FSRS lo cuenta como
         // reconocimiento ("Hard"), no como recuerdo libre.
         addSuggested((mineTags + naturalTags + wordTags).mapNotNull { it.ref })
@@ -394,6 +410,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             if (summary.improvements > 0) add("${summary.improvements} mejoras sugeridas")
             if (summary.pendingWords > 0) add("${summary.pendingWords} por revisar en Estudio")
         }
+        react(
+            when {
+                summary.corrections == 0 -> MascotMood.HAPPY
+                summary.newWords + summary.newGrammar > 0 -> MascotMood.SURPRISED
+                else -> MascotMood.ENCOURAGE
+            }
+        )
         val hint = if (summary.corrections > 0) " Reescribe las correcciones debajo y pulsa “Verificar”." else ""
         setPhase(Phase.Writing, parts.joinToString(" · ") + "." + hint)
     }
@@ -426,6 +449,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                         ok++
                     }
                 }
+                react(
+                    when {
+                        ok == pending.size -> MascotMood.HAPPY
+                        ok > 0 -> MascotMood.ENCOURAGE
+                        else -> MascotMood.IDLE
+                    }
+                )
                 val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
                 setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
             } catch (e: Exception) {
@@ -438,7 +468,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     /** Para cuando el reconocimiento falla aunque lo hayas reescrito bien. */
     fun markRewritten(correction: Correction) {
-        viewModelScope.launch { c.diary.markRewritten(correction) }
+        viewModelScope.launch {
+            c.diary.markRewritten(correction)
+            val left = c.diary.correctionsNow(pageId).count { it.status == CorrectionStatus.PENDING }
+            if (left == 0) react(MascotMood.HAPPY)
+        }
     }
 
     private fun providerName(id: String) = when (id) {

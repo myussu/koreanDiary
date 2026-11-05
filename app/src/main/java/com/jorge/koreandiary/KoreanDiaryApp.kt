@@ -9,6 +9,7 @@ import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.standard.StandardCatalog
 import com.jorge.koreandiary.ink.HandwritingRecognizer
+import com.jorge.koreandiary.mascot.MascotPack
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.SecretStore
 import com.jorge.koreandiary.settings.SettingsStore
@@ -30,6 +31,7 @@ class AppContainer(val app: Application) {
     val secrets = SecretStore(app)
     val recognizer by lazy { HandwritingRecognizer() }
     val updater = Updater(app)
+    val mascotPack = MascotPack(app)
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
