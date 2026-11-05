@@ -9,4 +9,4 @@
 - La compilación se verifica en GitHub Actions (`.github/workflows/android.yml`), que publica el APK en el release `latest`.
 - Lógica pura (FSRS, parsers) debe tener tests en `app/src/test`.
 - Commits sin líneas de atribución: nada de `Co-Authored-By` ni `Claude-Session`.
-- Diseño: botones y superficies cuadrados y minimalistas (usar `AppButton`, `AppOutlinedButton`, `AppTextButton` de `ui/Components.kt`). Colores siempre desde `MaterialTheme.colorScheme` o `PaperStyle`, nunca fijos en las pantallas, para que funcione el modo oscuro.
+- Diseño: botones y superficies cuadrados y minimalistas (usar `AppButton`, `AppOutlinedButton`, `AppTextButton` de `ui/Components.kt`). Colores siempre desde `MaterialTheme.colorScheme` o `PaperStyle`, nunca fijos en las pantallas, para que funcione el modo oscuro. La raíz es un `Surface` que fija `contentColor`; no la reemplaces por un `Box`.

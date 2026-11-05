@@ -6,12 +6,12 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,12 +51,16 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
             KoreanDiaryTheme(dark = dark, darkPaper = settings.darkPaper) {
-                Box(
-                    Modifier.fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                        .safeDrawingPadding()
+                // Surface (no Box) para que todo el texto herede el color del tema: sin esto,
+                // Text usa negro por defecto y en modo oscuro queda casi invisible.
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.onBackground,
                 ) {
-                    AppNavigation(container)
+                    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        AppNavigation(container)
+                    }
                 }
             }
         }
