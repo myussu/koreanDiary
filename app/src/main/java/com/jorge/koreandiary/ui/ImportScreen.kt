@@ -47,6 +47,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var level by remember { mutableStateOf(container.settings.state.value.level) }
     var pasted by remember { mutableStateOf("") }
+    var pastedTxt by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<ImportPayload?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -83,6 +84,21 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                 )
                 OutlinedTextField(value = level, onValueChange = { level = it }, label = { Text("Nivel de las unidades (p. ej. 3A)") }, singleLine = true)
                 Button(onClick = { picker.launch(arrayOf("text/*")) }) { Text("Elegir archivo TXT") }
+                Text("…o pega el contenido aquí:", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = pastedTxt,
+                    onValueChange = { pastedTxt = it },
+                    label = { Text("Texto de la lista de gramática") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 240.dp),
+                )
+                OutlinedButton(onClick = {
+                    try {
+                        preview = GrammarTxtParser.parse(pastedTxt, level.trim().ifEmpty { "3A" })
+                        message = null
+                    } catch (e: ParseException) {
+                        message = e.message
+                    }
+                }, enabled = pastedTxt.isNotBlank()) { Text("Leer texto pegado") }
             }
         }
 
@@ -130,6 +146,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                             message = "Guardado: ${r.wordsAdded} palabras y ${r.grammarAdded} puntos de gramática. ${r.duplicates} repetidos omitidos."
                             preview = null
                             pasted = ""
+                            pastedTxt = ""
                         }
                     }) { Text("Guardar") }
                 }
