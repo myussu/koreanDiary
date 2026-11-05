@@ -56,6 +56,7 @@ import com.jorge.koreandiary.data.db.CorrectionStatus
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkTool
+import com.jorge.koreandiary.ink.rememberInkScrollState
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppOutlinedButton
@@ -79,6 +80,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val context = LocalContext.current
     var tool by remember { mutableStateOf(InkTool.PEN) }
     val lineHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
+    val inkScroll = rememberInkScrollState()
 
     LaunchedEffect(vm) {
         vm.shareIntents.collect { context.startActivity(it) }
@@ -86,6 +88,13 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 
     val page = state.page
     val pendingCorrections = corrections.count { it.status == CorrectionStatus.PENDING }
+
+    // Al llegar correcciones (o al abrir una página revisada), baja hasta donde toca reescribir.
+    LaunchedEffect(page?.id, corrections.size, page?.reviewedLineCount) {
+        if (page != null && page.status != PageStatus.DRAFT && corrections.isNotEmpty()) {
+            inkScroll.scrollToLine(page.reviewedLineCount)
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(scheme.background)) {
         Row(
@@ -139,6 +148,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 reviewedTint = paper.reviewedTint,
                 onStrokeFinished = vm::addStroke,
                 onErase = vm::eraseAt,
+                scroll = inkScroll,
                 // clipToBounds: si el lienzo se achica (panel abierto), los trazos no se dibujan encima de los botones.
                 modifier = Modifier.fillMaxSize().clipToBounds().onSizeChanged {
                     vm.onCanvasSized(it.width.toFloat(), it.height.toFloat(), lineHeightPx)
@@ -366,38 +376,51 @@ private fun AnnotatedTags(tags: List<AnnotatedItem>) {
 @Composable
 private fun CorrectionsPanel(corrections: List<Correction>) {
     val scheme = MaterialTheme.colorScheme
+    var expanded by remember { mutableStateOf(true) }
+    val pending = corrections.count { it.status == CorrectionStatus.PENDING }
     Surface(color = scheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-        LazyColumn(
-            Modifier.heightIn(max = 190.dp).padding(horizontal = 12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(corrections, key = { it.id }) { c ->
-                if (c.status == CorrectionStatus.SUGGESTION) {
-                    Row {
-                        Text("+", color = scheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
-                        Column {
-                            Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
-                            Text("Mejora de tu nivel · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                        }
-                    }
-                    return@items
-                }
-                val done = c.status == CorrectionStatus.REWRITTEN
-                Row {
-                    Text(
-                        if (done) "✓" else "·",
-                        color = if (done) scheme.tertiary else scheme.secondary,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(18.dp),
-                    )
-                    Column {
+        Column {
+            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (pending > 0) "CORRECCIONES · $pending por reescribir" else "CORRECCIONES",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                // Plegar libera espacio para escribir; la página igual se desplaza con el dedo.
+                AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Plegar" else "Ver") }
+            }
+            if (expanded) LazyColumn(
+                Modifier.heightIn(max = 190.dp).padding(horizontal = 12.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(corrections, key = { it.id }) { c ->
+                    if (c.status == CorrectionStatus.SUGGESTION) {
                         Row {
-                            Text(c.original, textDecoration = TextDecoration.LineThrough, color = scheme.error)
-                            Text("  →  ", color = scheme.onSurfaceVariant)
-                            Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.tertiary)
+                            Text("+", color = scheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
+                            Column {
+                                Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
+                                Text("Mejora de tu nivel · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                            }
                         }
-                        Text("${c.type} · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        return@items
+                    }
+                    val done = c.status == CorrectionStatus.REWRITTEN
+                    Row {
+                        Text(
+                            if (done) "✓" else "·",
+                            color = if (done) scheme.tertiary else scheme.secondary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(18.dp),
+                        )
+                        Column {
+                            Row {
+                                Text(c.original, textDecoration = TextDecoration.LineThrough, color = scheme.error)
+                                Text("  →  ", color = scheme.onSurfaceVariant)
+                                Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.tertiary)
+                            }
+                            Text("${c.type} · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
