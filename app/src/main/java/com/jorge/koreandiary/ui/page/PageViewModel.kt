@@ -189,27 +189,33 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             val settings = c.settings.state.value
             val items = c.study.promptItems(ItemRef.decodeList(page.suggestedItems))
 
-            if (provider == ProviderId.GEMINI) {
-                val gemini = c.geminiProvider()
-                if (gemini == null) {
-                    setPhase(Phase.Writing, "Falta tu clave de Gemini en Configuración. La página quedó pendiente.")
+            if (provider != ProviderId.SHARE) {
+                val name = providerName(provider)
+                val api = c.apiProvider(provider)
+                if (api == null) {
+                    setPhase(Phase.Writing, "Falta configurar $name en Ajustes. La página quedó pendiente.")
                     return@launch
                 }
-                if (c.settings.usageToday(ProviderId.GEMINI) >= settings.geminiDailyLimit) {
-                    setPhase(Phase.Writing, "Llegaste al límite diario de Gemini (${settings.geminiDailyLimit}). Usa “Compartir con un chat”.")
+                val limit = settings.dailyLimit(provider)
+                if (c.settings.usageToday(provider) >= limit) {
+                    setPhase(Phase.Writing, "Llegaste al límite diario de $name ($limit). Usa “Compartir con un chat”.")
                     return@launch
                 }
-                setPhase(Phase.Busy("Gemini está revisando tu página…"))
+                setPhase(Phase.Busy("$name está revisando tu página…"))
                 try {
                     val prompt = Prompts.correction(settings.profile, settings.level, items, text, hasImage = false)
-                    val raw = gemini.complete(CorrectionRequest(prompt))
-                    c.settings.registerUse(ProviderId.GEMINI)
+                    val raw = api.complete(CorrectionRequest(prompt))
+                    c.settings.registerUse(provider)
                     applyResponse(raw)
                 } catch (e: ProviderException) {
                     val msg = if (e.offline) "Sin conexión. La página quedó pendiente de revisión." else e.message
                     setPhase(Phase.Writing, msg)
                 } catch (e: ParseException) {
-                    setPhase(Phase.Writing, "La respuesta de Gemini no se pudo leer: ${e.message}")
+                    setPhase(Phase.Writing, "La respuesta de $name no se pudo leer: ${e.message}")
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    setPhase(Phase.Writing, "Error inesperado con $name: ${e.message ?: e.javaClass.simpleName}")
                 }
             } else {
                 val prompt = Prompts.correction(settings.profile, settings.level, items, text, hasImage = true)
@@ -281,6 +287,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     private fun normalize(s: String) = s.filter { it.isLetterOrDigit() }
+
+    private fun providerName(id: String) = when (id) {
+        ProviderId.GEMINI -> "Gemini"
+        ProviderId.AZURE -> "Azure OpenAI"
+        else -> id
+    }
 
     private fun setPhase(phase: Phase, message: String? = _state.value.message) =
         _state.update { it.copy(phase = phase, message = message) }

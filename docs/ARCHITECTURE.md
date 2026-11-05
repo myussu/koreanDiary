@@ -6,7 +6,7 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 
 - **Objetivo:** diario manuscrito en coreano (escritura y lectura), en ratos cortos y en silencio. Sin listening ni speaking.
 - **Flujo:** página nueva → sugerencias FSRS (sin IA) → escribir con S Pen → Revisar → ML Kit reconoce línea por línea → confirmar texto → proveedor de IA → correcciones arriba → reescribir debajo → Verificar (comparación local, sin IA).
-- **Proveedores:** interfaz `CorrectionProvider`. MVP: Gemini (Interactions API, capa gratuita) y “Compartir con un chat” (Claude/ChatGPT, copiar y pegar). Futuros: Azure, servidor propio.
+- **Proveedores:** interfaz `CorrectionProvider`. Gemini (Interactions API, capa gratuita), Azure OpenAI (API v1 + Responses API, despliegue recomendado `gpt-5.6-luna` en Global Standard, razonamiento bajo) y “Compartir con un chat” (Claude/ChatGPT, copiar y pegar). Futuro: servidor propio.
 - **Contrato JSON:** `oraciones`, `correcciones`, `usados` (con ids `w12`/`g3`), `nuevos`. Ver `ai/Prompts.kt` y `ai/Parsers.kt`.
 - **FSRS-6:** el uso en el diario es el repaso. Correcto sin sugerencia = Good; correcto tras verlo sugerido = Hard; incorrecto = Again; sugerido y no usado = sin calificación.
 - **Palabras nuevas:** se agregan solas si son hangul válido; si no, quedan en “Por revisar”. Pendiente: validar con la API del 한국어기초사전.

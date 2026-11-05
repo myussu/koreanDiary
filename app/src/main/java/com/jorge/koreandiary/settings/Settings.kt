@@ -30,6 +30,7 @@ object DarkPaper {
 
 object ProviderId {
     const val GEMINI = "gemini"
+    const val AZURE = "azure"
     const val SHARE = "share"
 }
 
@@ -44,8 +45,21 @@ data class AppSettings(
     val stylusOnly: Boolean = true,
     val themeMode: String = ThemeMode.SYSTEM,
     val darkPaper: String = DarkPaper.CALLIGRAPHY,
+    /** Endpoint del recurso, p. ej. https://mi-recurso.openai.azure.com */
+    val azureEndpoint: String = "",
+    /** Nombre del despliegue (no del modelo), p. ej. "luna". */
+    val azureDeployment: String = "",
+    /** Esfuerzo de razonamiento: low, medium o high. */
+    val azureEffort: String = "low",
+    val azureDailyLimit: Int = 30,
 ) {
     val grammarLevelList get() = grammarLevels.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun dailyLimit(provider: String): Int = when (provider) {
+        ProviderId.GEMINI -> geminiDailyLimit
+        ProviderId.AZURE -> azureDailyLimit
+        else -> Int.MAX_VALUE
+    }
 }
 
 /** Preferencias simples en SharedPreferences, expuestas como StateFlow para Compose. */
@@ -64,6 +78,10 @@ class SettingsStore(context: Context) {
         stylusOnly = prefs.getBoolean("stylusOnly", true),
         themeMode = prefs.getString("themeMode", ThemeMode.SYSTEM) ?: ThemeMode.SYSTEM,
         darkPaper = prefs.getString("darkPaper", DarkPaper.CALLIGRAPHY) ?: DarkPaper.CALLIGRAPHY,
+        azureEndpoint = prefs.getString("azureEndpoint", "") ?: "",
+        azureDeployment = prefs.getString("azureDeployment", "") ?: "",
+        azureEffort = prefs.getString("azureEffort", "low") ?: "low",
+        azureDailyLimit = prefs.getInt("azureDailyLimit", 30),
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -78,6 +96,10 @@ class SettingsStore(context: Context) {
             .putBoolean("stylusOnly", s.stylusOnly)
             .putString("themeMode", s.themeMode)
             .putString("darkPaper", s.darkPaper)
+            .putString("azureEndpoint", s.azureEndpoint)
+            .putString("azureDeployment", s.azureDeployment)
+            .putString("azureEffort", s.azureEffort)
+            .putInt("azureDailyLimit", s.azureDailyLimit)
             .apply()
         _state.value = s
     }
@@ -146,6 +168,7 @@ class SecretStore(context: Context) {
 
     companion object {
         const val GEMINI_KEY = "gemini_api_key"
+        const val AZURE_KEY = "azure_openai_api_key"
         private const val ALIAS = "korean_diary_secrets"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val IV_SIZE = 12

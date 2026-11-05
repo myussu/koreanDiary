@@ -160,12 +160,21 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     }
 
     when (val phase = state.phase) {
-        is Phase.Confirm -> ConfirmDialog(
-            initial = phase.text,
-            defaultProvider = settings.defaultProvider,
-            onConfirm = vm::confirm,
-            onDismiss = vm::cancelConfirm,
-        )
+        is Phase.Confirm -> {
+            // Solo proveedores configurados; el predeterminado primero.
+            val options = listOf(
+                ProviderId.SHARE to "Compartir con un chat",
+                ProviderId.GEMINI to "Gemini",
+                ProviderId.AZURE to "Azure OpenAI",
+            ).filter { container.isConfigured(it.first) }
+                .sortedByDescending { it.first == settings.defaultProvider }
+            ConfirmDialog(
+                initial = phase.text,
+                options = options,
+                onConfirm = vm::confirm,
+                onDismiss = vm::cancelConfirm,
+            )
+        }
         Phase.AwaitingPaste -> PasteDialog(onSubmit = vm::submitPasted, onDismiss = vm::cancelConfirm)
         else -> Unit
     }
@@ -243,7 +252,7 @@ private fun CorrectionsPanel(corrections: List<Correction>) {
 @Composable
 private fun ConfirmDialog(
     initial: String,
-    defaultProvider: String,
+    options: List<Pair<String, String>>,
     onConfirm: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -252,24 +261,17 @@ private fun ConfirmDialog(
         onDismissRequest = onDismiss,
         title = { Text("¿Esto es lo que escribiste?") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Corrige lo que se haya leído mal antes de enviarlo.", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.padding(4.dp))
                 OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), minLines = 3)
-            }
-        },
-        confirmButton = {
-            val geminiFirst = defaultProvider == ProviderId.GEMINI
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (geminiFirst) {
-                    AppOutlinedButton(onClick = { onConfirm(text, ProviderId.SHARE) }) { Text("Compartir") }
-                    AppButton(onClick = { onConfirm(text, ProviderId.GEMINI) }) { Text("Gemini") }
-                } else {
-                    AppOutlinedButton(onClick = { onConfirm(text, ProviderId.GEMINI) }) { Text("Gemini") }
-                    AppButton(onClick = { onConfirm(text, ProviderId.SHARE) }) { Text("Compartir") }
+                Text("REVISAR CON", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+                options.forEachIndexed { i, (id, label) ->
+                    if (i == 0) AppButton(onClick = { onConfirm(text, id) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    else AppOutlinedButton(onClick = { onConfirm(text, id) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
                 }
             }
         },
+        confirmButton = {},
         dismissButton = { AppTextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }

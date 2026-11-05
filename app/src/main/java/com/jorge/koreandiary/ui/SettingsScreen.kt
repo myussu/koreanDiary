@@ -2,6 +2,7 @@ package com.jorge.koreandiary.ui
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -34,10 +35,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.ai.CorrectionRequest
 import com.jorge.koreandiary.settings.DarkPaper
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.settings.SecretStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
@@ -49,8 +52,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     var grammarLevels by remember { mutableStateOf(s.grammarLevels) }
     var model by remember { mutableStateOf(s.geminiModel) }
     var limit by remember { mutableStateOf(s.geminiDailyLimit.toString()) }
-    var apiKey by remember { mutableStateOf("") }
-    var hasKey by remember { mutableStateOf(container.secrets.has(SecretStore.GEMINI_KEY)) }
+    var azureEndpoint by remember { mutableStateOf(s.azureEndpoint) }
+    var azureDeployment by remember { mutableStateOf(s.azureDeployment) }
+    var azureLimit by remember { mutableStateOf(s.azureDailyLimit.toString()) }
     var modelStatus by remember { mutableStateOf<String?>(null) }
 
     fun save() = container.settings.update {
@@ -60,6 +64,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             grammarLevels = grammarLevels,
             geminiModel = model.trim().ifEmpty { "gemini-3.5-flash-lite" },
             geminiDailyLimit = limit.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+            azureEndpoint = azureEndpoint.trim(),
+            azureDeployment = azureDeployment.trim(),
+            azureDailyLimit = azureLimit.toIntOrNull()?.coerceAtLeast(1) ?: 30,
         )
     }
 
@@ -142,44 +149,131 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
 
         Section("Corrección") {
             Text("Proveedor por defecto", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(ProviderId.SHARE to "Compartir con un chat", ProviderId.GEMINI to "Gemini (API)").forEach { (id, label) ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
+                listOf(
+                    ProviderId.SHARE to "Compartir con un chat",
+                    ProviderId.GEMINI to "Gemini",
+                    ProviderId.AZURE to "Azure OpenAI",
+                ).forEach { (id, label) ->
                     AppToggle(label, s.defaultProvider == id) { container.settings.update { it.copy(defaultProvider = id) } }
                 }
             }
             Text(
-                if (hasKey) "Clave de Gemini guardada (cifrada en el Keystore)." else "Sin clave de Gemini. Créala gratis en aistudio.google.com.",
+                "Al revisar una página solo aparecen los proveedores configurados.",
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedTextField(
-                value = apiKey, onValueChange = { apiKey = it },
-                label = { Text(if (hasKey) "Reemplazar clave" else "Clave de API de Gemini") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AppButton(onClick = {
-                    container.secrets.put(SecretStore.GEMINI_KEY, apiKey.trim())
-                    apiKey = ""
-                    hasKey = container.secrets.has(SecretStore.GEMINI_KEY)
-                }, enabled = apiKey.isNotBlank()) { Text("Guardar clave") }
-                if (hasKey) AppTextButton(onClick = {
-                    container.secrets.put(SecretStore.GEMINI_KEY, null)
-                    hasKey = false
-                }) { Text("Borrar clave") }
-            }
-            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Modelo de Gemini") }, singleLine = true)
+        }
+
+        Section("Gemini") {
+            Text("Clave gratuita en aistudio.google.com/apikey. En el plan gratuito Google puede usar el contenido.", style = MaterialTheme.typography.bodySmall)
+            SecretKeyField(container, SecretStore.GEMINI_KEY, "Clave de API de Gemini")
+            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Modelo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
                 value = limit, onValueChange = { limit = it.filter(Char::isDigit) },
                 label = { Text("Límite diario de revisiones") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
             Text("Usadas hoy: ${container.settings.usageToday(ProviderId.GEMINI)}", style = MaterialTheme.typography.bodySmall)
+            TestConnection(container, ProviderId.GEMINI, beforeTest = ::save)
+        }
+
+        Section("Azure OpenAI") {
+            Text("Azure no usa tus datos para entrenar modelos. Recomendado: gpt-5.6-luna en Global Standard.", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = azureEndpoint, onValueChange = { azureEndpoint = it },
+                label = { Text("Endpoint") },
+                placeholder = { Text("https://mi-recurso.openai.azure.com") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            )
+            OutlinedTextField(
+                value = azureDeployment, onValueChange = { azureDeployment = it },
+                label = { Text("Nombre del despliegue") },
+                placeholder = { Text("luna") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
+            SecretKeyField(container, SecretStore.AZURE_KEY, "Clave de API de Azure")
+            Text("Razonamiento", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("low" to "Bajo", "medium" to "Medio", "high" to "Alto").forEach { (id, label) ->
+                    AppToggle(label, s.azureEffort == id) { container.settings.update { it.copy(azureEffort = id) } }
+                }
+            }
+            Text("Bajo es más rápido y barato; sube solo si las correcciones se quedan cortas.", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = azureLimit, onValueChange = { azureLimit = it.filter(Char::isDigit) },
+                label = { Text("Límite diario de revisiones") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            Text("Usadas hoy: ${container.settings.usageToday(ProviderId.AZURE)}", style = MaterialTheme.typography.bodySmall)
+            TestConnection(container, ProviderId.AZURE, beforeTest = ::save)
         }
 
         AppButton(onClick = { save(); onBack() }, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) { Text("Guardar ajustes") }
     }
+}
+
+/** Campo para una clave cifrada: nunca se muestra, solo se reemplaza o se borra. */
+@Composable
+private fun SecretKeyField(container: AppContainer, name: String, label: String) {
+    var value by remember { mutableStateOf("") }
+    var saved by remember { mutableStateOf(container.secrets.has(name)) }
+    Text(
+        if (saved) "Clave guardada (cifrada en el Keystore)." else "Sin clave.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    OutlinedTextField(
+        value = value, onValueChange = { value = it },
+        label = { Text(if (saved) "Reemplazar clave" else label) },
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        singleLine = true, modifier = Modifier.fillMaxWidth(),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        AppButton(onClick = {
+            container.secrets.put(name, value.trim())
+            value = ""
+            saved = container.secrets.has(name)
+        }, enabled = value.isNotBlank()) { Text("Guardar clave") }
+        if (saved) AppTextButton(onClick = {
+            container.secrets.put(name, null)
+            saved = false
+        }) { Text("Borrar clave") }
+    }
+}
+
+/** Manda una petición mínima para comprobar endpoint, clave y modelo. No cuenta para el límite diario. */
+@Composable
+private fun TestConnection(container: AppContainer, provider: String, beforeTest: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var result by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    AppOutlinedButton(onClick = {
+        beforeTest()
+        val api = container.apiProvider(provider)
+        if (api == null) {
+            result = "Falta completar la configuración."
+            return@AppOutlinedButton
+        }
+        testing = true
+        result = "Probando…"
+        scope.launch {
+            result = try {
+                val reply = api.complete(CorrectionRequest("Responde solo con este JSON, sin nada más: {\"ok\": true}"))
+                if ("ok" in reply) "Conexión correcta." else "Respondió, pero algo raro: ${reply.take(120)}"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.message ?: e.javaClass.simpleName
+            } finally {
+                testing = false
+            }
+        }
+    }, enabled = !testing) { Text("Probar conexión") }
+    result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
 }
 
 /** Muestra del papel: fondo, una línea y texto con el color de tinta. */
