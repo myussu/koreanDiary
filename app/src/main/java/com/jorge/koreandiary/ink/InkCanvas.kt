@@ -31,7 +31,12 @@ import androidx.compose.ui.input.pointer.positionChange
 import kotlin.math.floor
 import kotlin.math.hypot
 
-enum class InkTool { PEN, ERASER }
+enum class InkTool {
+    PEN,
+    ERASER,
+    /** Tocar una línea inserta una vacía ahí y baja todo lo de abajo (como "insertar fila"). */
+    INSERT_LINE,
+}
 
 /** Líneas vacías que siempre quedan debajo de lo último escrito o revisado. */
 private const val EXTRA_LINES = 6
@@ -88,11 +93,13 @@ fun InkCanvas(
     onStrokeFinished: (InkStroke) -> Unit,
     onErase: (Offset) -> Unit,
     modifier: Modifier = Modifier,
+    onInsertLine: (Int) -> Unit = {},
     scroll: InkScrollState = rememberInkScrollState(),
 ) {
     val live = remember { mutableStateListOf<InkPoint>() }
     val currentOnStroke by rememberUpdatedState(onStrokeFinished)
     val currentOnErase by rememberUpdatedState(onErase)
+    val currentOnInsertLine by rememberUpdatedState(onInsertLine)
     val strokePaths = remember(strokes) { strokes.map { it.toPath() } }
     var viewport by remember { mutableFloatStateOf(0f) }
     val contentHeight = inkContentHeight(strokes, lineHeightPx, reviewedLines, viewport)
@@ -106,10 +113,23 @@ fun InkCanvas(
     Canvas(
         modifier = modifier
             .onSizeChanged { viewport = it.height.toFloat() }
-            .pointerInput(tool, stylusOnly) {
+            .pointerInput(tool, stylusOnly, lineHeightPx) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val isPen = down.type == PointerType.Stylus || down.type == PointerType.Eraser
+
+                    // Insertar línea: un toque (con lápiz o dedo) sobre la línea elegida.
+                    if (tool == InkTool.INSERT_LINE) {
+                        val line = floor((down.position.y + scroll.offset) / lineHeightPx).toInt()
+                        down.consume()
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                            if (event.changes.none { it.pressed }) break
+                        }
+                        currentOnInsertLine(line)
+                        return@awaitEachGesture
+                    }
 
                     // Dedo con "solo S Pen": desplaza la página.
                     if (stylusOnly && !isPen) {

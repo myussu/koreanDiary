@@ -90,7 +90,9 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private var height = 0f
     private var lineHeight = 0f
     private var strokesLoaded = false
-    private val undoStack = ArrayDeque<List<InkStroke>>()
+    /** Cada paso guarda los trazos y la zona revisada (insertar una línea puede moverla). */
+    private data class Snapshot(val strokes: List<InkStroke>, val reviewedLines: Int)
+    private val undoStack = ArrayDeque<Snapshot>()
     private var saveJob: Job? = null
 
     init {
@@ -151,15 +153,46 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     fun undo() {
         val previous = undoStack.removeLastOrNull() ?: return
-        _state.update { it.copy(strokes = previous, canUndo = undoStack.isNotEmpty()) }
+        _state.update {
+            it.copy(
+                strokes = previous.strokes,
+                page = it.page?.copy(reviewedLineCount = previous.reviewedLines),
+                canUndo = undoStack.isNotEmpty(),
+            )
+        }
         scheduleSave()
     }
 
-    private fun mutate(transform: (List<InkStroke>) -> List<InkStroke>) {
+    /**
+     * Inserta una línea vacía en [line], como "insertar fila" en Excel: esa línea y todo lo de abajo
+     * baja un renglón. Si cae dentro de la zona revisada, la zona crece para seguir cubriendo el original.
+     */
+    fun insertLine(line: Int) {
+        if (lineHeight <= 0f) return
+        val page = _state.value.page ?: return
+        val shift = lineHeight
+        mutate(reviewedLines = if (line < page.reviewedLineCount) page.reviewedLineCount + 1 else page.reviewedLineCount) { strokes ->
+            strokes.map { s ->
+                if (s.lineIndex(lineHeight) >= line) InkStroke(s.points.map { p -> p.copy(y = p.y + shift) }) else s
+            }
+        }
+    }
+
+    private fun mutate(
+        reviewedLines: Int? = null,
+        transform: (List<InkStroke>) -> List<InkStroke>,
+    ) {
         val current = _state.value.strokes
-        undoStack.addLast(current)
+        val currentReviewed = _state.value.page?.reviewedLineCount ?: 0
+        undoStack.addLast(Snapshot(current, currentReviewed))
         if (undoStack.size > 60) undoStack.removeFirst()
-        _state.update { it.copy(strokes = transform(current), canUndo = true) }
+        _state.update {
+            it.copy(
+                strokes = transform(current),
+                page = if (reviewedLines != null) it.page?.copy(reviewedLineCount = reviewedLines) else it.page,
+                canUndo = true,
+            )
+        }
         scheduleSave()
     }
 
@@ -366,7 +399,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     /** Compara lo escrito debajo de la parte revisada con las sugerencias pendientes. Sin IA. */
     fun verifyRewrite() {
-        val page = _state.value.page ?: return
+        if (_state.value.page == null) return
         viewModelScope.launch {
             val pending = c.diary.correctionsNow(pageId).filter { it.status == CorrectionStatus.PENDING }
             if (pending.isEmpty()) {
@@ -375,21 +408,23 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             }
             setPhase(Phase.Busy("Leyendo tu reescritura…"))
             try {
-                val lines = c.recognizer.recognizeLines(_state.value.strokes, lineHeight, width, fromLine = page.reviewedLineCount)
+                // Toda la página: puedes reescribir debajo o borrar y reescribir en el mismo lugar.
+                val lines = c.recognizer.recognizeLines(_state.value.strokes, lineHeight, width)
                 if (lines.isEmpty()) {
-                    setPhase(Phase.Writing, "Escribe las correcciones debajo de la zona sombreada.")
+                    setPhase(Phase.Writing, "No se reconoció texto en la página.")
                     return@launch
                 }
-                val written = lines.map { normalize(it.text) }
+                // Se unen las líneas para encontrar también correcciones que quedaron partidas en dos renglones.
+                val written = normalize(lines.joinToString("") { it.text })
                 var ok = 0
                 for (corr in pending) {
                     val target = normalize(corr.suggestion)
-                    if (target.isNotEmpty() && written.any { it.contains(target) }) {
+                    if (target.isNotEmpty() && written.contains(target)) {
                         c.diary.markRewritten(corr)
                         ok++
                     }
                 }
-                val read = lines.joinToString(" / ") { it.text }
+                val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
                 setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
             } catch (e: Exception) {
                 setPhase(Phase.Writing, "No se pudo reconocer: ${e.message}")

@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -148,12 +149,26 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 reviewedTint = paper.reviewedTint,
                 onStrokeFinished = vm::addStroke,
                 onErase = vm::eraseAt,
+                onInsertLine = { line ->
+                    vm.insertLine(line)
+                    // Una inserción por toque, como en Excel; luego se vuelve al lápiz.
+                    tool = InkTool.PEN
+                },
                 scroll = inkScroll,
                 // clipToBounds: si el lienzo se achica (panel abierto), los trazos no se dibujan encima de los botones.
                 modifier = Modifier.fillMaxSize().clipToBounds().onSizeChanged {
                     vm.onCanvasSized(it.width.toFloat(), it.height.toFloat(), lineHeightPx)
                 },
             )
+            if (tool == InkTool.INSERT_LINE) {
+                // Text con fondo (no Surface): un Surface bloquearía los toques sobre las primeras líneas.
+                Text(
+                    "Toca la línea donde quieres una línea vacía: esa y las de abajo bajan un renglón.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onPrimary,
+                    modifier = Modifier.fillMaxWidth().background(scheme.primary.copy(alpha = 0.9f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
             (state.phase as? Phase.Busy)?.let { busy ->
                 Surface(color = scheme.background.copy(alpha = 0.85f), modifier = Modifier.fillMaxSize()) {
                     Column(
@@ -174,10 +189,19 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            AppToggle("Lápiz", tool == InkTool.PEN) { tool = InkTool.PEN }
-            AppToggle("Borrar", tool == InkTool.ERASER) { tool = InkTool.ERASER }
-            AppTextButton(onClick = vm::undo, enabled = state.canUndo) { Text("Deshacer") }
-            Spacer(Modifier.weight(1f))
+            // Herramientas a la izquierda (se desplazan si no caben); acciones fijas a la derecha.
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AppToggle("Lápiz", tool == InkTool.PEN) { tool = InkTool.PEN }
+                AppToggle("Borrar", tool == InkTool.ERASER) { tool = InkTool.ERASER }
+                AppToggle("+ Línea", tool == InkTool.INSERT_LINE) {
+                    tool = if (tool == InkTool.INSERT_LINE) InkTool.PEN else InkTool.INSERT_LINE
+                }
+                AppTextButton(onClick = vm::undo, enabled = state.canUndo) { Text("Deshacer") }
+            }
             val busy = state.phase is Phase.Busy
             if (page?.status == PageStatus.PENDING) {
                 AppTextButton(onClick = vm::openPaste, enabled = !busy) { Text("Pegar") }
