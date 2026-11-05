@@ -44,9 +44,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
+          # version.json: lo lee el actualizador de la app para saber si hay algo nuevo.
+          jq -n \
+            --argjson code "$GITHUB_RUN_NUMBER" \
+            --arg name "0.1.$GITHUB_RUN_NUMBER" \
+            --arg commit "${GITHUB_SHA::7}" \
+            --arg notes "$COMMIT_MSG" \
+            --arg sha "$(sha256sum koreandiary.apk | cut -d' ' -f1)" \
+            --argjson size "$(stat -c%s koreandiary.apk)" \
+            '{versionCode: $code, versionName: $name, commit: $commit, notes: $notes, sha256: $sha, size: $size}' \
+            > version.json
+          cat version.json
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest koreandiary.apk \
+          gh release create latest koreandiary.apk version.json \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "Última compilación (#${{ github.run_number }})" \
+            --title "0.1.${{ github.run_number }}" \
             --notes "Commit ${GITHUB_SHA::7}: ${COMMIT_MSG}"

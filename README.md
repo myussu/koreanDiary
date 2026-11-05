@@ -10,6 +10,10 @@ https://github.com/myussu/koreanDiary/releases/tag/latest
 
 Ábrelo desde el celular, descarga `koreandiary.apk` e instálalo (Android pedirá permitir instalar desde el navegador). Todas las compilaciones se firman con el mismo keystore de depuración, así que cada versión se instala encima de la anterior sin borrar tus datos.
 
+### Actualizaciones dentro de la app
+
+Desde la versión 0.1.4 la app se actualiza sola: al abrirla consulta `version.json` del release `latest` y, si hay una compilación más nueva, muestra un aviso en el inicio (también en Ajustes → Actualizaciones). La primera vez pide el permiso “Instalar apps desconocidas”; después, en Android 12 o superior, instala sin más confirmaciones. El APK se verifica con SHA-256 antes de instalarlo.
+
 ## Primeros pasos en la app
 
 1. **Ajustes:** escribe tu perfil y nivel, y pulsa “Descargar modelo de escritura coreana” (unos 20 MB, solo una vez).

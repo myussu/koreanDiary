@@ -55,6 +55,7 @@ fun HomeScreen(
             AppOutlinedButton(onClick = onStudy) { Text("Estudio") }
             AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
         }
+        UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
         if (tenses.isNotEmpty()) {
             val byTense = tenses.associate { it.tense to it.total }
             Text(

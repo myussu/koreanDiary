@@ -10,6 +10,7 @@ import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.settings.SecretStore
 import com.jorge.koreandiary.settings.SettingsStore
 import com.jorge.koreandiary.srs.SuggestionEngine
+import com.jorge.koreandiary.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,7 @@ class AppContainer(val app: Application) {
     val settings = SettingsStore(app)
     val secrets = SecretStore(app)
     val recognizer by lazy { HandwritingRecognizer() }
+    val updater = Updater(app)
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// En GitHub Actions el número de compilación es el versionCode: así el actualizador sabe qué es más nuevo.
+// En compilaciones locales vale 1.
+val buildNumber = providers.environmentVariable("GITHUB_RUN_NUMBER").map { it.toInt() }.orElse(1).get()
+
 android {
     namespace = "com.jorge.koreandiary"
     compileSdk = 37
@@ -12,8 +16,8 @@ android {
         applicationId = "com.jorge.koreandiary"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = buildNumber
+        versionName = "0.1.$buildNumber"
     }
 
     signingConfigs {

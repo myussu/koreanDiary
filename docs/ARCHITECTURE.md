@@ -11,6 +11,12 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 - **FSRS-6:** el uso en el diario es el repaso. Correcto sin sugerencia = Good; correcto tras verlo sugerido = Hard; incorrecto = Again; sugerido y no usado = sin calificación.
 - **Palabras nuevas:** se agregan solas si son hangul válido; si no, quedan en “Por revisar”. Pendiente: validar con la API del 한국어기초사전.
 
+## Distribución y actualizaciones
+
+- GitHub Actions compila en cada push a `main`; el número de compilación es el `versionCode` (`0.1.N`).
+- El release `latest` contiene `koreandiary.apk` y `version.json` (`versionCode`, `versionName`, `commit`, `notes`, `sha256`, `size`).
+- `update/Updater.kt`: compara versiones, descarga, verifica SHA-256 e instala con `PackageInstaller`. Con `UPDATE_PACKAGES_WITHOUT_USER_ACTION` (Android 12+) la autoactualización no pide confirmación.
+
 ## Diferencias con el documento (MVP)
 
 - Perfil y proveedores viven en SharedPreferences (claves cifradas con Android Keystore), no en tablas.

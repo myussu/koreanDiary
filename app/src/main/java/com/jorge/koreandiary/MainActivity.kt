@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.listSaver
@@ -73,6 +74,9 @@ private fun AppNavigation(container: AppContainer) {
     fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
 
     BackHandler(enabled = stack.size > 1) { pop() }
+
+    // Busca actualizaciones una vez por apertura, en silencio (sin errores si no hay red).
+    LaunchedEffect(Unit) { container.updater.check(silent = true) }
 
     val route = stack.last()
     when {

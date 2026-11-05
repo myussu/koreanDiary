@@ -87,6 +87,10 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             )
         }
 
+        Section("Actualizaciones") {
+            UpdatePanel(container.updater, alwaysVisible = true)
+        }
+
         Section("Apariencia") {
             Text("Tema", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
