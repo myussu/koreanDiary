@@ -117,6 +117,34 @@ object CorrectionParser {
     }
 }
 
+object HowToSayParser {
+    fun parse(raw: String): HowToSayResponse {
+        val json = try {
+            JSONObject(extractJsonObject(raw))
+        } catch (e: org.json.JSONException) {
+            throw ParseException("JSON inválido: ${e.message}")
+        }
+        val mine = phrase(json.optJSONObject("tu")) ?: throw ParseException("La respuesta no trae la frase.")
+        // Si "nat" es igual a "tu" (aunque la IA no haya puesto null), se muestra una sola.
+        val natural = phrase(json.optJSONObject("nat"))?.takeUnless { same(it.text, mine.text) }
+        val words = json.optJSONArray("w").mapObjects { o ->
+            val f = o.str("f") ?: return@mapObjects null
+            f to (o.str("s") ?: "")
+        }
+        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words)
+    }
+
+    private fun phrase(o: JSONObject?): HowToSayResponse.Phrase? {
+        val text = o?.str("k") ?: return null
+        val grammar = o.optJSONArray("g")?.let { arr -> (0 until arr.length()).map { arr.optString(it).trim() } }
+            ?.filter { it.isNotEmpty() && it != "null" } ?: emptyList()
+        return HowToSayResponse.Phrase(text, grammar)
+    }
+
+    private fun same(a: String, b: String) =
+        a.filter { it.isLetterOrDigit() } == b.filter { it.isLetterOrDigit() }
+}
+
 object ImportParser {
     fun parse(raw: String): ImportPayload {
         val json = try {

@@ -56,6 +56,25 @@ object Prompts {
         )
     }
 
+    /**
+     * "¿Cómo digo esto?": la frase con lo que el estudiante sabe y, si difiere, la versión natural.
+     * No se manda su lista (ahorra tokens): basta el nivel; la app marca después lo que no está en sus listas.
+     */
+    fun howToSay(idea: String, level: String, standardLevel: Int): String = """
+        Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe su diario y quiere decir:
+        «${idea.trim().replace('\n', ' ')}»
+        Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+
+        1. "tu": la frase en coreano usando solo vocabulario y gramática de nivel $standardLevel o menor; la forma más simple que siga siendo correcta. Registro -어요 salvo que la idea pida otro.
+        2. "nat": cómo lo diría normalmente un coreano. Si sería igual a "tu", pon null.
+        3. En "g" de cada frase, las estructuras gramaticales usadas en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -을 것 같다); modificadores de sustantivo como -은, -는, -던; partículas sin guion (처럼). Omite 이/가, 은/는, 을/를, 에, 도, -어요.
+        4. "nota": 1 o 2 frases en español sobre la diferencia, o por qué la frase ya es natural.
+        5. "w": las palabras de contenido en forma de diccionario con su significado en español.
+
+        FORMATO:
+        {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": ["-었던"]}, "nota": "...", "w": [{"f": "다니다", "s": "asistir"}]}
+    """.trimIndent()
+
     fun importList(list: String = "{{lista}}"): String = IMPORT_TEMPLATE.replace("{{lista}}", list)
 
     private val IMPORT_TEMPLATE = """

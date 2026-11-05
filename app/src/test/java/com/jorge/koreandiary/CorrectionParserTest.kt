@@ -1,6 +1,7 @@
 package com.jorge.koreandiary
 
 import com.jorge.koreandiary.ai.CorrectionParser
+import com.jorge.koreandiary.ai.HowToSayParser
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.data.ItemRef
 import com.jorge.koreandiary.data.db.ItemType
@@ -55,6 +56,26 @@ class CorrectionParserTest {
     @Test(expected = ParseException::class)
     fun rejectsTextWithoutJson() {
         CorrectionParser.parse("No puedo ayudar con eso.")
+    }
+
+    @Test
+    fun howToSayWithNaturalVersion() {
+        val r = HowToSayParser.parse(
+            """{"tu": {"k": "저랑 같은 학교에 다닌 사람이 내일 와요", "g": ["-은"]},
+               "nat": {"k": "같이 학교 다녔던 친구가 내일 와요", "g": ["-었던"]},
+               "nota": "다녔던 suena más natural.", "w": [{"f": "다니다", "s": "asistir"}]}"""
+        )
+        assertEquals(listOf("-은"), r.mine.grammar)
+        assertEquals("같이 학교 다녔던 친구가 내일 와요", r.natural?.text)
+        assertEquals("다니다" to "asistir", r.words.single())
+    }
+
+    @Test
+    fun howToSayCollapsesIdenticalNatural() {
+        val r = HowToSayParser.parse("""{"tu": {"k": "내일 가요.", "g": []}, "nat": {"k": "내일 가요", "g": []}, "nota": ""}""")
+        assertNull(r.natural)
+        val r2 = HowToSayParser.parse("""{"tu": {"k": "내일 가요", "g": []}, "nat": null}""")
+        assertNull(r2.natural)
     }
 
     @Test

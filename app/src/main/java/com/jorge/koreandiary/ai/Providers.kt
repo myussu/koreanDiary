@@ -225,6 +225,17 @@ object ShareFlow {
         }
         return Intent.createChooser(send, "Enviar página a…")
     }
+
+    /** Solo texto (para "¿Cómo digo esto?" sin API). También queda en el portapapeles. */
+    fun textIntent(context: Context, prompt: String): Intent {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("prompt", prompt))
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, prompt)
+        }
+        return Intent.createChooser(send, "Preguntar a…")
+    }
 }
 
 fun Bitmap.toPngBytes(): ByteArray =

@@ -218,6 +218,36 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         return ApplySummary(response.corrections.size, reviewed, newWords, newGrammar, pending, response.improvements.size)
     }
 
+    /**
+     * Marca, sin IA, qué estructuras y palabras de una respuesta ya están en tus listas.
+     * Las que no, se buscan en el estándar para mostrar su nivel.
+     */
+    suspend fun annotate(grammar: List<String>, words: List<Pair<String, String>>): List<AnnotatedItem> {
+        val myGrammar = if (grammar.isEmpty()) emptyList() else study.allGrammar()
+        val out = mutableListOf<AnnotatedItem>()
+        for (g in grammar.distinct()) {
+            val mine = withContext(Dispatchers.Default) {
+                myGrammar.firstOrNull { GrammarKeys.matches(listOf(it.pattern) + it.variants.split(" | "), listOf(g)) }
+            }
+            out += if (mine != null) {
+                AnnotatedItem(g, known = true, level = null, ref = ItemRef(ItemType.GRAMMAR, mine.id), isGrammar = true, meaning = mine.meaning)
+            } else {
+                val std = standardGrammar(g)
+                AnnotatedItem(g, known = false, level = std?.level, ref = std?.let { ItemRef(ItemType.STD_GRAMMAR, it.id.toLong()) }, isGrammar = true, meaning = std?.meaning)
+            }
+        }
+        for ((form, meaning) in words.distinctBy { it.first }) {
+            val mine = study.findWord(form)
+            out += if (mine != null) {
+                AnnotatedItem(form, known = true, level = null, ref = ItemRef(ItemType.WORD, mine.id), isGrammar = false, meaning = meaning)
+            } else {
+                val std = standardWord(form)
+                AnnotatedItem(form, known = false, level = std?.level, ref = std?.let { ItemRef(ItemType.STD_WORD, it.id.toLong()) }, isGrammar = false, meaning = meaning)
+            }
+        }
+        return out
+    }
+
     private data class Resolved(val ref: ItemRef, val isNew: Boolean, val wasSuggested: Boolean)
 
     /** Encuentra o crea el ítem usado. Devuelve null si quedó en "Por revisar". */
@@ -329,6 +359,18 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         private val WORD_KINDS = setOf("sustantivo", "verbo", "adjetivo", "adverbio")
     }
 }
+
+/** Una estructura o palabra de "¿Cómo digo esto?", marcada según tus listas. */
+data class AnnotatedItem(
+    val label: String,
+    /** Ya está en tu vocabulario o gramática. */
+    val known: Boolean,
+    /** Nivel 1–6 del estándar, si no está en tus listas pero sí en el estándar. */
+    val level: Int?,
+    val ref: ItemRef?,
+    val isGrammar: Boolean,
+    val meaning: String?,
+)
 
 object CorrectionType {
     /** Sugerencia de estructura de su nivel; no exige reescritura. */

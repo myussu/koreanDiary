@@ -7,10 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.ai.CorrectionParser
 import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.ai.HowToSayParser
+import com.jorge.koreandiary.ai.HowToSayResponse
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.Prompts
 import com.jorge.koreandiary.ai.ProviderException
 import com.jorge.koreandiary.ai.ShareFlow
+import com.jorge.koreandiary.data.AnnotatedItem
 import com.jorge.koreandiary.data.ItemRef
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
@@ -43,6 +46,21 @@ sealed interface Phase {
     data object AwaitingPaste : Phase
 }
 
+/** Estado de "¿Cómo digo esto?". */
+sealed interface HowTo {
+    data object Idle : HowTo
+    data object Asking : HowTo
+    /** Sin API: el prompt se compartió con un chat; falta pegar la respuesta. */
+    data object AwaitingPaste : HowTo
+    data class Result(
+        val response: HowToSayResponse,
+        val mineTags: List<AnnotatedItem>,
+        val naturalTags: List<AnnotatedItem>,
+        val wordTags: List<AnnotatedItem>,
+    ) : HowTo
+    data class Error(val message: String) : HowTo
+}
+
 data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean, val isGap: Boolean = false)
 
 data class PageUiState(
@@ -61,6 +79,9 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     val corrections: StateFlow<List<Correction>> = c.diary.corrections(pageId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _howTo = MutableStateFlow<HowTo>(HowTo.Idle)
+    val howTo: StateFlow<HowTo> = _howTo.asStateFlow()
 
     private val _shareIntents = Channel<Intent>(Channel.BUFFERED)
     val shareIntents = _shareIntents.receiveAsFlow()
@@ -193,6 +214,78 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     fun cancelConfirm() = setPhase(Phase.Writing)
+
+    // ---------- ¿Cómo digo esto? ----------
+
+    fun askHowTo(idea: String) {
+        if (idea.isBlank()) return
+        viewModelScope.launch {
+            val settings = c.settings.state.value
+            val prompt = Prompts.howToSay(idea, settings.level, settings.standardLevel)
+            // El proveedor por defecto si es una API; si no, la primera API configurada; si no hay, un chat.
+            val providerId = listOf(settings.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
+                .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
+            val api = providerId?.let { c.apiProvider(it) }
+            if (providerId == null || api == null) {
+                _shareIntents.send(ShareFlow.textIntent(c.app, prompt))
+                _howTo.value = HowTo.AwaitingPaste
+                return@launch
+            }
+            if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
+                _howTo.value = HowTo.Error("Llegaste al límite diario de ${providerName(providerId)}.")
+                return@launch
+            }
+            _howTo.value = HowTo.Asking
+            try {
+                val raw = api.complete(CorrectionRequest(prompt))
+                c.settings.registerUse(providerId)
+                handleHowTo(raw)
+            } catch (e: ProviderException) {
+                _howTo.value = HowTo.Error(if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.")
+            } catch (e: ParseException) {
+                _howTo.value = HowTo.Error("No se pudo leer la respuesta: ${e.message}")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _howTo.value = HowTo.Error(e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    fun submitHowToPaste(raw: String) {
+        viewModelScope.launch {
+            try {
+                handleHowTo(raw)
+            } catch (e: ParseException) {
+                _howTo.value = HowTo.Error("No se pudo leer la respuesta: ${e.message}")
+            }
+        }
+    }
+
+    fun closeHowTo() {
+        _howTo.value = HowTo.Idle
+    }
+
+    private suspend fun handleHowTo(raw: String) {
+        val r = HowToSayParser.parse(raw)
+        val mineTags = c.study.annotate(r.mine.grammar, emptyList())
+        val naturalTags = r.natural?.let { c.study.annotate(it.grammar, emptyList()) } ?: emptyList()
+        val wordTags = c.study.annotate(emptyList(), r.words)
+        _howTo.value = HowTo.Result(r, mineTags, naturalTags, wordTags)
+        // Lo que viste aquí pasa a "sugerido" en esta página: si luego lo usas, FSRS lo cuenta como
+        // reconocimiento ("Hard"), no como recuerdo libre.
+        addSuggested((mineTags + naturalTags + wordTags).mapNotNull { it.ref })
+    }
+
+    private suspend fun addSuggested(refs: List<ItemRef>) {
+        val page = _state.value.page ?: return
+        if (page.status == PageStatus.REVIEWED) return
+        val existing = ItemRef.decodeList(page.suggestedItems)
+        val merged = (existing + refs).distinct()
+        if (merged.size == existing.size) return
+        val updated = persist { it.copy(suggestedItems = merged.joinToString(",") { r -> "${r.type}:${r.id}" }) } ?: return
+        _state.update { it.copy(suggestions = loadSuggestions(updated)) }
+    }
 
     fun confirm(text: String, provider: String) {
         viewModelScope.launch {

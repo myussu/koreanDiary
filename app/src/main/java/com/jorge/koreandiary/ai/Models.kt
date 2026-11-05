@@ -61,3 +61,16 @@ data class ImportGrammar(
 
 /** Ítem que se manda en el prompt: "w12 | 먹다 | verbo". */
 data class PromptItem(val ref: String, val label: String, val kind: String)
+
+/** Respuesta de "¿Cómo digo esto?". */
+data class HowToSayResponse(
+    /** La frase con vocabulario y gramática hasta el nivel del estudiante. */
+    val mine: Phrase,
+    /** Cómo lo diría normalmente un coreano; null si coincide con [mine]. */
+    val natural: Phrase?,
+    val note: String,
+    /** Palabras de contenido usadas (forma de diccionario → significado). */
+    val words: List<Pair<String, String>>,
+) {
+    data class Phrase(val text: String, val grammar: List<String>)
+}

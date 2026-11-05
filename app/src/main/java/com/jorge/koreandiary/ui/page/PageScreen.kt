@@ -19,6 +19,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import com.jorge.koreandiary.data.AnnotatedItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -64,6 +71,8 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val vm: PageViewModel = viewModel(key = "page-$pageId") { PageViewModel(container, pageId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val corrections by vm.corrections.collectAsStateWithLifecycle()
+    val howTo by vm.howTo.collectAsStateWithLifecycle()
+    var howToOpen by remember { mutableStateOf(false) }
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val paper = LocalPaperStyle.current
     val scheme = MaterialTheme.colorScheme
@@ -92,7 +101,19 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             page?.let { AppTag(it.status, accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
         }
 
-        SuggestionsBar(state.suggestions)
+        SuggestionsBar(state.suggestions, onHowTo = { howToOpen = !howToOpen })
+
+        if (howToOpen || howTo != HowTo.Idle) {
+            HowToSayPanel(
+                state = howTo,
+                onAsk = vm::askHowTo,
+                onPaste = vm::submitHowToPaste,
+                onClose = {
+                    howToOpen = false
+                    vm.closeHowTo()
+                },
+            )
+        }
 
         if (corrections.isNotEmpty()) CorrectionsPanel(corrections)
 
@@ -118,7 +139,8 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 reviewedTint = paper.reviewedTint,
                 onStrokeFinished = vm::addStroke,
                 onErase = vm::eraseAt,
-                modifier = Modifier.fillMaxSize().onSizeChanged {
+                // clipToBounds: si el lienzo se achica (panel abierto), los trazos no se dibujan encima de los botones.
+                modifier = Modifier.fillMaxSize().clipToBounds().onSizeChanged {
                     vm.onCanvasSized(it.width.toFloat(), it.height.toFloat(), lineHeightPx)
                 },
             )
@@ -181,12 +203,13 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SuggestionsBar(chips: List<SuggestionChip>) {
+private fun SuggestionsBar(chips: List<SuggestionChip>, onHowTo: () -> Unit) {
     var expanded by remember { mutableStateOf(true) }
     var selected by remember { mutableStateOf<SuggestionChip?>(null) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("SUGERENCIAS", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+            AppTextButton(onClick = onHowTo) { Text("¿Cómo digo?") }
             AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }
         }
         if (!expanded) return@Column
@@ -222,6 +245,121 @@ private fun SuggestionsBar(chips: List<SuggestionChip>) {
             )
         }
         Spacer(Modifier.padding(bottom = 4.dp))
+    }
+}
+
+/**
+ * "¿Cómo digo esto?": va arriba, bajo las sugerencias, para que la mano que escribe abajo no lo tape.
+ * Al llegar la respuesta se cierra el teclado y queda una tarjeta plegable.
+ */
+@Composable
+private fun HowToSayPanel(
+    state: HowTo,
+    onAsk: (String) -> Unit,
+    onPaste: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val focus = LocalFocusManager.current
+    val context = LocalContext.current
+    var idea by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf(true) }
+    var expanded by remember { mutableStateOf(true) }
+    LaunchedEffect(state) {
+        if (state is HowTo.Result) {
+            editing = false
+            expanded = true
+            focus.clearFocus()
+        }
+    }
+    fun ask() {
+        focus.clearFocus()
+        onAsk(idea)
+    }
+
+    Surface(color = scheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("¿CÓMO DIGO ESTO?", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                if (state is HowTo.Result) {
+                    AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Plegar" else "Ver") }
+                    AppTextButton(onClick = { editing = true; expanded = true }) { Text("Otra") }
+                }
+                AppTextButton(onClick = onClose) { Text("Cerrar") }
+            }
+            if (editing || state !is HowTo.Result) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = idea,
+                        onValueChange = { idea = it },
+                        placeholder = { Text("Lo que quieres decir, en español") },
+                        maxLines = 3,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { ask() }),
+                        modifier = Modifier.weight(1f),
+                    )
+                    AppButton(onClick = ::ask, enabled = idea.isNotBlank() && state != HowTo.Asking) { Text("Preguntar") }
+                }
+            }
+            when (state) {
+                HowTo.Asking -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = scheme.primary, trackColor = scheme.surfaceContainerHighest)
+                HowTo.AwaitingPaste -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Envié la pregunta a un chat (también quedó copiada). Copia su respuesta y pégala.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    AppOutlinedButton(onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.let(onPaste)
+                    }) { Text("Pegar") }
+                }
+                is HowTo.Error -> Text(state.message, color = scheme.error, style = MaterialTheme.typography.bodySmall)
+                is HowTo.Result -> if (expanded) HowToResult(state)
+                HowTo.Idle -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun HowToResult(result: HowTo.Result) {
+    val scheme = MaterialTheme.colorScheme
+    val r = result.response
+    Text(if (r.natural == null) "CON LO QUE SABES (Y ES NATURAL)" else "CON LO QUE SABES", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+    Text(r.mine.text, fontSize = 22.sp)
+    AnnotatedTags(result.mineTags)
+    r.natural?.let { nat ->
+        Text("COMO LO DIRÍA UN COREANO", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        Text(nat.text, fontSize = 22.sp)
+        AnnotatedTags(result.naturalTags)
+    }
+    if (r.note.isNotBlank()) Text(r.note, style = MaterialTheme.typography.bodySmall)
+    if (result.wordTags.isNotEmpty()) {
+        Text(
+            result.wordTags.joinToString("  ·  ") { w ->
+                (if (w.known) "" else "+") + w.label + (w.meaning?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+    if ((result.mineTags + result.naturalTags + result.wordTags).any { !it.known }) {
+        Text("“+” = no está en tus listas (el número es su nivel en el estándar).", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun AnnotatedTags(tags: List<AnnotatedItem>) {
+    if (tags.isEmpty()) return
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(tags) { t ->
+            val label = if (t.known) t.label else "+ ${t.label}" + (t.level?.let { " · $it" } ?: "")
+            AppTag(text = label, accent = !t.known)
+        }
     }
 }
 
