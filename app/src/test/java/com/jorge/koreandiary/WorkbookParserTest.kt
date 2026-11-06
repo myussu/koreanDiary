@@ -32,6 +32,30 @@ class WorkbookParserTest {
     }
 
     @Test
+    fun parsesPageGrammarWithLessonFocusAndUnit() {
+        val r = WorkbookParser.parseHints(
+            """{"ejercicios": [{"n": "1", "e": "x", "p": [], "r": ""}],
+                "gram": [{"f": "-느라고", "s": "causa negativa", "foco": true, "d": "titulo"},
+                         {"f": "-(으)세요", "s": "pedido amable", "foco": false, "d": "instrucciones"},
+                         {"f": "-느라고", "s": "repetida", "foco": "true", "d": "ejercicios"},
+                         {"f": "-더라고요", "foco": "sí"}],
+                "unidad": "5과"}"""
+        )
+        assertEquals(listOf("-느라고", "-(으)세요", "-더라고요"), r.grammar.map { it.form })
+        assertEquals(listOf(true, false, true), r.grammar.map { it.focus })
+        assertEquals("instrucciones", r.grammar[1].where)
+        assertNull(r.grammar[2].meaning)
+        assertEquals(5, r.unit)
+    }
+
+    @Test
+    fun oldHintsWithoutPageGrammarStillParse() {
+        val r = WorkbookParser.parseHints("""{"ejercicios": [{"n": "1", "e": "x", "p": [], "r": ""}], "unidad": null}""")
+        assertTrue(r.grammar.isEmpty())
+        assertNull(r.unit)
+    }
+
+    @Test
     fun parsesReviewStatusesAndUsedItems() {
         val r = WorkbookParser.parseReview(
             """{"rev": [{"n": "1", "w": "숙제하느라고 늦게 잤어요", "s": "ok", "c": null, "nat": null, "x": "Bien."},

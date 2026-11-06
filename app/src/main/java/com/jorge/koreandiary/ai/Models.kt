@@ -76,7 +76,24 @@ data class HowToSayResponse(
 }
 
 /** Pistas para una página de workbook. */
-data class WorkbookHints(val exercises: List<WorkbookExercise>, val vocab: List<UsedItemDto>)
+data class WorkbookHints(
+    val exercises: List<WorkbookExercise>,
+    val vocab: List<UsedItemDto>,
+    /** Todas las gramáticas impresas en la página; el estudiante elige cuáles van a su lista. */
+    val grammar: List<WorkbookGrammar> = emptyList(),
+    /** Número de unidad o lección si se ve en la página. */
+    val unit: Int? = null,
+)
+
+/** Gramática impresa en una página del workbook. */
+data class WorkbookGrammar(
+    val form: String,
+    val meaning: String?,
+    /** La IA cree que es la gramática que enseña la lección (resaltada arriba, en un recuadro…). */
+    val focus: Boolean,
+    /** Dónde aparece: título, recuadro, ejercicios, instrucciones o texto. */
+    val where: String?,
+)
 
 data class WorkbookExercise(
     /** Como aparece en la página: "1", "2-3", "(4)". */

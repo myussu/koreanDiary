@@ -39,6 +39,10 @@ data class WorkbookUiState(
     val message: String? = null,
     /** Sin API: se compartió con un chat y falta pegar la respuesta de este paso. */
     val awaitingPaste: WorkbookStage? = null,
+    /** Gramáticas de la página que ya están en tu lista. */
+    val knownGrammar: Set<String> = emptySet(),
+    /** Gramáticas marcadas para agregar a tu lista. */
+    val grammarSelection: Set<String> = emptySet(),
 )
 
 class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long) : ViewModel() {
@@ -64,11 +68,51 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
         _state.update { it.copy(provider = default) }
         viewModelScope.launch {
             val session = c.workbook.load(sessionId) ?: return@launch
+            val hints = session.hintsRaw?.let { raw -> runCatching { WorkbookParser.parseHints(raw) }.getOrNull() }
             _state.update {
                 it.copy(
                     session = session,
-                    hints = session.hintsRaw?.let { raw -> runCatching { WorkbookParser.parseHints(raw) }.getOrNull() },
+                    hints = hints,
                     review = session.reviewRaw?.let { raw -> runCatching { WorkbookParser.parseReview(raw) }.getOrNull() },
+                )
+            }
+            hints?.let { refreshPageGrammar(it) }
+        }
+    }
+
+    // ---------- Gramática de la página ----------
+
+    /** Marca cuáles ya tienes y preselecciona las de la lección (las "foco") que aún no están en tu lista. */
+    private suspend fun refreshPageGrammar(hints: WorkbookHints) {
+        val known = c.study.knownGrammar(hints.grammar.map { it.form })
+        _state.update { st ->
+            st.copy(
+                knownGrammar = known,
+                grammarSelection = hints.grammar.filter { it.focus && it.form !in known }.map { it.form }.toSet(),
+            )
+        }
+    }
+
+    fun toggleGrammar(form: String) = _state.update { st ->
+        if (form in st.knownGrammar) st
+        else st.copy(grammarSelection = if (form in st.grammarSelection) st.grammarSelection - form else st.grammarSelection + form)
+    }
+
+    fun addSelectedGrammar() {
+        val st = _state.value
+        val hints = st.hints ?: return
+        val chosen = hints.grammar.filter { it.form in st.grammarSelection && it.form !in st.knownGrammar }
+        if (chosen.isEmpty()) return
+        viewModelScope.launch {
+            val added = c.study.registerWorkbookGrammar(chosen, hints.unit)
+            refreshPageGrammar(hints)
+            _state.update {
+                it.copy(
+                    message = when (added) {
+                        0 -> "Ya estaban en tu lista."
+                        1 -> "1 gramática agregada a tu lista. El diario te la va a sugerir."
+                        else -> "$added gramáticas agregadas a tu lista. El diario te las va a sugerir."
+                    }
                 )
             }
         }
@@ -181,9 +225,11 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 )
                 c.workbook.save(updated)
                 val vocabNote = if (added > 0) " $added palabras de la página pasaron a tu vocabulario." else ""
+                val grammarNote = if (hints.grammar.isNotEmpty()) " Elige arriba qué gramática agregar a tu lista." else ""
                 _state.update {
-                    it.copy(session = updated, hints = hints, busy = null, message = "${hints.exercises.size} ejercicios con pistas.$vocabNote")
+                    it.copy(session = updated, hints = hints, busy = null, message = "${hints.exercises.size} ejercicios con pistas.$vocabNote$grammarNote")
                 }
+                refreshPageGrammar(hints)
             }
             WorkbookStage.REVIEW -> {
                 val review = WorkbookParser.parseReview(raw)
@@ -193,7 +239,9 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                     // Solo lo que escribiste cuenta; lo visto en pistas o impreso cuenta como sugerido ("Hard").
                     val hints = _state.value.hints
                     val suggested = if (hints == null) emptySet() else {
-                        val grammar = hints.exercises.flatMap { e -> e.hints.filter { it.isGrammar }.map { it.form } }
+                        // Lo impreso en la página también lo viste: si lo usas, cuenta como "Hard".
+                        val grammar = hints.exercises.flatMap { e -> e.hints.filter { it.isGrammar }.map { it.form } } +
+                            hints.grammar.map { it.form }
                         val words = hints.exercises.flatMap { e -> e.hints.filterNot { it.isGrammar }.map { it.form to "" } } +
                             hints.vocab.map { it.form to "" }
                         c.study.annotate(grammar, words).mapNotNull { it.ref }.toSet()

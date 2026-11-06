@@ -172,8 +172,12 @@ object WorkbookParser {
             val f = o.str("f") ?: return@mapObjects null
             UsedItemDto(null, f, CorrectionParser.normalizeKind(o.str("t"), f), true, o.str("s"))
         }.filterNot { it.isGrammar }
+        val grammar = json.optJSONArray("gram").mapObjects { o ->
+            val f = o.str("f") ?: return@mapObjects null
+            WorkbookGrammar(form = f, meaning = o.str("s"), focus = isTrue(o.opt("foco")), where = o.str("d"))
+        }.distinctBy { it.form }
         if (exercises.isEmpty()) throw ParseException("No se encontraron ejercicios en la respuesta.")
-        return WorkbookHints(exercises, vocab)
+        return WorkbookHints(exercises, vocab, grammar, unit(json.opt("unidad")))
     }
 
     fun parseReview(raw: String): WorkbookReview {
@@ -203,6 +207,21 @@ object WorkbookParser {
     } catch (e: org.json.JSONException) {
         throw ParseException("JSON inválido: ${e.message}")
     }
+
+    /** true, "true", "sí" o 1. */
+    private fun isTrue(v: Any?): Boolean = when (v) {
+        is Boolean -> v
+        is Number -> v.toInt() != 0
+        is String -> v.trim().lowercase() in setOf("true", "si", "sí", "1")
+        else -> false
+    }
+
+    /** 5, "5", "5과" o "Unit 5" → 5. */
+    private fun unit(v: Any?): Int? = when (v) {
+        is Number -> v.toInt()
+        is String -> Regex("\\d+").find(v)?.value?.toIntOrNull()
+        else -> null
+    }?.takeIf { it in 1..99 }
 
     private fun hintKind(t: String?, form: String): String = when (t?.lowercase()?.trim()) {
         "c", "conector" -> "conector"

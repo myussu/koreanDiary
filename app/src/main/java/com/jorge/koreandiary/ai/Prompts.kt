@@ -88,9 +88,15 @@ object Prompts {
            - "en": la traducción del ejemplo al inglés.
         3. "r": una respuesta modelo del ejercicio (se mostrará escondida).
         4. "vocab": las palabras de vocabulario impresas en la página (listas, recuadros, alrededor y dentro de las preguntas), sobre todo sustantivos, en forma de diccionario. "t" como arriba y "s": significado en español. Sin gramática ni partículas.
+        5. "gram": TODAS las gramáticas, conectores y expresiones gramaticales impresas en la página (título, recuadros, ejemplos, instrucciones, preguntas y textos), sin repetir, en notación estándar (-느라고, -(으)ㄹ 텐데, N만 하다). Omite las básicas: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -았/었-. Cada una:
+           - "f": la forma.
+           - "s": significado en español, máximo 8 palabras.
+           - "foco": true si es la gramática que enseña esta lección: resaltada arriba o en el título, en un recuadro de explicación, o la que practican la mayoría de los ejercicios. Si no, false. Puede haber más de una o ninguna.
+           - "d": dónde aparece: titulo, recuadro, ejercicios, instrucciones o texto.
+        6. "unidad": el número de la unidad o lección si se ve en la página (5 para "5과" o "Unit 5"); si no, null.
 
         FORMATO:
-        {"ejercicios": [{"n": "1", "e": "...", "p": [{"f": "-느라고", "t": "g", "u": "...", "k": "...", "en": "..."}], "r": "..."}], "vocab": [{"f": "미용실", "t": "n", "s": "peluquería"}]}
+        {"ejercicios": [{"n": "1", "e": "...", "p": [{"f": "-느라고", "t": "g", "u": "...", "k": "...", "en": "..."}], "r": "..."}], "vocab": [{"f": "미용실", "t": "n", "s": "peluquería"}], "gram": [{"f": "-느라고", "s": "por estar haciendo (causa negativa)", "foco": true, "d": "titulo"}], "unidad": 5}
     """.trimIndent()
 
     /**

@@ -46,9 +46,9 @@ interface StudyDao {
 
     /**
      * Gramática a sugerir: la de los niveles elegidos (p. ej. base y 3A) más toda la que
-     * detectaste en tus diarios, que ya sabes que usas.
+     * detectaste en tus diarios, que ya sabes que usas, y la que elegiste agregar desde el workbook.
      */
-    @Query("SELECT id FROM grammar_points WHERE level IN (:levels) OR source IN ('diario', 'laguna')")
+    @Query("SELECT id FROM grammar_points WHERE level IN (:levels) OR source IN ('diario', 'laguna', 'workbook')")
     suspend fun grammarIdsForLevels(levels: List<String>): List<Long>
 
     @Insert

@@ -4,6 +4,7 @@ import com.jorge.koreandiary.ai.CorrectionResponse
 import com.jorge.koreandiary.ai.ImportPayload
 import com.jorge.koreandiary.ai.PromptItem
 import com.jorge.koreandiary.ai.UsedItemDto
+import com.jorge.koreandiary.ai.WorkbookGrammar
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
@@ -45,7 +46,7 @@ object ItemSource {
     const val DIARY = "diario"
     /** Sugerido como posible laguna del estándar y usado después. */
     const val GAP = "laguna"
-    /** Visto impreso en una página del workbook (aún no practicado). */
+    /** Del workbook: vocabulario impreso o gramática que elegiste agregar (aún no practicado). */
     const val WORKBOOK = "workbook"
 }
 
@@ -249,16 +250,18 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         for (u in used) {
             val resolved = resolve(u, suggested, myGrammar, pageId, now, onPending = { pending++ }) ?: continue
             if (!counted.add(resolved.ref)) continue
+            // Sin id de la IA (p. ej. en el workbook) se compara el ítem encontrado con lo que viste.
+            val wasSuggested = resolved.wasSuggested || resolved.ref in suggested
             val rating = when {
                 !u.correct -> Fsrs.Rating.AGAIN
                 // Usarlo tras verlo sugerido es reconocimiento, no recuerdo libre: cuenta como "Hard".
-                resolved.wasSuggested -> Fsrs.Rating.HARD
+                wasSuggested -> Fsrs.Rating.HARD
                 else -> Fsrs.Rating.GOOD
             }
             val kind = when {
                 resolved.isNew -> EventKind.DISCOVERED
                 !u.correct -> EventKind.INCORRECT
-                resolved.wasSuggested -> EventKind.CORRECT_SUGGESTED
+                wasSuggested -> EventKind.CORRECT_SUGGESTED
                 else -> EventKind.CORRECT_SPONTANEOUS
             }
             review(resolved.ref, rating, kind, now, pageId)
@@ -293,6 +296,49 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
                     source = ItemSource.WORKBOOK,
                 )
             )
+            added++
+        }
+        return added
+    }
+
+    /** ¿Ya está en tu lista? Mismo criterio que al registrar uso: tu forma, luego la del estándar y sus relacionadas. */
+    private suspend fun findMine(form: String, myGrammar: List<GrammarPoint>): GrammarPoint? = withContext(Dispatchers.Default) {
+        fun match(forms: List<String>) = myGrammar.firstOrNull { g -> GrammarKeys.matches(listOf(g.pattern) + g.variants.split(" | "), forms) }
+        match(listOf(form)) ?: catalog.grammar(listOf(form))?.let { std -> match(listOf(std.form) + std.related) }
+    }
+
+    /** De estas formas, cuáles ya están en tu lista de gramática. */
+    suspend fun knownGrammar(forms: List<String>): Set<String> {
+        if (forms.isEmpty()) return emptySet()
+        val mine = study.allGrammar()
+        return forms.filter { findMine(it, mine) != null }.toSet()
+    }
+
+    /**
+     * Gramática que elegiste de una página del workbook (p. ej. la que enseña la lección).
+     * Entra a tu lista sin contar como repaso, para que el diario te la sugiera. Devuelve cuántas se agregaron.
+     */
+    suspend fun registerWorkbookGrammar(items: List<WorkbookGrammar>, unit: Int?): Int {
+        val mine = study.allGrammar().toMutableList()
+        var added = 0
+        for (g in items.distinctBy { it.form.trim() }) {
+            val form = g.form.trim()
+            if (form.isEmpty() || findMine(form, mine) != null) continue
+            val std = standardGrammar(form)
+            if (std == null && !looksLikeGrammar(form)) continue
+            val pattern = std?.form ?: form
+            if (study.findGrammar(pattern) != null) continue
+            val point = GrammarPoint(
+                unit = unit,
+                level = std?.let { "${it.level}급" } ?: "?",
+                pattern = pattern,
+                // Se guarda también la forma del libro, para reconocerla igual que aparece ahí.
+                variants = (listOf(pattern, form) + (std?.related ?: emptyList())).distinct().joinToString(" | "),
+                appliesTo = "",
+                meaning = g.meaning ?: std?.meaning?.takeIf { it.isNotBlank() },
+                source = ItemSource.WORKBOOK,
+            )
+            mine += point.copy(id = study.insertGrammar(point))
             added++
         }
         return added

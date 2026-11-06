@@ -18,6 +18,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.semantics.Role
+import com.jorge.koreandiary.ai.WorkbookGrammar
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -201,6 +205,16 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
         // Pistas por ejercicio (y la revisión de cada uno, si ya la hay).
         state.hints?.let { hints ->
             val reviewByNumber = state.review?.items?.associateBy { it.number } ?: emptyMap()
+            if (hints.grammar.isNotEmpty()) {
+                PageGrammarCard(
+                    grammar = hints.grammar,
+                    known = state.knownGrammar,
+                    selected = state.grammarSelection,
+                    unit = hints.unit,
+                    onToggle = vm::toggleGrammar,
+                    onAdd = vm::addSelectedGrammar,
+                )
+            }
             hints.exercises.forEach { ex -> ExerciseCard(ex, reviewByNumber[ex.number]) }
             if (hints.vocab.isNotEmpty()) {
                 Text(
@@ -292,6 +306,63 @@ private fun ZoomDialog(file: File, onClose: () -> Unit) {
                 )
             }
             AppButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) { Text("Cerrar") }
+        }
+    }
+}
+
+/**
+ * Todas las gramáticas impresas en la página. Solo entran a tu lista las que elijas: la de la lección
+ * sí, la de las instrucciones o los textos de alrededor no. Las marcadas ★ son las que la IA cree que enseña la lección.
+ */
+@Composable
+private fun PageGrammarCard(
+    grammar: List<WorkbookGrammar>,
+    known: Set<String>,
+    selected: Set<String>,
+    unit: Int?,
+    onToggle: (String) -> Unit,
+    onAdd: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    // Primero las de la lección, luego las que te faltan, al final las que ya tienes.
+    val ordered = remember(grammar, known) { grammar.sortedWith(compareBy({ !it.focus }, { it.form in known })) }
+    val toAdd = selected.count { it !in known }
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            "GRAMÁTICA DE LA PÁGINA" + (unit?.let { " · UNIDAD $it" } ?: ""),
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Text(
+            "Elige la que estás aprendiendo para agregarla a tu lista; el diario te la sugerirá. ★ = parece ser la de esta lección.",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+        ordered.forEach { g ->
+            val isKnown = g.form in known
+            Row(
+                Modifier.fillMaxWidth()
+                    .toggleable(value = isKnown || g.form in selected, enabled = !isKnown, role = Role.Checkbox) { onToggle(g.form) }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = isKnown || g.form in selected, onCheckedChange = null, enabled = !isKnown)
+                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(g.form, fontSize = 17.sp, fontWeight = if (g.focus) FontWeight.SemiBold else FontWeight.Normal)
+                        if (g.focus) Text("★", color = scheme.secondary)
+                    }
+                    val detail = listOfNotNull(g.meaning, g.where, if (isKnown) "ya en tu lista" else null).joinToString(" · ")
+                    if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                }
+            }
+        }
+        if (toAdd > 0) {
+            AppButton(onClick = onAdd, modifier = Modifier.padding(top = 4.dp)) {
+                Text(if (toAdd == 1) "Agregar 1 a mi lista" else "Agregar $toAdd a mi lista")
+            }
         }
     }
 }
