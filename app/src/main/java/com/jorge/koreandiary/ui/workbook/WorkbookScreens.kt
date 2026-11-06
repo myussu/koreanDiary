@@ -8,6 +8,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -21,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -107,6 +117,7 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     var pendingStage by rememberSaveable { mutableStateOf(WorkbookStage.HINTS) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm) { vm.shareIntents.collect { context.startActivity(it) } }
 
@@ -128,6 +139,16 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
         gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("¿Borrar esta página del workbook?") },
+            text = { Text("Se borran las fotos, las pistas y la revisión. Lo que ya contó para tu repaso se conserva.") },
+            confirmButton = { AppButton(onClick = { confirmDelete = false; vm.delete(onBack) }) { Text("Borrar") } },
+            dismissButton = { AppTextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
+    }
+
     val session = state.session
     Column(
         Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
@@ -136,7 +157,7 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             AppTextButton(onClick = onBack) { Text("‹ Workbook") }
             Text(session?.let { formatDate(it.createdAt) } ?: "", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            AppTextButton(onClick = { vm.delete(onBack) }) { Text("Borrar") }
+            AppTextButton(onClick = { confirmDelete = true }) { Text("Borrar") }
         }
 
         // Proveedor elegible en cada paso.
@@ -221,6 +242,7 @@ private fun StepHeader(text: String) {
 
 @Composable
 private fun PhotoPreview(file: File) {
+    var zoomOpen by remember { mutableStateOf(false) }
     val bitmap by produceState<ImageBitmap?>(null, file.path, file.lastModified()) {
         value = withContext(Dispatchers.IO) {
             val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
@@ -230,10 +252,46 @@ private fun PhotoPreview(file: File) {
     bitmap?.let {
         Image(
             bitmap = it,
-            contentDescription = "Foto",
+            contentDescription = "Foto (toca para ampliar)",
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxWidth().height(180.dp).border(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth().height(180.dp)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                .clickable { zoomOpen = true },
         )
+        Text("Toca la foto para ampliarla.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (zoomOpen) ZoomDialog(file) { zoomOpen = false }
+}
+
+/** Foto a pantalla completa con zoom (pellizcar) y desplazamiento, para leer la página con detalle. */
+@Composable
+private fun ZoomDialog(file: File, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        var scale by remember { mutableFloatStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        val transform = rememberTransformableState { zoom, pan, _ ->
+            scale = (scale * zoom).coerceIn(1f, 6f)
+            offset = if (scale == 1f) Offset.Zero else offset + pan
+        }
+        val bitmap by produceState<ImageBitmap?>(null, file.path) {
+            value = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.path)?.asImageBitmap() }
+        }
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim)) {
+            bitmap?.let {
+                Image(
+                    bitmap = it,
+                    contentDescription = "Foto ampliada",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().transformable(transform).graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offset.x
+                        translationY = offset.y
+                    },
+                )
+            }
+            AppButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) { Text("Cerrar") }
+        }
     }
 }
 

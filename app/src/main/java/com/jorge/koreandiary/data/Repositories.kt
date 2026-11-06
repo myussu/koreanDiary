@@ -431,4 +431,11 @@ class DiaryRepository(private val db: AppDatabase) {
     suspend fun correctionsNow(pageId: Long) = diary.corrections(pageId)
     suspend fun markRewritten(c: Correction) = diary.updateCorrection(c.copy(status = CorrectionStatus.REWRITTEN))
     suspend fun pendingPages() = diary.pagesWithStatus(PageStatus.PENDING)
+
+    /** Borra la página con sus correcciones y oraciones. El historial de FSRS se conserva. */
+    suspend fun deletePage(id: Long) {
+        diary.deleteCorrections(id)
+        diary.deleteSentences(id)
+        diary.deletePage(id)
+    }
 }

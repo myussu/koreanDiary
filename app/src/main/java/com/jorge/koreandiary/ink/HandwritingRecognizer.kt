@@ -31,8 +31,10 @@ class HandwritingRecognizer {
 
     suspend fun isModelDownloaded(): Boolean = manager.isModelDownloaded(model).await()
 
-    suspend fun downloadModel() {
-        manager.download(model, DownloadConditions.Builder().build()).await()
+    /** [wifiOnly] para la precarga en segundo plano: ~20 MB que no deben gastar datos móviles. */
+    suspend fun downloadModel(wifiOnly: Boolean = false) {
+        val conditions = DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()
+        manager.download(model, conditions).await()
     }
 
     /**

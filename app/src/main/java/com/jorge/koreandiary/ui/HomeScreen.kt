@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import kotlinx.coroutines.launch
 import com.jorge.koreandiary.mascot.MascotBrain
+import com.jorge.koreandiary.settings.ProviderId
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -62,6 +63,20 @@ fun HomeScreen(
             AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
+        val words by container.study.words.collectAsStateWithLifecycle(emptyList())
+        val grammar by container.study.grammar.collectAsStateWithLifecycle(emptyList())
+        val needsStudy = words.isEmpty() && grammar.isEmpty()
+        val needsProfile = settings.profile.isBlank()
+        if (!settings.hideOnboarding && (needsStudy || needsProfile)) {
+            OnboardingCard(
+                needsStudy = needsStudy,
+                needsProfile = needsProfile,
+                hasApi = container.isConfigured(ProviderId.GEMINI) || container.isConfigured(ProviderId.AZURE),
+                onStudy = onStudy,
+                onSettings = onSettings,
+                onHide = { container.settings.update { it.copy(hideOnboarding = true) } },
+            )
+        }
         if (settings.showMascot) {
             MascotGreeting(container, pages.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
         }
@@ -152,5 +167,60 @@ private fun MascotGreeting(container: AppContainer, dates: List<LocalDate>) {
                 )
             }
         }
+    }
+}
+
+/** Lo mínimo para que las sugerencias y correcciones funcionen bien. Desaparece al completarlo. */
+@Composable
+private fun OnboardingCard(
+    needsStudy: Boolean,
+    needsProfile: Boolean,
+    hasApi: Boolean,
+    onStudy: () -> Unit,
+    onSettings: () -> Unit,
+    onHide: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().padding(top = 12.dp).border(1.dp, scheme.outlineVariant).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("PRIMEROS PASOS", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+            AppTextButton(onClick = onHide) { Text("Ocultar") }
+        }
+        OnboardingItem(
+            done = !needsStudy,
+            text = "Importa tu lista de gramática o vocabulario para recibir sugerencias.",
+            action = "Estudio",
+            onClick = onStudy,
+        )
+        OnboardingItem(
+            done = !needsProfile,
+            text = "Escribe tu perfil y tu nivel: la IA corrige con ese contexto.",
+            action = "Ajustes",
+            onClick = onSettings,
+        )
+        OnboardingItem(
+            done = hasApi,
+            text = "Opcional: configura Gemini o Azure. Sin API también puedes usar “Compartir con un chat”.",
+            action = "Ajustes",
+            onClick = onSettings,
+        )
+    }
+}
+
+@Composable
+private fun OnboardingItem(done: Boolean, text: String, action: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(if (done) "✓" else "·", color = if (done) scheme.tertiary else scheme.secondary, modifier = Modifier.padding(end = 8.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (done) scheme.onSurfaceVariant else scheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        if (!done) AppTextButton(onClick = onClick) { Text(action) }
     }
 }

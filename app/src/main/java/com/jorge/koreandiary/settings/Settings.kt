@@ -53,7 +53,18 @@ data class AppSettings(
     val azureEffort: String = "low",
     val azureDailyLimit: Int = 30,
     val showMascot: Boolean = true,
+    /** Grosor del lápiz: fino, medio o grueso. */
+    val penWidth: String = "medio",
+    /** Ocultar la tarjeta "Primeros pasos" del inicio. */
+    val hideOnboarding: Boolean = false,
 ) {
+    /** Grosor del trazo en dp (independiente de la densidad de la pantalla). */
+    val penWidthDp: Float get() = when (penWidth) {
+        "fino" -> 1.6f
+        "grueso" -> 3.4f
+        else -> 2.4f
+    }
+
     val grammarLevelList get() = grammarLevels.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
     /** Nivel 1–6 del estándar del 국립국어원 a partir del nivel del libro ("3A" → 3). */
@@ -87,6 +98,8 @@ class SettingsStore(context: Context) {
         azureEffort = prefs.getString("azureEffort", "low") ?: "low",
         azureDailyLimit = prefs.getInt("azureDailyLimit", 30),
         showMascot = prefs.getBoolean("showMascot", true),
+        penWidth = prefs.getString("penWidth", "medio") ?: "medio",
+        hideOnboarding = prefs.getBoolean("hideOnboarding", false),
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -106,6 +119,8 @@ class SettingsStore(context: Context) {
             .putString("azureEffort", s.azureEffort)
             .putInt("azureDailyLimit", s.azureDailyLimit)
             .putBoolean("showMascot", s.showMascot)
+            .putString("penWidth", s.penWidth)
+            .putBoolean("hideOnboarding", s.hideOnboarding)
             .apply()
         _state.value = s
     }

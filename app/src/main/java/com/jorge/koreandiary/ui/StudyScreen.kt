@@ -13,10 +13,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -40,6 +42,16 @@ fun StudyScreen(container: AppContainer, onBack: () -> Unit, onImport: () -> Uni
     val states by container.study.memoryStates.collectAsStateWithLifecycle(emptyList())
     val stateMap = remember(states) { states.associateBy { it.itemType to it.itemId } }
     var tab by remember { mutableIntStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    val q = query.trim().lowercase()
+    val shownWords = remember(words, q) {
+        if (q.isEmpty()) words else words.filter { w -> w.baseForm.contains(q) || w.meaning?.lowercase()?.contains(q) == true }
+    }
+    val shownGrammar = remember(grammar, q) {
+        if (q.isEmpty()) grammar else grammar.filter { g ->
+            g.pattern.lowercase().contains(q) || g.variants.lowercase().contains(q) || g.meaning?.lowercase()?.contains(q) == true
+        }
+    }
     val scope = rememberCoroutineScope()
     val now = remember { System.currentTimeMillis() }
 
@@ -56,9 +68,18 @@ fun StudyScreen(container: AppContainer, onBack: () -> Unit, onImport: () -> Uni
             listOf("Vocabulario (${words.size})", "Gramática (${grammar.size})", "Por revisar (${pending.size})")
                 .forEachIndexed { i, label -> AppToggle(label, tab == i) { tab = i } }
         }
+        if (tab != 2) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text(if (tab == 0) "Buscar palabra o significado" else "Buscar gramática o significado") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            )
+        }
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
             when (tab) {
-                0 -> items(words, key = { "w${it.id}" }) { w ->
+                0 -> items(shownWords, key = { "w${it.id}" }) { w ->
                     ItemRow(
                         title = w.baseForm,
                         subtitle = listOfNotNull(
@@ -71,7 +92,7 @@ fun StudyScreen(container: AppContainer, onBack: () -> Unit, onImport: () -> Uni
                         memory = stateMap[ItemType.WORD to w.id], now = now,
                     )
                 }
-                1 -> items(grammar, key = { "g${it.id}" }) { g ->
+                1 -> items(shownGrammar, key = { "g${it.id}" }) { g ->
                     ItemRow(
                         title = g.pattern,
                         subtitle = listOfNotNull(g.level + (g.unit?.let { " · U$it" } ?: ""), g.meaning, sourceLabel(g.source)).joinToString(" · "),

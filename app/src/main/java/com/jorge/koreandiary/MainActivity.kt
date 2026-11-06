@@ -83,6 +83,12 @@ private fun AppNavigation(container: AppContainer) {
 
     // Busca actualizaciones una vez por apertura, en silencio (sin errores si no hay red).
     LaunchedEffect(Unit) { container.updater.check(silent = true) }
+    // Precarga el modelo de escritura coreana por Wi-Fi: así la primera "Revisar" no espera la descarga.
+    LaunchedEffect(Unit) {
+        runCatching {
+            if (!container.recognizer.isModelDownloaded()) container.recognizer.downloadModel(wifiOnly = true)
+        }
+    }
 
     val route = stack.last()
     when {

@@ -90,6 +90,7 @@ fun InkCanvas(
     inkColor: Color,
     lineColor: Color,
     reviewedTint: Color,
+    strokeWidthPx: Float,
     onStrokeFinished: (InkStroke) -> Unit,
     onErase: (Offset) -> Unit,
     modifier: Modifier = Modifier,
@@ -200,7 +201,7 @@ fun InkCanvas(
                 drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
                 y += lineHeightPx
             }
-            val style = Stroke(width = 4.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            val style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round, join = StrokeJoin.Round)
             strokePaths.forEach { drawPath(it, inkColor, style = style) }
             if (live.size >= 2) drawPath(InkStroke(live.toList()).toPath(), inkColor, style = style)
         }

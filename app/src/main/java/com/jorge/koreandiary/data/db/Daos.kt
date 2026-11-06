@@ -109,6 +109,9 @@ interface DiaryDao {
     )
     fun observePageSummaries(): Flow<List<PageSummary>>
 
+    @Query("DELETE FROM pages WHERE id = :id")
+    suspend fun deletePage(id: Long)
+
     @Query("SELECT * FROM pages WHERE status = :status")
     suspend fun pagesWithStatus(status: String): List<DiaryPage>
 

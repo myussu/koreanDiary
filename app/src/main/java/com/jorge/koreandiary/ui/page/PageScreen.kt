@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -78,12 +80,21 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val howTo by vm.howTo.collectAsStateWithLifecycle()
     val reaction by vm.mascotMood.collectAsStateWithLifecycle()
     var howToOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val paper = LocalPaperStyle.current
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
     var tool by remember { mutableStateOf(InkTool.PEN) }
-    val lineHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
+    val density = LocalDensity.current
+    val lineHeightPx = with(density) { 64.dp.toPx() }
+    val strokeWidthPx = with(density) { settings.penWidthDp.dp.toPx() }
+    // Pantalla encendida mientras estás en la página: pensar qué escribir no debería apagarla.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
     val inkScroll = rememberInkScrollState()
 
     LaunchedEffect(vm) {
@@ -112,6 +123,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             page?.let { AppTag(it.status, accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
+            AppTextButton(onClick = { confirmDelete = true }) { Text("Borrar") }
         }
 
         // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
@@ -158,6 +170,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 inkColor = paper.ink,
                 lineColor = paper.line,
                 reviewedTint = paper.reviewedTint,
+                strokeWidthPx = strokeWidthPx,
                 onStrokeFinished = vm::addStroke,
                 onErase = vm::eraseAt,
                 onInsertLine = { line ->
@@ -224,6 +237,16 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 AppButton(onClick = vm::review, enabled = !busy) { Text("Revisar") }
             }
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("¿Borrar esta página?") },
+            text = { Text("Se borran la escritura, las correcciones y las oraciones. Lo que ya contó para tu repaso se conserva.") },
+            confirmButton = { AppButton(onClick = { confirmDelete = false; vm.deletePage(onBack) }) { Text("Borrar") } },
+            dismissButton = { AppTextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
     }
 
     when (val phase = state.phase) {

@@ -163,7 +163,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     fun addStroke(stroke: InkStroke) = mutate { it + stroke }
 
     fun eraseAt(point: Offset) {
-        val hits = strokesNear(_state.value.strokes, point, ERASE_RADIUS)
+        val hits = strokesNear(_state.value.strokes, point, (lineHeight * 0.18f).coerceAtLeast(MIN_ERASE_RADIUS))
         if (hits.isNotEmpty()) mutate { strokes -> strokes.filterIndexed { i, _ -> i !in hits } }
     }
 
@@ -484,10 +484,31 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private fun setPhase(phase: Phase, message: String? = _state.value.message) =
         _state.update { it.copy(phase = phase, message = message) }
 
+    private var deleted = false
+
+    fun deletePage(onDone: () -> Unit) {
+        val page = _state.value.page ?: return
+        deleted = true
+        saveJob?.cancel()
+        viewModelScope.launch {
+            c.diary.deletePage(page.id)
+            onDone()
+        }
+    }
+
     override fun onCleared() {
         // Guardado final: el scope del ViewModel ya se canceló, así que se usa el de la app.
+        if (deleted) return
         val page = _state.value.page ?: return
         val strokes = _state.value.strokes
+        // Página abierta por error y sin escribir nada: se borra en vez de quedar vacía en la lista.
+        // Se exige también que no haya trazos guardados: si sales antes de que cargue una página con
+        // escritura, la lista en memoria aún está vacía y no debe borrarse.
+        val savedInk = InkSerializer.fromJson(page.inkJson, 1f).isNotEmpty()
+        if (strokes.isEmpty() && !savedInk && page.status == PageStatus.DRAFT && page.confirmedText.isNullOrBlank()) {
+            c.appScope.launch { c.diary.deletePage(page.id) }
+            return
+        }
         val w = width
         if (w > 0f) {
             c.appScope.launch {
@@ -497,6 +518,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     companion object {
-        private const val ERASE_RADIUS = 28f
+        /** Radio mínimo del borrador (px); el normal es ~18 % del alto de línea. */
+        private const val MIN_ERASE_RADIUS = 24f
     }
 }

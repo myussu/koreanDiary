@@ -20,6 +20,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +73,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             azureDailyLimit = azureLimit.toIntOrNull()?.coerceAtLeast(1) ?: 30,
         )
     }
+
+    // Guardar también al salir con el gesto o botón "atrás" del sistema, no solo con los botones.
+    DisposableEffect(Unit) { onDispose { save() } }
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
@@ -130,6 +134,12 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
         }
 
         Section("Escritura") {
+            Text("Grosor del lápiz", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("fino" to "Fino", "medio" to "Medio", "grueso" to "Grueso").forEach { (id, label) ->
+                    AppToggle(label, s.penWidth == id) { container.settings.update { it.copy(penWidth = id) } }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Solo el S Pen dibuja")
