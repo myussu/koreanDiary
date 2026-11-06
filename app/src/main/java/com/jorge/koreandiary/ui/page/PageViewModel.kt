@@ -63,6 +63,9 @@ sealed interface HowTo {
     data class Error(val message: String) : HowTo
 }
 
+/** Vibración breve para los momentos clave (como el clic de un botón físico). */
+enum class Feedback { SUCCESS, FAIL, TICK }
+
 data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean, val isGap: Boolean = false)
 
 data class PageUiState(
@@ -72,6 +75,7 @@ data class PageUiState(
     val phase: Phase = Phase.Writing,
     val message: String? = null,
     val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
 )
 
 class PageViewModel(private val c: AppContainer, private val pageId: Long) : ViewModel() {
@@ -102,6 +106,9 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private val _shareIntents = Channel<Intent>(Channel.BUFFERED)
     val shareIntents = _shareIntents.receiveAsFlow()
 
+    private val _feedback = Channel<Feedback>(Channel.CONFLATED)
+    val feedback = _feedback.receiveAsFlow()
+
     private var width = 0f
     private var height = 0f
     private var lineHeight = 0f
@@ -109,6 +116,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     /** Cada paso guarda los trazos y la zona revisada (insertar una línea puede moverla). */
     private data class Snapshot(val strokes: List<InkStroke>, val reviewedLines: Int)
     private val undoStack = ArrayDeque<Snapshot>()
+    /** Lo deshecho, para rehacerlo. Se vacía con cualquier cambio nuevo. */
+    private val redoStack = ArrayDeque<Snapshot>()
     private var saveJob: Job? = null
 
     init {
@@ -169,11 +178,25 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     fun undo() {
         val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(currentSnapshot())
+        restore(previous)
+    }
+
+    fun redo() {
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(currentSnapshot())
+        restore(next)
+    }
+
+    private fun currentSnapshot() = Snapshot(_state.value.strokes, _state.value.page?.reviewedLineCount ?: 0)
+
+    private fun restore(snapshot: Snapshot) {
         _state.update {
             it.copy(
-                strokes = previous.strokes,
-                page = it.page?.copy(reviewedLineCount = previous.reviewedLines),
+                strokes = snapshot.strokes,
+                page = it.page?.copy(reviewedLineCount = snapshot.reviewedLines),
                 canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty(),
             )
         }
         scheduleSave()
@@ -187,6 +210,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (lineHeight <= 0f) return
         val page = _state.value.page ?: return
         val shift = lineHeight
+        _feedback.trySend(Feedback.TICK)
         mutate(reviewedLines = if (line < page.reviewedLineCount) page.reviewedLineCount + 1 else page.reviewedLineCount) { strokes ->
             strokes.map { s ->
                 if (s.lineIndex(lineHeight) >= line) InkStroke(s.points.map { p -> p.copy(y = p.y + shift) }) else s
@@ -202,11 +226,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val currentReviewed = _state.value.page?.reviewedLineCount ?: 0
         undoStack.addLast(Snapshot(current, currentReviewed))
         if (undoStack.size > 60) undoStack.removeFirst()
+        redoStack.clear()
         _state.update {
             it.copy(
                 strokes = transform(current),
                 page = if (reviewedLines != null) it.page?.copy(reviewedLineCount = reviewedLines) else it.page,
                 canUndo = true,
+                canRedo = false,
             )
         }
         scheduleSave()
@@ -417,6 +443,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 else -> MascotMood.ENCOURAGE
             }
         )
+        _feedback.trySend(if (summary.corrections == 0) Feedback.SUCCESS else Feedback.TICK)
         val hint = if (summary.corrections > 0) " Reescribe las correcciones debajo y pulsa “Verificar”." else ""
         setPhase(Phase.Writing, parts.joinToString(" · ") + "." + hint)
     }
@@ -456,6 +483,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                         else -> MascotMood.IDLE
                     }
                 )
+                _feedback.trySend(if (ok == pending.size) Feedback.SUCCESS else Feedback.FAIL)
                 val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
                 setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
             } catch (e: Exception) {
@@ -471,7 +499,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         viewModelScope.launch {
             c.diary.markRewritten(correction)
             val left = c.diary.correctionsNow(pageId).count { it.status == CorrectionStatus.PENDING }
-            if (left == 0) react(MascotMood.HAPPY)
+            if (left == 0) {
+                react(MascotMood.HAPPY)
+                _feedback.trySend(Feedback.SUCCESS)
+            }
         }
     }
 

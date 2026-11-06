@@ -43,7 +43,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -70,6 +72,7 @@ import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.ui.LocalPaperStyle
 import com.jorge.koreandiary.ui.formatDate
+import com.jorge.koreandiary.ui.pageStatusLabel
 import com.jorge.koreandiary.ui.paperBackground
 
 @Composable
@@ -100,6 +103,18 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     LaunchedEffect(vm) {
         vm.shareIntents.collect { context.startActivity(it) }
     }
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(vm) {
+        vm.feedback.collect {
+            haptics.performHapticFeedback(
+                when (it) {
+                    Feedback.SUCCESS -> HapticFeedbackType.Confirm
+                    Feedback.FAIL -> HapticFeedbackType.Reject
+                    Feedback.TICK -> HapticFeedbackType.SegmentTick
+                }
+            )
+        }
+    }
 
     val page = state.page
     val pendingCorrections = corrections.count { it.status == CorrectionStatus.PENDING }
@@ -122,7 +137,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            page?.let { AppTag(it.status, accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
+            page?.let { AppTag(pageStatusLabel(it.status), accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
             AppTextButton(onClick = { confirmDelete = true }) { Text("Borrar") }
         }
 
@@ -226,6 +241,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                     tool = if (tool == InkTool.INSERT_LINE) InkTool.PEN else InkTool.INSERT_LINE
                 }
                 AppTextButton(onClick = vm::undo, enabled = state.canUndo) { Text("Deshacer") }
+                AppTextButton(onClick = vm::redo, enabled = state.canRedo) { Text("Rehacer") }
             }
             val busy = state.phase is Phase.Busy
             if (page?.status == PageStatus.PENDING) {

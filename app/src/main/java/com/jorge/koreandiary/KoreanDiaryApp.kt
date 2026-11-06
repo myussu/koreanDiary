@@ -10,6 +10,7 @@ import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.standard.StandardCatalog
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.mascot.MascotPack
+import com.jorge.koreandiary.reminder.ReminderScheduler
 import com.jorge.koreandiary.workbook.WorkbookStore
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.SecretStore
@@ -71,5 +72,7 @@ class KoreanDiaryApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Por si el sistema borró la alarma (p. ej. tras forzar el cierre): se vuelve a programar.
+        ReminderScheduler.apply(this, container.settings.state.value)
     }
 }

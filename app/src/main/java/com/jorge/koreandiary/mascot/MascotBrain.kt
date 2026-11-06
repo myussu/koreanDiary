@@ -61,4 +61,28 @@ object MascotBrain {
             else -> MascotLine("오늘 하루 수고했어요. 일기 쓸까요?", "Buen trabajo hoy. ¿Escribimos el diario?", MascotMood.IDLE)
         }
     }
+
+    /** Mejor racha histórica. */
+    fun bestStreak(dates: Collection<LocalDate>): Int {
+        val sorted = dates.toSortedSet()
+        var best = 0
+        var current = 0
+        var previous: LocalDate? = null
+        for (d in sorted) {
+            current = if (previous != null && previous.plusDays(1) == d) current + 1 else 1
+            best = maxOf(best, current)
+            previous = d
+        }
+        return best
+    }
+
+    /** Texto del recordatorio cuando hoy aún no hay página. */
+    fun reminder(dates: Collection<LocalDate>, today: LocalDate): MascotLine {
+        val streak = streak(dates, today)
+        return if (streak > 0) {
+            MascotLine("오늘도 쓰면 ${streak + 1}일 연속이에요!", "Si escribes hoy también, serán ${streak + 1} días seguidos.", MascotMood.ENCOURAGE)
+        } else {
+            MascotLine("오늘 하루는 어땠어요? 짧게라도 써 봐요.", "¿Cómo te fue hoy? Escribe aunque sea un poco.", MascotMood.IDLE)
+        }
+    }
 }

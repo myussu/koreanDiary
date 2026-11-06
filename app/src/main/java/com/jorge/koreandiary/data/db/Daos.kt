@@ -109,6 +109,16 @@ interface DiaryDao {
     )
     fun observePageSummaries(): Flow<List<PageSummary>>
 
+    @Query("SELECT COUNT(pages.id) FROM pages JOIN entries ON pages.entryId = entries.id WHERE entries.date = :date")
+    suspend fun pageCountForDate(date: String): Int
+
+    /** Páginas por día (solo días con al menos una página): racha, calendario y recordatorio. */
+    @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id GROUP BY entries.date")
+    fun observePagesPerDay(): Flow<List<DayCount>>
+
+    @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id GROUP BY entries.date")
+    suspend fun pagesPerDay(): List<DayCount>
+
     @Query("DELETE FROM pages WHERE id = :id")
     suspend fun deletePage(id: Long)
 
@@ -150,3 +160,5 @@ data class PageSummary(
 )
 
 data class TenseCount(val tense: String, val total: Int)
+
+data class DayCount(val date: String, val total: Int)

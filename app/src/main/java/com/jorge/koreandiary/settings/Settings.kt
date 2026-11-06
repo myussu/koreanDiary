@@ -59,6 +59,10 @@ data class AppSettings(
     val penPressure: Boolean = true,
     /** Ocultar la tarjeta "Primeros pasos" del inicio. */
     val hideOnboarding: Boolean = false,
+    /** Recordatorio diario para escribir, solo si ese día aún no hay página. */
+    val reminderEnabled: Boolean = false,
+    val reminderHour: Int = 20,
+    val reminderMinute: Int = 0,
 ) {
     /** Grosor del trazo en dp (independiente de la densidad de la pantalla). */
     val penWidthDp: Float get() = when (penWidth) {
@@ -103,6 +107,9 @@ class SettingsStore(context: Context) {
         penWidth = prefs.getString("penWidth", "medio") ?: "medio",
         penPressure = prefs.getBoolean("penPressure", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
+        reminderEnabled = prefs.getBoolean("reminderEnabled", false),
+        reminderHour = prefs.getInt("reminderHour", 20),
+        reminderMinute = prefs.getInt("reminderMinute", 0),
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -125,6 +132,9 @@ class SettingsStore(context: Context) {
             .putString("penWidth", s.penWidth)
             .putBoolean("penPressure", s.penPressure)
             .putBoolean("hideOnboarding", s.hideOnboarding)
+            .putBoolean("reminderEnabled", s.reminderEnabled)
+            .putInt("reminderHour", s.reminderHour)
+            .putInt("reminderMinute", s.reminderMinute)
             .apply()
         _state.value = s
     }

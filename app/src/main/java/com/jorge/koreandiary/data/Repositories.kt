@@ -95,6 +95,20 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
     val pendingWords = study.observePendingWords()
     val memoryStates = memory.observeAll()
 
+    /** Texto para mostrar de cada ítem (palabra o patrón), por tipo e id. */
+    suspend fun labels(states: List<MemoryState>): Map<Pair<String, Long>, String> {
+        val result = mutableMapOf<Pair<String, Long>, String>()
+        val wordIds = states.filter { it.itemType == ItemType.WORD }.map { it.itemId }
+        val grammarIds = states.filter { it.itemType == ItemType.GRAMMAR }.map { it.itemId }
+        if (wordIds.isNotEmpty()) study.wordsByIds(wordIds).forEach { w ->
+            result[ItemType.WORD to w.id] = listOfNotNull(w.baseForm, w.meaning).joinToString(" · ")
+        }
+        if (grammarIds.isNotEmpty()) study.grammarByIds(grammarIds).forEach { g ->
+            result[ItemType.GRAMMAR to g.id] = listOfNotNull(g.pattern, g.meaning).joinToString(" · ")
+        }
+        return result
+    }
+
     suspend fun import(payload: ImportPayload, source: String = ItemSource.IMPORT): ImportSummary {
         var words = 0
         var grammar = 0
@@ -418,6 +432,7 @@ class DiaryRepository(private val db: AppDatabase) {
 
     val pageSummaries = diary.observePageSummaries()
     val tenseCounts = diary.observeTenseCounts()
+    val pagesPerDay = diary.observePagesPerDay()
 
     suspend fun newPage(now: Long, suggestedItems: String): Long {
         val today = LocalDate.now().toString()

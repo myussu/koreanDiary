@@ -27,6 +27,7 @@ import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.ui.HomeScreen
 import com.jorge.koreandiary.ui.ImportScreen
 import com.jorge.koreandiary.ui.KoreanDiaryTheme
+import com.jorge.koreandiary.ui.ProgressScreen
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
 import com.jorge.koreandiary.ui.page.PageScreen
@@ -96,6 +97,7 @@ private fun AppNavigation(container: AppContainer) {
         route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
         route == "import" -> ImportScreen(container, onBack = ::pop)
         route == "settings" -> SettingsScreen(container, onBack = ::pop)
+        route == "progress" -> ProgressScreen(container, onBack = ::pop)
         route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
         route.startsWith("workbook:") -> WorkbookSessionScreen(container, route.removePrefix("workbook:").toLong(), onBack = ::pop)
         else -> HomeScreen(
@@ -104,6 +106,7 @@ private fun AppNavigation(container: AppContainer) {
             onStudy = { push("study") },
             onSettings = { push("settings") },
             onWorkbook = { push("workbook") },
+            onProgress = { push("progress") },
         )
     }
 }

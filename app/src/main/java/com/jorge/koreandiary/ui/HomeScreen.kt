@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.data.db.PageStatus
 import kotlinx.coroutines.launch
 import com.jorge.koreandiary.mascot.MascotBrain
 import com.jorge.koreandiary.settings.ProviderId
@@ -42,6 +43,26 @@ fun formatDate(millis: Long): String =
     dateFormatter.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
         .replaceFirstChar { it.uppercase() }
 
+private val dayFormatter = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", Locale.forLanguageTag("es"))
+private val dayYearFormatter = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM 'de' yyyy", Locale.forLanguageTag("es"))
+
+/** "2026-11-05" → "Hoy", "Ayer" o "Martes 3 de noviembre" (con año si no es el actual). */
+fun relativeDay(isoDate: String, today: LocalDate): String {
+    val date = runCatching { LocalDate.parse(isoDate) }.getOrNull() ?: return isoDate
+    return when (date) {
+        today -> "Hoy"
+        today.minusDays(1) -> "Ayer"
+        else -> (if (date.year == today.year) dayFormatter else dayYearFormatter).format(date).replaceFirstChar { it.uppercase() }
+    }
+}
+
+fun pageStatusLabel(status: String) = when (status) {
+    PageStatus.DRAFT -> "Borrador"
+    PageStatus.PENDING -> "Esperando corrección"
+    PageStatus.REVIEWED -> "Revisada ✓"
+    else -> status
+}
+
 @Composable
 fun HomeScreen(
     container: AppContainer,
@@ -49,6 +70,7 @@ fun HomeScreen(
     onStudy: () -> Unit,
     onSettings: () -> Unit,
     onWorkbook: () -> Unit,
+    onProgress: () -> Unit,
 ) {
     val pages by container.diary.pageSummaries.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
@@ -80,13 +102,24 @@ fun HomeScreen(
         if (settings.showMascot) {
             MascotGreeting(container, pages.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
         }
-        if (tenses.isNotEmpty()) {
+        if (pages.isNotEmpty()) {
+            // Resumen corto; el detalle (calendario, memoria, lo que más cuesta) está en Progreso.
             val byTense = tenses.associate { it.tense to it.total }
-            Text(
-                "Oraciones · pasado ${byTense["pasado"] ?: 0} · presente ${byTense["presente"] ?: 0} · futuro ${byTense["futuro"] ?: 0}",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    .clickable(onClick = onProgress)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${pages.size} ${if (pages.size == 1) "página" else "páginas"} · pasado ${byTense["pasado"] ?: 0} · " +
+                        "presente ${byTense["presente"] ?: 0} · futuro ${byTense["futuro"] ?: 0}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Text("Progreso ›", style = MaterialTheme.typography.labelLarge)
+            }
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AppButton(
@@ -114,13 +147,18 @@ fun HomeScreen(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+        val today = LocalDate.now()
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             items(pages, key = { it.pageId }) { p ->
                 Card(Modifier.fillMaxWidth().clickable { onOpenPage(p.pageId) }) {
                     Column(Modifier.padding(14.dp)) {
                         Row {
-                            Text(p.date, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            Text(p.status, style = MaterialTheme.typography.labelMedium)
+                            Text(relativeDay(p.date, today), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Text(
+                                pageStatusLabel(p.status),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (p.status == PageStatus.PENDING) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                         Text(
                             p.preview?.takeIf { it.isNotBlank() } ?: "(sin texto reconocido)",

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copia de seguridad (Android 11 o anterior): mismas reglas que data_extraction_rules.xml. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="file" path="workbook/" />
+    <include domain="file" path="mascot/" />
+    <include domain="sharedpref" path="settings.xml" />
+</full-backup-content>

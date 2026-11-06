@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono pequeño de notificación: silueta de la gota (Android lo pinta de un solo color). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M54.0,27.0 C57.0,37.8 72.0,47.4 72.0,63.0 A18.0,18.0 0 0,1 36.0,63.0 C36.0,47.4 51.0,37.8 54.0,27.0 Z M45.48,61.8 a1.92,2.88 0 1,0 3.84,0 a1.92,2.88 0 1,0 -3.84,0 Z M58.68,61.8 a1.92,2.88 0 1,0 3.84,0 a1.92,2.88 0 1,0 -3.84,0 Z" />
+</vector>

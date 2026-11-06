@@ -14,7 +14,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.jorge.koreandiary.reminder.ReminderScheduler
+import com.jorge.koreandiary.settings.AppSettings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -133,6 +144,10 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             MascotSettings(container)
         }
 
+        Section("Recordatorio") {
+            ReminderSettings(container)
+        }
+
         Section("Escritura") {
             Text("Grosor del lápiz", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -249,6 +264,70 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
         }
 
         AppButton(onClick = { save(); onBack() }, modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) { Text("Guardar ajustes") }
+    }
+}
+
+/** Aviso diario a la hora elegida; solo suena si ese día aún no hay página. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderSettings(container: AppContainer) {
+    val context = LocalContext.current
+    val s by container.settings.state.collectAsStateWithLifecycle()
+    var pickingTime by remember { mutableStateOf(false) }
+    var denied by remember { mutableStateOf(false) }
+
+    fun change(transform: (AppSettings) -> AppSettings) {
+        container.settings.update(transform)
+        ReminderScheduler.apply(context, container.settings.state.value)
+    }
+
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        denied = !granted
+        if (granted) change { it.copy(reminderEnabled = true) }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Recordatorio diario")
+            Text("Solo avisa si ese día aún no escribiste. La mascota te dice cuánto llevas de racha.", style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = s.reminderEnabled, onCheckedChange = { enable ->
+            val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            if (enable && needsPermission) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else change { it.copy(reminderEnabled = enable) }
+        })
+    }
+    if (denied) {
+        Text(
+            "Sin permiso para notificaciones no puedo avisarte. Puedes darlo en Ajustes del sistema › Aplicaciones › Korean Diary.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    if (s.reminderEnabled) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Hora")
+            AppOutlinedButton(onClick = { pickingTime = true }) {
+                Text("%02d:%02d".format(s.reminderHour, s.reminderMinute))
+            }
+        }
+    }
+
+    if (pickingTime) {
+        val state = rememberTimePickerState(initialHour = s.reminderHour, initialMinute = s.reminderMinute, is24Hour = true)
+        AlertDialog(
+            onDismissRequest = { pickingTime = false },
+            title = { Text("Hora del recordatorio") },
+            text = { TimePicker(state = state) },
+            confirmButton = {
+                AppButton(onClick = {
+                    pickingTime = false
+                    change { it.copy(reminderHour = state.hour, reminderMinute = state.minute) }
+                }) { Text("Listo") }
+            },
+            dismissButton = { AppTextButton(onClick = { pickingTime = false }) { Text("Cancelar") } },
+        )
     }
 }
 
