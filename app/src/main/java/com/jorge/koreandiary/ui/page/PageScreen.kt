@@ -171,6 +171,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 lineColor = paper.line,
                 reviewedTint = paper.reviewedTint,
                 strokeWidthPx = strokeWidthPx,
+                pressureEnabled = settings.penPressure,
                 onStrokeFinished = vm::addStroke,
                 onErase = vm::eraseAt,
                 onInsertLine = { line ->

@@ -142,6 +142,16 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
+                    Text("Presión del S Pen")
+                    Text(
+                        "El trazo engrosa o adelgaza según cuánto presionas, como un pincel. Apágalo para un trazo uniforme que ocupa menos espacio.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = s.penPressure, onCheckedChange = { v -> container.settings.update { it.copy(penPressure = v) } })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
                     Text("Solo el S Pen dibuja")
                     Text("El dedo y la palma se ignoran.", style = MaterialTheme.typography.bodySmall)
                 }

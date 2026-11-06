@@ -1,9 +1,20 @@
 package com.jorge.koreandiary.ink
 
 import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.floor
 
-data class InkPoint(val x: Float, val y: Float, val t: Long)
+/** [p]: presión del lápiz (0–1). El dedo y las páginas antiguas usan un valor medio. */
+data class InkPoint(val x: Float, val y: Float, val t: Long, val p: Float = DEFAULT_PRESSURE)
+
+const val DEFAULT_PRESSURE = 0.5f
+
+/**
+ * Grosor según la presión, como un pincel: con la presión media (0.5) da exactamente [base],
+ * así las páginas antiguas y el dedo se ven igual que antes. Va de 0.4× a 1.6× del grosor base.
+ */
+fun pressureWidth(base: Float, pressure: Float): Float =
+    base * (0.4f + 1.2f * pressure.coerceIn(0f, 1f)).coerceIn(0.4f, 1.6f)
 
 data class InkStroke(val points: List<InkPoint>) {
     val centerY: Float
@@ -22,41 +33,51 @@ data class InkStroke(val points: List<InkPoint>) {
 }
 
 /**
- * Serializa trazos de forma compacta: [[x,y,t, x,y,t, ...], ...].
+ * Serializa trazos de forma compacta. Formato actual (v2):
+ *   {"v": 2, "s": [[x, y, t, p,  x, y, t, p, ...], ...]}  (p = presión)
+ * Formato anterior (v1), que se sigue leyendo: [[x, y, t, ...], ...] sin presión.
  * Las coordenadas se guardan normalizadas al ancho del lienzo (0..1 en x),
  * para que la página se vea igual si cambia el tamaño de pantalla.
  */
 object InkSerializer {
     fun toJson(strokes: List<InkStroke>, width: Float): String {
         val w = if (width > 0f) width else 1f
-        val root = JSONArray()
+        val list = JSONArray()
         for (s in strokes) {
             val arr = JSONArray()
             for (p in s.points) {
                 arr.put(round4(p.x / w))
                 arr.put(round4(p.y / w))
                 arr.put(p.t)
+                arr.put(Math.round(p.p * 100.0) / 100.0)
             }
-            root.put(arr)
+            list.put(arr)
         }
-        return root.toString()
+        return JSONObject().put("v", 2).put("s", list).toString()
     }
 
     fun fromJson(json: String?, width: Float): List<InkStroke> {
         if (json.isNullOrBlank() || width <= 0f) return emptyList()
         return try {
-            val root = JSONArray(json)
-            (0 until root.length()).mapNotNull { i ->
-                val arr = root.optJSONArray(i) ?: return@mapNotNull null
-                val points = ArrayList<InkPoint>(arr.length() / 3)
+            val trimmed = json.trimStart()
+            val (list, stride) = if (trimmed.startsWith("{")) {
+                val o = JSONObject(trimmed)
+                (o.optJSONArray("s") ?: JSONArray()) to (if (o.optInt("v", 2) >= 2) 4 else 3)
+            } else {
+                JSONArray(trimmed) to 3
+            }
+            (0 until list.length()).mapNotNull { i ->
+                val arr = list.optJSONArray(i) ?: return@mapNotNull null
+                val points = ArrayList<InkPoint>(arr.length() / stride)
                 var j = 0
-                while (j + 2 < arr.length()) {
+                while (j + stride - 1 < arr.length()) {
                     points += InkPoint(
                         x = (arr.getDouble(j) * width).toFloat(),
                         y = (arr.getDouble(j + 1) * width).toFloat(),
                         t = arr.getLong(j + 2),
+                        p = if (stride == 4) arr.getDouble(j + 3).toFloat() else DEFAULT_PRESSURE,
                     )
-                    j += 3
+                    j += stride
                 }
                 if (points.isEmpty()) null else InkStroke(points)
             }

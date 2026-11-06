@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -91,6 +92,8 @@ fun InkCanvas(
     lineColor: Color,
     reviewedTint: Color,
     strokeWidthPx: Float,
+    /** Grosor variable según la presión del S Pen; si es false, trazo uniforme. */
+    pressureEnabled: Boolean,
     onStrokeFinished: (InkStroke) -> Unit,
     onErase: (Offset) -> Unit,
     modifier: Modifier = Modifier,
@@ -101,7 +104,9 @@ fun InkCanvas(
     val currentOnStroke by rememberUpdatedState(onStrokeFinished)
     val currentOnErase by rememberUpdatedState(onErase)
     val currentOnInsertLine by rememberUpdatedState(onInsertLine)
-    val strokePaths = remember(strokes) { strokes.map { it.toPath() } }
+    val shapes = remember(strokes, strokeWidthPx, pressureEnabled) {
+        strokes.map { it.toShape(strokeWidthPx, pressureEnabled) }
+    }
     var viewport by remember { mutableFloatStateOf(0f) }
     val contentHeight = inkContentHeight(strokes, lineHeightPx, reviewedLines, viewport)
 
@@ -152,7 +157,7 @@ fun InkCanvas(
                         currentOnErase(page(down.position))
                     } else {
                         val p = page(down.position)
-                        live.add(InkPoint(p.x, p.y, down.uptimeMillis))
+                        live.add(InkPoint(p.x, p.y, down.uptimeMillis, pressureOf(down.pressure, isPen)))
                     }
                     down.consume()
 
@@ -175,12 +180,17 @@ fun InkCanvas(
                         if (erasing) {
                             currentOnErase(page(change.position))
                         } else {
-                            for (h in change.historical) {
+                            // Los puntos intermedios no traen presión: se interpola entre el último punto y el actual.
+                            val endPressure = pressureOf(change.pressure, isPen)
+                            val startPressure = live.lastOrNull()?.p ?: endPressure
+                            val history = change.historical
+                            history.forEachIndexed { k, h ->
                                 val p = page(h.position)
-                                live += InkPoint(p.x, p.y, h.uptimeMillis)
+                                val f = (k + 1f) / (history.size + 1f)
+                                live += InkPoint(p.x, p.y, h.uptimeMillis, startPressure + (endPressure - startPressure) * f)
                             }
                             val p = page(change.position)
-                            live += InkPoint(p.x, p.y, change.uptimeMillis)
+                            live += InkPoint(p.x, p.y, change.uptimeMillis, endPressure)
                         }
                         if (change.positionChange() != Offset.Zero) change.consume()
                         if (!change.pressed) break
@@ -201,9 +211,8 @@ fun InkCanvas(
                 drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
                 y += lineHeightPx
             }
-            val style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round, join = StrokeJoin.Round)
-            strokePaths.forEach { drawPath(it, inkColor, style = style) }
-            if (live.size >= 2) drawPath(InkStroke(live.toList()).toPath(), inkColor, style = style)
+            shapes.forEach { drawShape(it, inkColor, strokeWidthPx) }
+            if (live.size >= 2) drawShape(InkStroke(live.toList()).toShape(strokeWidthPx, pressureEnabled), inkColor, strokeWidthPx)
         }
         // Barra de desplazamiento fina a la derecha, solo si la página no cabe.
         if (contentHeight > size.height + 1f) {
@@ -211,6 +220,63 @@ fun InkCanvas(
             val barTop = (size.height - barHeight) * (offset / (contentHeight - size.height))
             drawRect(lineColor, topLeft = Offset(size.width - 4f, barTop), size = Size(4f, barHeight))
         }
+    }
+}
+
+/** El dedo no mide presión real (suele dar siempre 1): se usa la media para que no salga grueso. */
+private fun pressureOf(raw: Float, isPen: Boolean): Float = if (isPen) raw.coerceIn(0f, 1f) else DEFAULT_PRESSURE
+
+/**
+ * Forma lista para dibujar. Uniforme: un Path con trazo de ancho fijo. Con presión: el contorno
+ * relleno del trazo (bordes desplazados según el grosor de cada punto) más dos círculos en los
+ * extremos. Se calcula una vez por trazo, no en cada cuadro.
+ */
+private class StrokeShape(val path: Path, val filled: Boolean, val caps: List<Pair<Offset, Float>> = emptyList())
+
+private fun InkStroke.toShape(base: Float, pressure: Boolean): StrokeShape {
+    if (!pressure || points.size < 3) return StrokeShape(toPath(), filled = false)
+    val n = points.size
+    // Grosor suavizado (media de 3) para que el borde no tiemble con el ruido del sensor.
+    val raw = points.map { pressureWidth(base, it.p) / 2f }
+    val half = List(n) { i -> (raw[maxOf(0, i - 1)] + raw[i] + raw[minOf(n - 1, i + 1)]) / 3f }
+    val left = ArrayList<Offset>(n)
+    val right = ArrayList<Offset>(n)
+    var nx = 0f
+    var ny = -1f
+    for (i in 0 until n) {
+        val a = points[maxOf(0, i - 1)]
+        val b = points[minOf(n - 1, i + 1)]
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        val len = kotlin.math.sqrt(dx * dx + dy * dy)
+        // Si el lápiz no se movió, se conserva la normal anterior.
+        if (len > 0.01f) {
+            nx = -dy / len
+            ny = dx / len
+        }
+        val p = points[i]
+        left += Offset(p.x + nx * half[i], p.y + ny * half[i])
+        right += Offset(p.x - nx * half[i], p.y - ny * half[i])
+    }
+    val path = Path().apply {
+        moveTo(left[0].x, left[0].y)
+        for (i in 1 until n) lineTo(left[i].x, left[i].y)
+        for (i in n - 1 downTo 0) lineTo(right[i].x, right[i].y)
+        close()
+    }
+    val caps = listOf(
+        Offset(points.first().x, points.first().y) to half.first(),
+        Offset(points.last().x, points.last().y) to half.last(),
+    )
+    return StrokeShape(path, filled = true, caps = caps)
+}
+
+private fun DrawScope.drawShape(shape: StrokeShape, color: Color, width: Float) {
+    if (shape.filled) {
+        drawPath(shape.path, color)
+        shape.caps.forEach { (center, radius) -> drawCircle(color, radius = radius, center = center) }
+    } else {
+        drawPath(shape.path, color, style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 

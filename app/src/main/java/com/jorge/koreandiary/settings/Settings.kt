@@ -55,6 +55,8 @@ data class AppSettings(
     val showMascot: Boolean = true,
     /** Grosor del lápiz: fino, medio o grueso. */
     val penWidth: String = "medio",
+    /** El trazo cambia de grosor según la presión del S Pen, como un pincel. */
+    val penPressure: Boolean = true,
     /** Ocultar la tarjeta "Primeros pasos" del inicio. */
     val hideOnboarding: Boolean = false,
 ) {
@@ -99,6 +101,7 @@ class SettingsStore(context: Context) {
         azureDailyLimit = prefs.getInt("azureDailyLimit", 30),
         showMascot = prefs.getBoolean("showMascot", true),
         penWidth = prefs.getString("penWidth", "medio") ?: "medio",
+        penPressure = prefs.getBoolean("penPressure", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
     )
 
@@ -120,6 +123,7 @@ class SettingsStore(context: Context) {
             .putInt("azureDailyLimit", s.azureDailyLimit)
             .putBoolean("showMascot", s.showMascot)
             .putString("penWidth", s.penWidth)
+            .putBoolean("penPressure", s.penPressure)
             .putBoolean("hideOnboarding", s.hideOnboarding)
             .apply()
         _state.value = s
