@@ -47,6 +47,7 @@ fun HomeScreen(
     onOpenPage: (Long) -> Unit,
     onStudy: () -> Unit,
     onSettings: () -> Unit,
+    onWorkbook: () -> Unit,
 ) {
     val pages by container.diary.pageSummaries.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
@@ -72,21 +73,25 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
-        AppButton(
-            onClick = {
-                creating = true
-                scope.launch {
-                    val s = container.settings.state.value
-                    val suggestions = container.suggestions.suggest(System.currentTimeMillis(), s.grammarLevelList, s.standardLevel)
-                    val id = container.diary.newPage(System.currentTimeMillis(), suggestions.encode())
-                    creating = false
-                    onOpenPage(id)
-                }
-            },
-            enabled = !creating,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-            contentPadding = PaddingValues(vertical = 14.dp),
-        ) { Text("Nueva página") }
+        Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppButton(
+                onClick = {
+                    creating = true
+                    scope.launch {
+                        val s = container.settings.state.value
+                        val suggestions = container.suggestions.suggest(System.currentTimeMillis(), s.grammarLevelList, s.standardLevel)
+                        val id = container.diary.newPage(System.currentTimeMillis(), suggestions.encode())
+                        creating = false
+                        onOpenPage(id)
+                    }
+                },
+                enabled = !creating,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 14.dp),
+            ) { Text("Nueva página") }
+            // Pistas y revisión para ejercicios del workbook, con foto.
+            AppOutlinedButton(onClick = onWorkbook, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)) { Text("Workbook") }
+        }
 
         if (pages.isEmpty()) {
             Text(

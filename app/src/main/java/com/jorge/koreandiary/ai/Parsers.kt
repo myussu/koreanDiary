@@ -70,16 +70,7 @@ object CorrectionParser {
                 itemRef = o.str("item_id")?.takeIf { ITEM_REF.matches(it) },
             )
         }
-        val used = json.optJSONArray("usados").mapObjects { o ->
-            // Formato compacto (f, t, ok) y el anterior (forma_base, resultado), por si un chat usa el viejo.
-            val ref = o.str("id")?.takeIf { ITEM_REF.matches(it) }
-            val form = o.str("f") ?: o.str("forma_base") ?: return@mapObjects null
-            val ok = when {
-                o.has("ok") -> o.optBoolean("ok", true)
-                else -> o.str("resultado")?.lowercase() != "incorrecto"
-            }
-            UsedItemDto(ref, form, normalizeKind(o.str("t") ?: o.str("tipo"), form), ok, o.str("significado"))
-        }
+        val used = parseUsedItems(json.optJSONArray("usados"))
         // Formato anterior: palabras nuevas aparte.
         val legacyNew = json.optJSONArray("nuevos").mapObjects { o ->
             val base = o.str("forma_base") ?: return@mapObjects null
@@ -96,10 +87,21 @@ object CorrectionParser {
         return CorrectionResponse(sentences, corrections, allUsed, improvements)
     }
 
+    /** Lista "usados" (formato compacto f/t/ok o el anterior forma_base/resultado). La comparte el workbook. */
+    internal fun parseUsedItems(arr: JSONArray?): List<UsedItemDto> = arr.mapObjects { o ->
+        val ref = o.str("id")?.takeIf { ITEM_REF.matches(it) }
+        val form = o.str("f") ?: o.str("forma_base") ?: return@mapObjects null
+        val ok = when {
+            o.has("ok") -> o.optBoolean("ok", true)
+            else -> o.str("resultado")?.lowercase() != "incorrecto"
+        }
+        UsedItemDto(ref, form, normalizeKind(o.str("t") ?: o.str("tipo"), form), ok, o.str("significado") ?: o.str("s"))
+    }
+
     private val ITEM_REF = Regex("^(w|g|sv|sg)\\d+$")
 
     /** Acepta las claves cortas (n, v, a, adv, g, o) y los nombres largos. */
-    private fun normalizeKind(t: String?, form: String): String = when (t?.lowercase()?.trim()) {
+    internal fun normalizeKind(t: String?, form: String): String = when (t?.lowercase()?.trim()) {
         "n", "sustantivo", "noun" -> "sustantivo"
         "v", "verbo", "verb" -> "verbo"
         "a", "adj", "adjetivo", "adjective" -> "adjetivo"
@@ -143,6 +145,70 @@ object HowToSayParser {
 
     private fun same(a: String, b: String) =
         a.filter { it.isLetterOrDigit() } == b.filter { it.isLetterOrDigit() }
+}
+
+object WorkbookParser {
+    fun parseHints(raw: String): WorkbookHints {
+        val json = parseObject(raw)
+        val exercises = json.optJSONArray("ejercicios").mapObjects { o ->
+            val n = o.str("n") ?: return@mapObjects null
+            WorkbookExercise(
+                number = n,
+                ask = o.str("e") ?: "",
+                hints = o.optJSONArray("p").mapObjects { h ->
+                    val form = h.str("f") ?: return@mapObjects null
+                    WorkbookHint(
+                        form = form,
+                        kind = hintKind(h.str("t"), form),
+                        use = h.str("u") ?: "",
+                        example = h.str("k") ?: "",
+                        english = h.str("en") ?: "",
+                    )
+                },
+                answer = o.str("r") ?: "",
+            )
+        }
+        val vocab = json.optJSONArray("vocab").mapObjects { o ->
+            val f = o.str("f") ?: return@mapObjects null
+            UsedItemDto(null, f, CorrectionParser.normalizeKind(o.str("t"), f), true, o.str("s"))
+        }.filterNot { it.isGrammar }
+        if (exercises.isEmpty()) throw ParseException("No se encontraron ejercicios en la respuesta.")
+        return WorkbookHints(exercises, vocab)
+    }
+
+    fun parseReview(raw: String): WorkbookReview {
+        val json = parseObject(raw)
+        val items = json.optJSONArray("rev").mapObjects { o ->
+            val n = o.str("n") ?: return@mapObjects null
+            WorkbookReviewItem(
+                number = n,
+                written = o.str("w") ?: "",
+                status = when (o.str("s")?.lowercase()) {
+                    "ok" -> ReviewStatus.OK
+                    "nat" -> ReviewStatus.NATURAL
+                    else -> ReviewStatus.FIX
+                },
+                corrected = o.str("c"),
+                natural = o.str("nat"),
+                explanation = o.str("x") ?: "",
+            )
+        }
+        val used = CorrectionParser.parseUsedItems(json.optJSONArray("usados"))
+        if (items.isEmpty()) throw ParseException("No se encontraron respuestas para revisar en la foto.")
+        return WorkbookReview(items, used)
+    }
+
+    private fun parseObject(raw: String): JSONObject = try {
+        JSONObject(extractJsonObject(raw))
+    } catch (e: org.json.JSONException) {
+        throw ParseException("JSON inválido: ${e.message}")
+    }
+
+    private fun hintKind(t: String?, form: String): String = when (t?.lowercase()?.trim()) {
+        "c", "conector" -> "conector"
+        "x", "expresion", "expresión" -> "expresión"
+        else -> CorrectionParser.normalizeKind(t, form)
+    }
 }
 
 object ImportParser {

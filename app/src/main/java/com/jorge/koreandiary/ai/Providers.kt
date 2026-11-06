@@ -15,7 +15,8 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class CorrectionRequest(val prompt: String, val imagePng: ByteArray? = null)
+/** [image]: PNG o JPEG; [imageMime] dice cuál. */
+data class CorrectionRequest(val prompt: String, val image: ByteArray? = null, val imageMime: String = "image/png")
 
 /**
  * Capa intermedia: cada proveedor (Gemini, Azure, Claude, un servidor propio...) implementa esto
@@ -74,9 +75,9 @@ class GeminiProvider(
 
     override suspend fun complete(request: CorrectionRequest): String = withContext(Dispatchers.IO) {
         val input = JSONArray().put(JSONObject().put("type", "text").put("text", request.prompt))
-        request.imagePng?.let {
+        request.image?.let {
             input.put(
-                JSONObject().put("type", "image").put("mime_type", "image/png")
+                JSONObject().put("type", "image").put("mime_type", request.imageMime)
                     .put("data", android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP))
             )
         }
@@ -135,9 +136,9 @@ class AzureOpenAIProvider(
 
     override suspend fun complete(request: CorrectionRequest): String = withContext(Dispatchers.IO) {
         val content = JSONArray().put(JSONObject().put("type", "input_text").put("text", request.prompt))
-        request.imagePng?.let {
+        request.image?.let {
             val b64 = android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)
-            content.put(JSONObject().put("type", "input_image").put("image_url", "data:image/png;base64,$b64"))
+            content.put(JSONObject().put("type", "input_image").put("image_url", "data:${request.imageMime};base64,$b64"))
         }
         fun body(withReasoning: Boolean) = JSONObject()
             .put("model", deployment)
@@ -218,6 +219,21 @@ object ShareFlow {
 
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, prompt)
+            clipData = ClipData.newRawUri("pagina", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return Intent.createChooser(send, "Enviar página a…")
+    }
+
+    /** Comparte una foto ya guardada (p. ej. la página del workbook) junto con el prompt. */
+    fun photoIntent(context: Context, prompt: String, photo: File): Intent {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", photo)
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("prompt", prompt))
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/jpeg"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_TEXT, prompt)
             clipData = ClipData.newRawUri("pagina", uri)

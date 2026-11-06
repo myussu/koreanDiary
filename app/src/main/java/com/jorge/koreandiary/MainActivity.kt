@@ -30,6 +30,8 @@ import com.jorge.koreandiary.ui.KoreanDiaryTheme
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
 import com.jorge.koreandiary.ui.page.PageScreen
+import com.jorge.koreandiary.ui.workbook.WorkbookListScreen
+import com.jorge.koreandiary.ui.workbook.WorkbookSessionScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,11 +90,14 @@ private fun AppNavigation(container: AppContainer) {
         route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
         route == "import" -> ImportScreen(container, onBack = ::pop)
         route == "settings" -> SettingsScreen(container, onBack = ::pop)
+        route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
+        route.startsWith("workbook:") -> WorkbookSessionScreen(container, route.removePrefix("workbook:").toLong(), onBack = ::pop)
         else -> HomeScreen(
             container,
             onOpenPage = { push("page:$it") },
             onStudy = { push("study") },
             onSettings = { push("settings") },
+            onWorkbook = { push("workbook") },
         )
     }
 }

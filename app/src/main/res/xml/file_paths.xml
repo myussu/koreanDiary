@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="shared" path="shared/" />
+    <!-- Fotos del workbook: la cámara escribe aquí y se comparten con un chat desde aquí. -->
+    <files-path name="workbook" path="workbook/" />
 </paths>

@@ -74,3 +74,41 @@ data class HowToSayResponse(
 ) {
     data class Phrase(val text: String, val grammar: List<String>)
 }
+
+/** Pistas para una página de workbook. */
+data class WorkbookHints(val exercises: List<WorkbookExercise>, val vocab: List<UsedItemDto>)
+
+data class WorkbookExercise(
+    /** Como aparece en la página: "1", "2-3", "(4)". */
+    val number: String,
+    /** Qué pide, en una línea. */
+    val ask: String,
+    val hints: List<WorkbookHint>,
+    /** Respuesta modelo: se muestra solo al pulsar "Ver respuesta". */
+    val answer: String,
+)
+
+data class WorkbookHint(
+    val form: String,
+    /** gramatica, conector, expresión, sustantivo, verbo, adjetivo, adverbio u otro. */
+    val kind: String,
+    /** Para qué sirve y en qué situación se usa. */
+    val use: String,
+    val example: String,
+    val english: String,
+) {
+    val isGrammar get() = kind == "gramatica" || kind == "conector" || kind == "expresión"
+}
+
+enum class ReviewStatus { OK, FIX, NATURAL }
+
+data class WorkbookReviewItem(
+    val number: String,
+    val written: String,
+    val status: ReviewStatus,
+    val corrected: String?,
+    val natural: String?,
+    val explanation: String,
+)
+
+data class WorkbookReview(val items: List<WorkbookReviewItem>, val used: List<UsedItemDto>)

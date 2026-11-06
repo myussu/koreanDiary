@@ -75,6 +75,45 @@ object Prompts {
         {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": ["-었던"]}, "nota": "...", "w": [{"f": "다니다", "s": "asistir"}]}
     """.trimIndent()
 
+    /** Workbook, paso 1: pistas por ejercicio a partir de la foto de la página. */
+    fun workbookHints(level: String, standardLevel: Int): String = """
+        Eres profesor de coreano. La imagen es una página de un workbook de coreano que un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) va a resolver a mano. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+
+        1. "ejercicios": cada ejercicio o pregunta por completar, en orden. "n": el número como aparece en la página ("1", "2-3", "(4)"). "e": qué pide, en español, máximo 15 palabras.
+        2. "p": de 1 a 3 pistas por ejercicio: gramáticas, conectores, formas de construir la oración o sustantivos que encajen. NO des la respuesta en las pistas. Cada pista:
+           - "f": la forma. Gramática en notación estándar (-느라고, -더라고요, -을 텐데); palabras en forma de diccionario.
+           - "t": g (gramática), c (conector), x (expresión), n (sustantivo), v (verbo), a (adjetivo), adv (adverbio).
+           - "u": para qué sirve y en qué situación se usa, en español, 1 o 2 frases.
+           - "k": un ejemplo corto en coreano, distinto al ejercicio.
+           - "en": la traducción del ejemplo al inglés.
+        3. "r": una respuesta modelo del ejercicio (se mostrará escondida).
+        4. "vocab": las palabras de vocabulario impresas en la página (listas, recuadros, alrededor y dentro de las preguntas), sobre todo sustantivos, en forma de diccionario. "t" como arriba y "s": significado en español. Sin gramática ni partículas.
+
+        FORMATO:
+        {"ejercicios": [{"n": "1", "e": "...", "p": [{"f": "-느라고", "t": "g", "u": "...", "k": "...", "en": "..."}], "r": "..."}], "vocab": [{"f": "미용실", "t": "n", "s": "peluquería"}]}
+    """.trimIndent()
+
+    /**
+     * Workbook, paso 2: revisa lo que el estudiante escribió. Se mandan los ejercicios y pistas
+     * del paso 1 (texto corto) para que la IA no tenga que volver a interpretar la página entera.
+     */
+    fun workbookReview(level: String, standardLevel: Int, exercises: List<WorkbookExercise>): String = buildString {
+        appendLine("Eres profesor de coreano. La imagen muestra las respuestas que un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6) escribió a mano en una página de workbook. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine()
+        appendLine("EJERCICIOS DE LA PÁGINA (n | qué pide | pistas que vio):")
+        exercises.forEach { e -> appendLine("${e.number} | ${e.ask} | ${e.hints.joinToString(", ") { it.form }}") }
+        appendLine()
+        appendLine(
+            """
+            1. "rev": por cada ejercicio que respondió: "n"; "w": lo que escribió, transcrito tal cual; "s": "ok" (correcto y natural), "fix" (tiene errores) o "nat" (correcto, pero un coreano lo diría distinto); "c": la versión corregida si s es "fix"; "nat": la versión más natural si s es "nat" (o si es "fix" y hay una forma mejor), si no null; "x": explicación breve en español. Omite los ejercicios sin respuesta.
+            2. "usados": TODO lo que el estudiante escribió, solo lo suyo y no lo impreso: palabras en forma de diccionario y gramática en notación estándar (-어서, -느라고). Omite 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-. Cada uno: "f", "t" (n, v, a, adv, g u o) y "ok" (false si lo usó mal).
+
+            FORMATO:
+            {"rev": [{"n": "1", "w": "...", "s": "fix", "c": "...", "nat": null, "x": "..."}], "usados": [{"f": "-느라고", "t": "g", "ok": true}]}
+            """.trimIndent()
+        )
+    }
+
     fun importList(list: String = "{{lista}}"): String = IMPORT_TEMPLATE.replace("{{lista}}", list)
 
     private val IMPORT_TEMPLATE = """

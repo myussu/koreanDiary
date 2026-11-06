@@ -109,6 +109,7 @@ private fun ItemRow(title: String, subtitle: String, memory: MemoryState?, now: 
 private fun sourceLabel(source: String): String? = when (source) {
     ItemSource.DIARY -> "detectada en el diario"
     ItemSource.GAP -> "laguna cubierta"
+    ItemSource.WORKBOOK -> "vista en el workbook"
     else -> null
 }
 

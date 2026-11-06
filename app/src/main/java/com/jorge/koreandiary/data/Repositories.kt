@@ -45,7 +45,11 @@ object ItemSource {
     const val DIARY = "diario"
     /** Sugerido como posible laguna del estándar y usado después. */
     const val GAP = "laguna"
+    /** Visto impreso en una página del workbook (aún no practicado). */
+    const val WORKBOOK = "workbook"
 }
+
+data class UsageSummary(val reviewed: Int = 0, val newWords: Int = 0, val newGrammar: Int = 0, val pending: Int = 0)
 
 /**
  * Referencia a un ítem: "w12" (palabra), "g3" (gramática) en tu base;
@@ -181,41 +185,10 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             )
         }
 
-        var reviewed = 0
-        var newWords = 0
-        var newGrammar = 0
-        var pending = 0
-        if (firstReview) {
-            val suggested = ItemRef.decodeList(page.suggestedItems).toSet()
-            val myGrammar = study.allGrammar().toMutableList()
-            val counted = mutableSetOf<ItemRef>()
-            for (u in response.used) {
-                val resolved = resolve(u, suggested, myGrammar, page.id, now, onPending = { pending++ }) ?: continue
-                if (!counted.add(resolved.ref)) continue
-                val rating = when {
-                    !u.correct -> Fsrs.Rating.AGAIN
-                    // Usarlo tras verlo sugerido es reconocimiento, no recuerdo libre: cuenta como "Hard".
-                    resolved.wasSuggested -> Fsrs.Rating.HARD
-                    else -> Fsrs.Rating.GOOD
-                }
-                val kind = when {
-                    resolved.isNew -> EventKind.DISCOVERED
-                    !u.correct -> EventKind.INCORRECT
-                    resolved.wasSuggested -> EventKind.CORRECT_SUGGESTED
-                    else -> EventKind.CORRECT_SPONTANEOUS
-                }
-                review(resolved.ref, rating, kind, now, page.id)
-                reviewed++
-                if (resolved.isNew) {
-                    if (resolved.ref.type == ItemType.WORD) newWords++ else newGrammar++
-                }
-            }
-            // Sugerido y no usado: se registra sin calificación. No es un fallo.
-            (suggested.filterNot { it.isStandard }.toSet() - counted).forEach { ref ->
-                memory.insertEvent(ReviewEvent(itemType = ref.type, itemId = ref.id, at = now, kind = EventKind.SUGGESTED_UNUSED, rating = null, pageId = page.id))
-            }
-        }
-        return ApplySummary(response.corrections.size, reviewed, newWords, newGrammar, pending, response.improvements.size)
+        val usage = if (firstReview) {
+            applyUsage(response.used, ItemRef.decodeList(page.suggestedItems).toSet(), now, page.id)
+        } else UsageSummary()
+        return ApplySummary(response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending, response.improvements.size)
     }
 
     /**
@@ -248,6 +221,69 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         return out
     }
 
+    /**
+     * Actualiza FSRS con lo que el estudiante usó (diario o workbook). Lo que no está en su base se crea.
+     * [suggested]: lo que vio sugerido (cuenta como "Hard" si lo usa); lo sugerido y no usado se registra sin calificación.
+     */
+    suspend fun applyUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary {
+        var reviewed = 0
+        var newWords = 0
+        var newGrammar = 0
+        var pending = 0
+        val myGrammar = study.allGrammar().toMutableList()
+        val counted = mutableSetOf<ItemRef>()
+        for (u in used) {
+            val resolved = resolve(u, suggested, myGrammar, pageId, now, onPending = { pending++ }) ?: continue
+            if (!counted.add(resolved.ref)) continue
+            val rating = when {
+                !u.correct -> Fsrs.Rating.AGAIN
+                // Usarlo tras verlo sugerido es reconocimiento, no recuerdo libre: cuenta como "Hard".
+                resolved.wasSuggested -> Fsrs.Rating.HARD
+                else -> Fsrs.Rating.GOOD
+            }
+            val kind = when {
+                resolved.isNew -> EventKind.DISCOVERED
+                !u.correct -> EventKind.INCORRECT
+                resolved.wasSuggested -> EventKind.CORRECT_SUGGESTED
+                else -> EventKind.CORRECT_SPONTANEOUS
+            }
+            review(resolved.ref, rating, kind, now, pageId)
+            reviewed++
+            if (resolved.isNew) {
+                if (resolved.ref.type == ItemType.WORD) newWords++ else newGrammar++
+            }
+        }
+        // Sugerido y no usado: se registra sin calificación. No es un fallo.
+        (suggested.filterNot { it.isStandard }.toSet() - counted).forEach { ref ->
+            memory.insertEvent(ReviewEvent(itemType = ref.type, itemId = ref.id, at = now, kind = EventKind.SUGGESTED_UNUSED, rating = null, pageId = pageId))
+        }
+        return UsageSummary(reviewed, newWords, newGrammar, pending)
+    }
+
+    /**
+     * Palabras impresas en una página del workbook: se agregan a la base como "vistas" (con su nivel del
+     * estándar) pero SIN contar como repaso. Cuentan para FSRS solo cuando el estudiante las usa.
+     */
+    suspend fun registerSeenWords(vocab: List<UsedItemDto>): Int {
+        var added = 0
+        for (v in vocab.distinctBy { it.form.trim() }) {
+            val base = v.form.trim()
+            if (base.isEmpty() || v.isGrammar || study.findWord(base) != null) continue
+            val std = standardWord(base)
+            if (std == null && !looksLikeKoreanWord(base)) continue
+            val type = if (v.kind in WORD_KINDS) v.kind else std?.type ?: "otro"
+            study.insertWord(
+                Word(
+                    baseForm = base, type = type, meaning = v.meaning,
+                    level = std?.let { "${it.level}급" } ?: "desconocido",
+                    source = ItemSource.WORKBOOK,
+                )
+            )
+            added++
+        }
+        return added
+    }
+
     private data class Resolved(val ref: ItemRef, val isNew: Boolean, val wasSuggested: Boolean)
 
     /** Encuentra o crea el ítem usado. Devuelve null si quedó en "Por revisar". */
@@ -255,7 +291,7 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         u: UsedItemDto,
         suggested: Set<ItemRef>,
         myGrammar: MutableList<GrammarPoint>,
-        pageId: Long,
+        pageId: Long?,
         now: Long,
         onPending: () -> Unit,
     ): Resolved? {
