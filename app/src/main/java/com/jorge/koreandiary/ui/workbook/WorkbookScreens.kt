@@ -269,7 +269,8 @@ private fun ZoomDialog(file: File, onClose: () -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         var scale by remember { mutableFloatStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
-        val transform = rememberTransformableState { zoom, pan, _ ->
+        // Versión con centroide (la de 3 parámetros quedó obsoleta).
+        val transform = rememberTransformableState { _, zoom, pan, _ ->
             scale = (scale * zoom).coerceIn(1f, 6f)
             offset = if (scale == 1f) Offset.Zero else offset + pan
         }
