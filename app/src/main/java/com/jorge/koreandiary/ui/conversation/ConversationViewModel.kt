@@ -281,7 +281,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val lines = if (last != null && last.speaker == speaker && last.open) {
             st.lines.dropLast(1) + last.copy(text = last.text + text)
         } else {
-            st.lines.map { if (it.open) it.copy(open = false) } + UiLine(nextLineId++, speaker, text.trimStart(), open = true)
+            st.lines.map { if (it.open) it.copy(open = false) else it } + UiLine(nextLineId++, speaker, text.trimStart(), open = true)
         }
         st.copy(lines = lines)
     }
