@@ -135,8 +135,9 @@ class ConversationTest {
     fun correctionStyleChangesVoicePrompt() {
         val repeat = ConversationPrompts.voiceSystem("", "3A", 3, "", null, emptyList(), 10, CorrectionStyle.REPEAT)
         val soft = ConversationPrompts.voiceSystem("", "3A", 3, "", null, emptyList(), 10, CorrectionStyle.SOFT)
-        assertTrue("따라 해 보세요" in repeat)
-        assertFalse("따라 해 보세요" in soft)
+        // "따라 해 보세요" también aparece en la regla de "¿cómo se dice?": se prueba la regla de corrección.
+        assertTrue("Important problems" in repeat)
+        assertFalse("Important problems" in soft)
         assertFalse("CORRECTION_RULES" in repeat || "CORRECTION_RULES" in soft)
     }
 
