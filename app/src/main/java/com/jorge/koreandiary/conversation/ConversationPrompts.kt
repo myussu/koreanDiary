@@ -41,14 +41,25 @@ object ConversationPrompts {
         appendLine(
             """
             TOP PRIORITY — SPANISH HELP (this overrides every other rule):
-            When he asks for a meaning or translation, or says he didn't understand
-            (in Spanish OR Korean: "¿qué significa…?", "traduce", "no entendí",
-            "¿qué dijiste?", "뭐예요?", "다시요"), you MUST answer IN SPANISH, briefly.
-            - One word → its Spanish meaning in a few words, then say the Korean word once, slowly.
-            - "No entendí" / "traduce" → translate YOUR last sentence into Spanish, then say it
-              again in simpler, slower Korean.
+            Any Spanish he says is a request for help, NEVER part of the conversation. Do not react
+            to its content as if he had said it in Korean. This includes Spanish in the middle of a
+            Korean sentence: he started in Korean and got stuck.
+            - "How do I say…?" ("¿cómo se dice…?", "¿cómo digo…?", "어떻게 말해요?") → answer
+              "Se dice:" + the Korean sentence at his level, say it slowly, ask him to repeat it
+              ("따라 해 보세요"), then continue the topic. If he had started the sentence in Korean,
+              give the complete sentence.
+            - Meaning or translation, or he didn't understand ("¿qué significa…?", "traduce",
+              "no entendí", "¿qué dijiste?", "뭐예요?", "다시요") → answer IN SPANISH, briefly:
+              · One word → its Spanish meaning in a few words, then say the Korean word once, slowly.
+              · "No entendí" / "traduce" → translate YOUR last sentence into Spanish, then say it
+                again in simpler, slower Korean.
             - Then go back to Korean and continue the topic.
             NEVER explain a meaning in Korean.
+
+            Example:
+            Him: 저는 이번 학기에… ¿cómo se dice "tengo tres horas de clase en ambas clases"?
+            You: Se dice: «이번 학기에 수업이 둘 다 세 시간이에요». 따라 해 보세요.
+            (WRONG: "아, 수업이 둘 다 세 시간이에요?" — that ignores his request.)
 
             Example:
             You: 주말에 뭐 할 거예요? 등산 갈 거예요?
@@ -136,6 +147,37 @@ object ConversationPrompts {
             """.trimIndent()
         )
     }
+
+    /**
+     * "¿Cómo digo?" durante la conversación: el mismo contrato que el del diario (HowToSayParser),
+     * con las últimas líneas para que la frase encaje en lo que se está hablando.
+     */
+    fun howToSay(idea: String, level: String, standardLevel: Int, recent: List<Line>): String = buildString {
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) está conversando por voz y quiere decir:")
+        appendLine("«${idea.trim().replace('\n', ' ')}»")
+        if (recent.isNotEmpty()) {
+            appendLine("Contexto (IA = su compañero, YO = el estudiante; puede que haya empezado la frase en coreano):")
+            recent.takeLast(6).forEach { appendLine("${if (it.speaker == Speaker.AI) "IA" else "YO"}: ${it.text}") }
+        }
+        appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código. Es lenguaje hablado: frases cortas y naturales.")
+        appendLine()
+        appendLine(
+            """
+            1. "tu": la frase en coreano usando solo vocabulario y gramática de nivel $standardLevel o menor; la forma más simple que siga siendo correcta. Registro -어요.
+            2. "nat": cómo lo diría normalmente un coreano en una conversación. Si sería igual a "tu", pon null.
+            3. En "g" de cada frase, las estructuras gramaticales usadas en notación estándar (-어서, -을 것 같다; partículas sin guion). Omite 이/가, 은/는, 을/를, 에, 도, -어요.
+            4. "nota": 1 frase en español sobre la diferencia, o por qué la frase ya es natural.
+            5. "w": las palabras de contenido en forma de diccionario con su significado en español.
+
+            FORMATO:
+            {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": []}, "nota": "...", "w": [{"f": "수업", "s": "clase"}]}
+            """.trimIndent()
+        )
+    }
+
+    /** Se le avisa al modelo de voz qué le mostró la app, para que espere a que lo intente. */
+    fun askedHowTo(idea: String, korean: String) =
+        "[APP] Preguntó cómo decir «$idea» y la app le mostró: «$korean». Espera a que lo intente; si lo dice bien, felicítalo brevemente y sigue con el tema."
 
     /** Traducción de una palabra que dijo la IA, en el contexto de su oración. */
     fun word(word: String, sentence: String): String = """

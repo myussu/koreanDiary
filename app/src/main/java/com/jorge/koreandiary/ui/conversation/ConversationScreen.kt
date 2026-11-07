@@ -354,12 +354,17 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
             }
         }
 
-        CoachPanelView(st.panel, onMore = vm::hint, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = st.hasCoach)
+        CoachPanelView(
+            st.panel, onMore = vm::hint, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = st.hasCoach,
+            howTo = HowToActions(onText = vm::setHowToText, onDictate = vm::dictateHowTo, onAsk = vm::askHowTo, onHear = vm::hear),
+        )
 
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            AppOutlinedButton(onClick = vm::hint, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1f)) { Text("Pista") }
-            AppOutlinedButton(onClick = vm::translateLast, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1f)) { Text("Traducir") }
-            AppOutlinedButton(onClick = vm::slower, enabled = st.connected && !st.talking, modifier = Modifier.weight(1f)) { Text("Más lento") }
+        val compact = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            AppOutlinedButton(onClick = vm::hint, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1f), contentPadding = compact) { Text("Pista") }
+            AppOutlinedButton(onClick = vm::openHowTo, modifier = Modifier.weight(1.3f), contentPadding = compact) { Text("¿Cómo digo?") }
+            AppOutlinedButton(onClick = vm::translateLast, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1.1f), contentPadding = compact) { Text("Traducir") }
+            AppOutlinedButton(onClick = vm::slower, enabled = st.connected && !st.talking, modifier = Modifier.weight(0.9f), contentPadding = compact) { Text("Lento") }
         }
         val status = when {
             !st.connected -> st.status
@@ -438,6 +443,14 @@ private fun AiBubble(text: String, blur: Boolean, onWord: (String) -> Unit) {
     }
 }
 
+/** Acciones del panel "¿Cómo digo?" (solo en la sesión en vivo). */
+private class HowToActions(
+    val onText: (String) -> Unit,
+    val onDictate: () -> Unit,
+    val onAsk: () -> Unit,
+    val onHear: (String) -> Unit,
+)
+
 @Composable
 private fun CoachPanelView(
     panel: CoachPanel,
@@ -445,6 +458,7 @@ private fun CoachPanelView(
     onClose: () -> Unit,
     onExplain: () -> Unit,
     hasCoach: Boolean,
+    howTo: HowToActions? = null,
     /** Solo en la preparación: quitar o volver a incluir el objetivo abierto. */
     includeLabel: String? = null,
     onToggleInclude: () -> Unit = {},
@@ -494,6 +508,35 @@ private fun CoachPanelView(
                         Text("Tu lista no tiene el significado de este ítem.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
+                is CoachPanel.HowToInput -> {
+                    Text("¿Qué quieres decir? (en español)", style = MaterialTheme.typography.labelMedium)
+                    OutlinedTextField(
+                        value = panel.text,
+                        onValueChange = { howTo?.onText?.invoke(it) },
+                        placeholder = { Text("Tengo tres horas de clase en ambas clases") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AppOutlinedButton(onClick = { howTo?.onDictate?.invoke() }) {
+                            Text(if (panel.listening) "Escuchando… (parar)" else "Dictar")
+                        }
+                        AppButton(onClick = { howTo?.onAsk?.invoke() }, enabled = panel.text.isNotBlank() && !panel.listening, modifier = Modifier.weight(1f)) {
+                            Text("Preguntar")
+                        }
+                    }
+                    panel.error?.let { Text(it, color = scheme.error, style = MaterialTheme.typography.bodySmall) }
+                }
+                is CoachPanel.HowToShown -> {
+                    val a = panel.answer
+                    Text("«${panel.idea}»", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                    Text(a.mine.text, style = MaterialTheme.typography.titleLarge)
+                    a.natural?.let { Text("Más natural: ${it.text}", style = MaterialTheme.typography.bodyMedium) }
+                    if (a.note.isNotBlank()) Text(a.note, style = MaterialTheme.typography.bodySmall)
+                    if (a.words.isNotEmpty()) {
+                        Text(a.words.joinToString(" · ") { (f, m) -> if (m.isBlank()) f else "$f: $m" }, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("Dilo cuando estés listo: la IA ya sabe qué preguntaste.", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                }
                 CoachPanel.None -> Unit
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -502,6 +545,9 @@ private fun CoachPanelView(
                     AppTextButton(onClick = onExplain) { Text("Explicar con IA") }
                 }
                 if (panel is CoachPanel.TargetShown && includeLabel != null) AppTextButton(onClick = onToggleInclude) { Text(includeLabel) }
+                if (panel is CoachPanel.HowToShown && howTo != null) {
+                    AppTextButton(onClick = { howTo.onHear(panel.answer.mine.text) }) { Text("Que la IA lo diga") }
+                }
                 AppTextButton(onClick = onClose) { Text("Cerrar") }
             }
         }
@@ -523,7 +569,7 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
             Text(formatDate(r.startedAt), style = MaterialTheme.typography.titleLarge)
         }
         Text(
-            "${ConversationMath.format(r.durationSec)} · ${r.userLines} intervenciones · ${r.hintsUsed} pistas · ${r.lookups.size} palabras consultadas",
+            "${ConversationMath.format(r.durationSec)} · ${r.userLines} intervenciones · ${r.hintsUsed} pistas · ${r.askedHowTo.size} «¿cómo digo?» · ${r.lookups.size} palabras consultadas",
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
@@ -617,6 +663,10 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
             )
         }
 
+        if (r.askedHowTo.isNotEmpty()) {
+            Label("Lo que preguntaste cómo decir")
+            r.askedHowTo.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
         if (r.lookups.isNotEmpty()) {
             Label("Palabras que consultaste")
             r.lookups.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }

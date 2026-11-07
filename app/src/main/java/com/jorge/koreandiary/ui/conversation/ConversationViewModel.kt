@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.ai.HowToSayParser
+import com.jorge.koreandiary.ai.HowToSayResponse
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.PromptItem
 import com.jorge.koreandiary.ai.ProviderException
@@ -73,6 +75,9 @@ sealed interface CoachPanel {
     data class SentenceShown(val gloss: SentenceGloss) : CoachPanel
     /** Un objetivo de repaso: lo que dice tu lista y, si la pides, la explicación de la IA. */
     data class TargetShown(val item: PromptItem, val detail: String?, val explanation: ItemExplanation? = null) : CoachPanel
+    /** "¿Cómo digo?": escribes o dictas en español lo que quieres decir. */
+    data class HowToInput(val text: String = "", val listening: Boolean = false, val error: String? = null) : CoachPanel
+    data class HowToShown(val idea: String, val answer: HowToSayResponse) : CoachPanel
     data class Error(val message: String) : CoachPanel
 }
 
@@ -146,6 +151,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private var wrapUpSent = false
     private var ending = false
     private var lookups = mutableListOf<String>()
+    private var askedHowTo = mutableListOf<String>()
     private var hintsUsed = 0
     private var autoHints = 0
     /** Pista automática: desde cuándo la IA terminó y tú no respondes, y para qué línea ya se pidió. */
@@ -268,6 +274,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         wrapUpSent = false
         ending = false
         lookups = mutableListOf()
+        askedHowTo = mutableListOf()
         hintsUsed = 0
         autoHints = 0
         quietSince = 0L
@@ -568,7 +575,77 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun closePanel() = _state.update { it.copy(panel = CoachPanel.None) }
+    // ---------- ¿Cómo digo? (texto o dictado en español, sin depender del modelo de voz) ----------
+
+    fun openHowTo() {
+        if (_state.value.talking) stopTalking()
+        _state.update { it.copy(panel = CoachPanel.HowToInput()) }
+    }
+
+    fun setHowToText(text: String) = _state.update {
+        val p = it.panel as? CoachPanel.HowToInput ?: return@update it
+        it.copy(panel = p.copy(text = text, error = null))
+    }
+
+    /**
+     * Dictar la pregunta en español con el reconocimiento de Android. El micrófono de la
+     * conversación se suelta mientras tanto (dos grabaciones a la vez suelen fallar).
+     */
+    fun dictateHowTo() {
+        val p = _state.value.panel as? CoachPanel.HowToInput ?: return
+        if (p.listening) {
+            speech.stopListening()
+            return
+        }
+        if (!speech.recognitionAvailable()) {
+            _state.update { it.copy(panel = p.copy(error = "Tu celular no tiene reconocimiento de voz: escríbelo.")) }
+            return
+        }
+        mic?.stop()
+        mic = null
+        _state.update { it.copy(panel = p.copy(listening = true, error = null)) }
+        fun done(transform: (CoachPanel.HowToInput) -> CoachPanel.HowToInput) {
+            _state.update { st -> (st.panel as? CoachPanel.HowToInput)?.let { st.copy(panel = transform(it)) } ?: st }
+            if (_state.value.stage == ConvStage.Live && !ending) startMic()
+        }
+        speech.listen(
+            onPartial = { text -> setHowToText(text) },
+            onResult = { results -> done { it.copy(text = results.first(), listening = false) } },
+            onError = { message -> done { it.copy(listening = false, error = message) } },
+            language = "es-PE",
+        )
+    }
+
+    fun askHowTo() {
+        val p = _state.value.panel as? CoachPanel.HowToInput ?: return
+        val idea = p.text.trim()
+        if (idea.isEmpty()) return
+        val s = c.settings.state.value
+        val recent = _state.value.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text) }
+        coach("Buscando cómo decirlo…", ConversationPrompts.howToSay(idea, s.level, s.standardLevel, recent)) { raw ->
+            val answer = HowToSayParser.parse(raw)
+            askedHowTo += "$idea → ${answer.mine.text}"
+            session?.send(LiveProtocol.context(ConversationPrompts.askedHowTo(idea, answer.mine.text), respond = false))
+            CoachPanel.HowToShown(idea, answer)
+        }
+    }
+
+    /**
+     * Escuchar la frase: se la pide al modelo de voz (y no a la voz del celular), así en modo
+     * automático el micrófono no la toma como si la hubieras dicho tú, y la IA sabe qué esperar.
+     */
+    fun hear(text: String) {
+        if (_state.value.talking) return
+        session?.send(LiveProtocol.context("[APP] Di despacio y claro: «$text». Luego espera a que lo repita.", respond = true))
+    }
+
+    fun closePanel() {
+        if ((_state.value.panel as? CoachPanel.HowToInput)?.listening == true) {
+            speech.stopListening()
+            if (mic == null && _state.value.stage == ConvStage.Live && !ending) startMic()
+        }
+        _state.update { it.copy(panel = CoachPanel.None) }
+    }
 
     private fun coach(loading: String, prompt: String, onResult: (String) -> CoachPanel) {
         val (providerId, provider) = c.coachProvider() ?: run {
@@ -635,6 +712,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             durationSec = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt(),
             lines = lines,
             lookups = lookups.toList(),
+            askedHowTo = askedHowTo.toList(),
             highlighted = highlighted.toList(),
             hintsUsed = hintsUsed,
             autoHints = autoHints,

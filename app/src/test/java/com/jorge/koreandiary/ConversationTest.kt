@@ -166,4 +166,23 @@ class ConversationTest {
         assertEquals(DrillResult.MISSING_FIX, Drill.evaluate(item, "어제 친구가 만났어요"))
         assertEquals(DrillResult.DIFFERENT, Drill.evaluate(item, "오늘 날씨가 좋아요"))
     }
+
+    @Test
+    fun voicePromptTreatsSpanishInsideKoreanAsHelpRequest() {
+        val p = ConversationPrompts.voiceSystem("", "3A", 3, "", null, emptyList(), 10)
+        assertTrue("¿cómo se dice…?" in p)
+        assertTrue("middle of a" in p)
+        assertTrue("Se dice:" in p)
+    }
+
+    @Test
+    fun howToSayPromptKeepsDiaryContractAndContext() {
+        val p = ConversationPrompts.howToSay(
+            "tengo tres horas de clase", "3A", 3,
+            listOf(Line(Speaker.AI, "요즘 수업이 많아요?"), Line(Speaker.USER, "네, 이번 학기에")),
+        )
+        assertTrue("«tengo tres horas de clase»" in p)
+        assertTrue("YO: 네, 이번 학기에" in p)
+        assertTrue("\"tu\"" in p && "\"nat\"" in p)
+    }
 }

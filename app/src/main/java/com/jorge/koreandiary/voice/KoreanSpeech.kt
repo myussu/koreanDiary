@@ -22,7 +22,13 @@ class KoreanSpeech(private val context: Context) {
     fun recognitionAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
     /** Escucha una oración. [onResult] recibe las alternativas del reconocedor, la mejor primero. */
-    fun listen(onPartial: (String) -> Unit, onResult: (List<String>) -> Unit, onError: (String) -> Unit) {
+    fun listen(
+        onPartial: (String) -> Unit,
+        onResult: (List<String>) -> Unit,
+        onError: (String) -> Unit,
+        /** "ko-KR" para practicar; "es-PE" para dictar una pregunta en español. */
+        language: String = "ko-KR",
+    ) {
         val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also { recognizer = it }
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = Unit
@@ -42,7 +48,7 @@ class KoreanSpeech(private val context: Context) {
         })
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
         r.startListening(intent)
