@@ -32,6 +32,8 @@ data class ConversationRecord(
     /** Palabras que tocaste para traducir: "forma: significado". */
     val lookups: List<String> = emptyList(),
     val hintsUsed: Int = 0,
+    /** Cuántas de esas pistas aparecieron solas (pista automática). */
+    val autoHints: Int = 0,
     /** Suma de totalTokenCount de cada mensaje de uso (aprox. lo que cuenta para la cuota). */
     val tokensTotal: Long = 0,
     /** Tamaño del contexto en el último turno. */
@@ -41,6 +43,9 @@ data class ConversationRecord(
     val endReason: String = "",
     /** Respuesta cruda de la revisión final; se vuelve a leer con ConversationParser. */
     val reviewRaw: String? = null,
+    /** Práctica en voz alta de las correcciones: cuántas dijiste bien de cuántas. */
+    val drillPassed: Int = 0,
+    val drillTotal: Int = 0,
 ) {
     val userLines get() = lines.count { it.speaker == Speaker.USER }
 }
@@ -129,6 +134,9 @@ class ConversationStore(context: Context) {
             })
             .put("lookups", JSONArray(r.lookups))
             .put("hintsUsed", r.hintsUsed)
+            .put("autoHints", r.autoHints)
+            .put("drillPassed", r.drillPassed)
+            .put("drillTotal", r.drillTotal)
             .put("tokensTotal", r.tokensTotal)
             .put("lastPromptTokens", r.lastPromptTokens)
             .put("reconnections", r.reconnections)
@@ -154,6 +162,9 @@ class ConversationStore(context: Context) {
                 },
                 lookups = (0 until (lookups?.length() ?: 0)).map { lookups!!.optString(it) },
                 hintsUsed = o.optInt("hintsUsed"),
+                autoHints = o.optInt("autoHints"),
+                drillPassed = o.optInt("drillPassed"),
+                drillTotal = o.optInt("drillTotal"),
                 tokensTotal = o.optLong("tokensTotal"),
                 lastPromptTokens = o.optInt("lastPromptTokens"),
                 reconnections = o.optInt("reconnections"),

@@ -56,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.conversation.ConversationMath
 import com.jorge.koreandiary.conversation.ConversationRecord
+import com.jorge.koreandiary.conversation.DrillResult
 import com.jorge.koreandiary.conversation.Speaker
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppOutlinedButton
@@ -398,7 +399,7 @@ private fun CoachPanelView(
                 is CoachPanel.Error -> Text(panel.message, color = scheme.error, style = MaterialTheme.typography.bodyMedium)
                 is CoachPanel.HintShown -> {
                     val h = panel.hint
-                    Text("Pista ${panel.level}/3", style = MaterialTheme.typography.labelMedium)
+                    Text("${if (panel.auto) "Pista automática" else "Pista"} ${panel.level}/3", style = MaterialTheme.typography.labelMedium)
                     if (h.key.isNotBlank()) Text(h.key, fontWeight = FontWeight.SemiBold)
                     if (panel.level >= 2 && h.half.isNotBlank()) Text("${h.half} …")
                     if (panel.level >= 3) {
@@ -530,6 +531,19 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            val drill = st.drill
+            if (drill != null) {
+                DrillCard(drill, vm)
+            } else if (review.correction.corrections.isNotEmpty()) {
+                Label("Practicar en voz alta")
+                Text(
+                    "Di cada corrección en voz alta para fijarla, como reescribirla en el diario." +
+                        if (r.drillTotal > 0) " Última vez: ${r.drillPassed} de ${r.drillTotal}." else "",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                AppButton(onClick = vm::startDrill, modifier = Modifier.fillMaxWidth()) { Text("Practicar correcciones") }
+            }
+            st.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary) }
             Text(
                 "Por ahora la conversación no cambia tu lista de estudio: esto queda guardado para decidir después cómo debería contar.",
                 style = MaterialTheme.typography.bodySmall,
@@ -551,6 +565,52 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
             AppTextButton(onClick = { confirmDelete = true }) { Text("Borrar esta sesión") }
         }
         Spacer(Modifier.padding(bottom = 16.dp))
+    }
+}
+
+/** Una corrección a la vez: escucharla, decirla y ver si se entendió bien. */
+@Composable
+private fun DrillCard(d: DrillState, vm: ConversationViewModel) {
+    val item = d.current ?: return
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        color = scheme.surfaceContainer,
+        contentColor = scheme.onSurface,
+        modifier = Modifier.fillMaxWidth().border(1.dp, scheme.outline),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Práctica ${d.index + 1}/${d.items.size}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                AppTextButton(onClick = vm::closeDrill) { Text("Terminar") }
+            }
+            Text(item.target, style = MaterialTheme.typography.headlineSmall)
+            if (item.original.isNotBlank()) {
+                Text("${item.original} → ${item.fix}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+            }
+            if (item.explanation.isNotBlank()) Text(item.explanation, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppOutlinedButton(onClick = vm::drillHear) { Text("Escuchar") }
+                AppButton(onClick = vm::drillListen, modifier = Modifier.weight(1f)) {
+                    Text(if (d.listening) "Escuchando… (toca para parar)" else "Decir")
+                }
+            }
+            if (d.heard.isNotBlank()) Text("Entendí: ${d.heard}", style = MaterialTheme.typography.bodyMedium)
+            when (d.result) {
+                DrillResult.OK -> Text("✓ ¡Bien dicho!", color = scheme.primary, fontWeight = FontWeight.SemiBold)
+                DrillResult.MISSING_FIX -> Text("Casi: no escuché «${item.fix}». Dila otra vez fijándote en esa parte.", color = scheme.error)
+                DrillResult.DIFFERENT -> Text("Sonó distinto. Escúchala y vuelve a intentarlo.", color = scheme.error)
+                null -> Unit
+            }
+            d.error?.let { Text(it, color = scheme.error, style = MaterialTheme.typography.bodySmall) }
+            Text(
+                "Esto confirma que dijiste las palabras correctas, no evalúa tu pronunciación.",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+            AppOutlinedButton(onClick = vm::drillNext, modifier = Modifier.fillMaxWidth()) {
+                Text(if (d.index + 1 < d.items.size) (if (d.result == DrillResult.OK) "Siguiente" else "Saltar") else "Terminar práctica")
+            }
+        }
     }
 }
 

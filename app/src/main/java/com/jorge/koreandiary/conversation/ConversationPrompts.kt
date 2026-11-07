@@ -7,6 +7,14 @@ enum class Speaker { USER, AI }
 
 data class Line(val speaker: Speaker, val text: String)
 
+/** Cómo corrige la IA durante la conversación. */
+object CorrectionStyle {
+    /** Repite tu idea bien dicha dentro de su respuesta (recast). */
+    const val SOFT = "suave"
+    /** Igual que suave, pero en errores importantes te pide repetir la versión natural. */
+    const val REPEAT = "repetir"
+}
+
 /**
  * Prompts de la conversación.
  * - El del modelo de voz va en inglés: los modelos de voz siguen mejor las reglas así, y el
@@ -24,6 +32,7 @@ object ConversationPrompts {
         diaryText: String?,
         targets: List<PromptItem>,
         minutes: Int,
+        correction: String = CorrectionStyle.REPEAT,
     ): String = buildString {
         appendLine("You are a friendly Korean conversation partner for a Spanish-speaking learner at about TOPIK level ${standardLevel.coerceIn(1, 6)} (his textbook level: $level).")
         if (profile.isNotBlank()) appendLine("About him: ${profile.trim()}")
@@ -56,12 +65,11 @@ object ConversationPrompts {
               1–2 sentences per turn, and end with a question.
             - Sounds like 음, 어, 그, "eh", "este", "uh" are him thinking, not another language.
               Wait silently. Never finish his sentence for him.
-            - Corrections: never interrupt. After he finishes, if he made a mistake, repeat his idea
-              correctly in a natural way as part of your answer. At most one correction per turn.
+            CORRECTION_RULES
             - If he asks for translations often, use simpler words from then on.
             - Messages that start with [APP] come from the learning app, not from him: follow them,
               never read them aloud and never mention them.
-            """.trimIndent()
+            """.trimIndent().replace("CORRECTION_RULES", correctionRules(correction))
         )
         appendLine()
         appendLine("TOPIC: ${topic.ifBlank { "daily life (his day, food, work, plans)" }}")
@@ -76,6 +84,23 @@ object ConversationPrompts {
         }
         appendLine()
         append("Start: greet him in Korean and ask your first question about the topic.")
+    }
+
+    private fun correctionRules(style: String): String = if (style == CorrectionStyle.SOFT) {
+        """
+        - Corrections: never interrupt. After he finishes, if he made a mistake, repeat his idea
+          correctly in a natural way as part of your answer. At most one correction per turn.
+        """.trimIndent()
+    } else {
+        """
+        - Corrections: never interrupt him while he speaks.
+          · Small mistakes: after he finishes, repeat his idea correctly in a natural way as part of your answer.
+          · Important problems (the meaning changes, a Korean would not understand, or it sounds very unnatural):
+            after he finishes, say the natural version and ask him to repeat it ("따라 해 보세요: …"), then wait.
+            When he repeats it, praise briefly (좋아요!) and continue the topic. If he still gets it wrong,
+            say it once more slowly and move on. Never more than twice for the same sentence.
+          · Ask him to repeat at most once every 3 of his turns, so the conversation keeps flowing.
+        """.trimIndent()
     }
 
     /** Aviso para cerrar la sesión con naturalidad. */

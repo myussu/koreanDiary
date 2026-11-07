@@ -11,6 +11,9 @@ import com.jorge.koreandiary.conversation.ConversationMath
 import com.jorge.koreandiary.conversation.ConversationParser
 import com.jorge.koreandiary.conversation.ConversationPrompts
 import com.jorge.koreandiary.conversation.ConversationRecord
+import com.jorge.koreandiary.conversation.Drill
+import com.jorge.koreandiary.conversation.DrillItem
+import com.jorge.koreandiary.conversation.DrillResult
 import com.jorge.koreandiary.conversation.ConversationReview
 import com.jorge.koreandiary.conversation.Hint
 import com.jorge.koreandiary.conversation.ItemExplanation
@@ -22,6 +25,7 @@ import com.jorge.koreandiary.data.ItemRef
 import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.SecretStore
+import com.jorge.koreandiary.voice.KoreanSpeech
 import com.jorge.koreandiary.voice.LiveConfig
 import com.jorge.koreandiary.voice.LiveEvent
 import com.jorge.koreandiary.voice.LiveProtocol
@@ -61,12 +65,26 @@ sealed interface CoachPanel {
     data object None : CoachPanel
     data class Loading(val what: String) : CoachPanel
     /** [level]: 1 = palabra o patrón, 2 = media oración, 3 = oración completa. */
-    data class HintShown(val hint: Hint, val level: Int) : CoachPanel
+    data class HintShown(val hint: Hint, val level: Int, val auto: Boolean = false) : CoachPanel
     data class WordShown(val gloss: WordGloss) : CoachPanel
     data class SentenceShown(val gloss: SentenceGloss) : CoachPanel
     /** Un objetivo de repaso: lo que dice tu lista y, si la pides, la explicación de la IA. */
     data class TargetShown(val item: PromptItem, val detail: String?, val explanation: ItemExplanation? = null) : CoachPanel
     data class Error(val message: String) : CoachPanel
+}
+
+/** Práctica en voz alta de las correcciones, una por una. */
+data class DrillState(
+    val items: List<DrillItem>,
+    val index: Int = 0,
+    val listening: Boolean = false,
+    val heard: String = "",
+    val result: DrillResult? = null,
+    val error: String? = null,
+    /** Índices que ya dijiste bien (cuentan una vez aunque repitas). */
+    val passed: Set<Int> = emptySet(),
+) {
+    val current get() = items.getOrNull(index)
 }
 
 data class ConvUiState(
@@ -103,6 +121,7 @@ data class ConvUiState(
     val reviewing: Boolean = false,
     val review: ConversationReview? = null,
     val reviewError: String? = null,
+    val drill: DrillState? = null,
     val message: String? = null,
 ) {
     val activeTargets get() = targets.filter { it.ref !in excluded }
@@ -123,6 +142,11 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private var ending = false
     private var lookups = mutableListOf<String>()
     private var hintsUsed = 0
+    private var autoHints = 0
+    /** Pista automática: desde cuándo la IA terminó y tú no respondes, y para qué línea ya se pidió. */
+    private var quietSince = 0L
+    private var autoHintLineId = -1
+    private val speech by lazy { KoreanSpeech(c.app) }
     private var reconnections = 0
 
     init {
@@ -203,7 +227,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         }
         val diary = if (st.topic == Topic.DIARY) st.diaryToday else null
         val targets = st.activeTargets
-        val system = ConversationPrompts.voiceSystem(s.profile, s.level, s.standardLevel, topic, diary, targets, total / 60)
+        val system = ConversationPrompts.voiceSystem(s.profile, s.level, s.standardLevel, topic, diary, targets, total / 60, s.voiceCorrection)
         val vocabulary = ConversationPrompts.vocabulary(targets, st.diaryToday)
 
         val now = System.currentTimeMillis()
@@ -218,6 +242,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         ending = false
         lookups = mutableListOf()
         hintsUsed = 0
+        autoHints = 0
+        quietSince = 0L
+        autoHintLineId = -1
         reconnections = 0
 
         speaker = AudioOut(viewModelScope)
@@ -322,6 +349,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 val elapsed = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt()
                 val speaking = (speaker?.pendingMs() ?: 0) > 0
                 _state.update { it.copy(elapsedSec = elapsed, aiSpeaking = speaking) }
+                checkAutoHint(st, speaking)
                 if (!wrapUpSent && elapsed >= st.totalSec - 60) {
                     wrapUpSent = session?.send(LiveProtocol.context(ConversationPrompts.WRAP_UP, respond = false)) == true
                 }
@@ -332,6 +360,29 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * Pista automática: la IA terminó de hablar, no hay nada tuyo después y pasaron N segundos.
+     * Una sola vez por cada intervención de la IA, y nunca si se acabó la cuota del coach.
+     */
+    private fun checkAutoHint(st: ConvUiState, speaking: Boolean) {
+        val s = c.settings.state.value
+        val last = st.lines.lastOrNull()
+        val waiting = s.voiceAutoHint && st.connected && !speaking && !st.talking && st.panel == CoachPanel.None &&
+            last != null && last.speaker == Speaker.AI && !last.open && last.id != autoHintLineId
+        if (!waiting) {
+            quietSince = 0L
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (quietSince == 0L) quietSince = now
+        if (now - quietSince < s.voiceAutoHintSec * 1000L) return
+        autoHintLineId = last!!.id
+        quietSince = 0L
+        val (providerId, _) = c.coachProvider() ?: return
+        if (c.settings.usageToday(providerId) >= s.dailyLimit(providerId)) return
+        hint(auto = true)
     }
 
     /** Pulsar para hablar: abre tu turno. Si la IA estaba hablando, la corta. */
@@ -369,10 +420,12 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     // ---------- Coach: pistas y traducciones (texto, no corta la conversación) ----------
 
-    fun hint() {
+    fun hint() = hint(auto = false)
+
+    private fun hint(auto: Boolean) {
         val st = _state.value
         val current = st.panel
-        if (current is CoachPanel.HintShown && current.level < 3) {
+        if (!auto && current is CoachPanel.HintShown && current.level < 3) {
             _state.update { it.copy(panel = current.copy(level = current.level + 1)) }
             return
         }
@@ -382,7 +435,8 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         coach("Pensando una pista…", ConversationPrompts.hint(s.level, s.standardLevel, recent, record?.targets.orEmpty())) { raw ->
             val hint = ConversationParser.hint(raw)
             hintsUsed++
-            CoachPanel.HintShown(hint, level = 1)
+            if (auto) autoHints++
+            CoachPanel.HintShown(hint, level = 1, auto = auto)
         }
     }
 
@@ -479,6 +533,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             lines = lines,
             lookups = lookups.toList(),
             hintsUsed = hintsUsed,
+            autoHints = autoHints,
             tokensTotal = st.tokensTotal,
             lastPromptTokens = st.contextTokens,
             reconnections = reconnections,
@@ -558,6 +613,87 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    // ---------- Práctica en voz alta ----------
+
+    /** Empieza a practicar las correcciones de la revisión, diciéndolas en voz alta. */
+    fun startDrill() {
+        val st = _state.value
+        val r = st.record ?: return
+        val review = st.review ?: return
+        val items = Drill.build(r.lines, review.correction.corrections)
+        if (items.isEmpty()) {
+            _state.update { it.copy(message = "No hay correcciones para practicar.") }
+            return
+        }
+        if (!speech.recognitionAvailable()) {
+            _state.update { it.copy(message = "Tu celular no tiene reconocimiento de voz disponible.") }
+            return
+        }
+        _state.update { it.copy(drill = DrillState(items)) }
+    }
+
+    fun drillListen() {
+        val d = _state.value.drill ?: return
+        val item = d.current ?: return
+        if (d.listening) {
+            speech.stopListening()
+            return
+        }
+        _state.update { it.copy(drill = d.copy(listening = true, heard = "", result = null, error = null)) }
+        speech.listen(
+            onPartial = { text -> updateDrill { it.copy(heard = text) } },
+            onResult = { results ->
+                val result = Drill.evaluate(item, results)
+                updateDrill {
+                    it.copy(
+                        listening = false,
+                        heard = results.first(),
+                        result = result,
+                        passed = if (result == DrillResult.OK) it.passed + it.index else it.passed,
+                    )
+                }
+            },
+            onError = { message -> updateDrill { it.copy(listening = false, error = message) } },
+        )
+    }
+
+    /** Escuchar la oración corregida con la voz coreana del celular. */
+    fun drillHear() {
+        _state.value.drill?.current?.let { speech.say(it.target) }
+    }
+
+    fun drillNext() {
+        val d = _state.value.drill ?: return
+        speech.stopListening()
+        if (d.index + 1 < d.items.size) {
+            updateDrill { it.copy(index = it.index + 1, listening = false, heard = "", result = null, error = null) }
+        } else {
+            finishDrill(d)
+        }
+    }
+
+    fun closeDrill() {
+        _state.value.drill?.let { finishDrill(it) }
+    }
+
+    private fun finishDrill(d: DrillState) {
+        speech.stopListening()
+        val r = _state.value.record
+        _state.update {
+            it.copy(drill = null, message = "Dijiste bien ${d.passed.size} de ${d.items.size} correcciones.")
+        }
+        if (r != null && d.passed.isNotEmpty()) {
+            // Se guarda el mejor resultado.
+            val updated = r.copy(drillPassed = maxOf(r.drillPassed, d.passed.size), drillTotal = d.items.size)
+            record = updated
+            _state.update { it.copy(record = updated) }
+            c.appScope.launch { c.conversations.save(updated) }
+        }
+    }
+
+    private fun updateDrill(transform: (DrillState) -> DrillState) =
+        _state.update { st -> st.drill?.let { st.copy(drill = transform(it)) } ?: st }
+
     fun deleteSession(id: Long) {
         viewModelScope.launch {
             c.conversations.delete(id)
@@ -566,7 +702,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun backToSetup() {
-        _state.update { it.copy(stage = ConvStage.Setup, record = null, review = null, reviewError = null, panel = CoachPanel.None) }
+        _state.value.drill?.let { speech.stopListening() }
+        _state.update {
+            it.copy(stage = ConvStage.Setup, record = null, review = null, reviewError = null, panel = CoachPanel.None, drill = null, message = null)
+        }
         loadSetup()
     }
 
@@ -581,5 +720,6 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         mic?.stop()
         speaker?.release()
         session?.close()
+        speech.release()
     }
 }

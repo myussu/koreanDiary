@@ -55,6 +55,7 @@ import com.jorge.koreandiary.settings.DarkPaper
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.settings.SecretStore
+import com.jorge.koreandiary.conversation.CorrectionStyle
 import com.jorge.koreandiary.voice.TurnMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -285,6 +286,37 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(1000, 2000, 3000, 4000).forEach { ms ->
                         AppToggle("${ms / 1000} s", s.voiceSilenceMs == ms) { container.settings.update { it.copy(voiceSilenceMs = ms) } }
+                    }
+                }
+            }
+            Text("Corrección durante la conversación", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppToggle("Pedirme repetir", s.voiceCorrection == CorrectionStyle.REPEAT) {
+                    container.settings.update { it.copy(voiceCorrection = CorrectionStyle.REPEAT) }
+                }
+                AppToggle("Suave", s.voiceCorrection == CorrectionStyle.SOFT) {
+                    container.settings.update { it.copy(voiceCorrection = CorrectionStyle.SOFT) }
+                }
+            }
+            Text(
+                if (s.voiceCorrection == CorrectionStyle.SOFT) "Repite tu idea bien dicha dentro de su respuesta, sin pararse."
+                else "Errores menores: los repite bien dichos. Si algo cambia el sentido o suena muy raro, te pide repetirlo (máximo cada 3 turnos).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Pista automática")
+                    Text(
+                        "Si la IA terminó y no respondes, aparece la primera pista sola. Cada una cuenta para el límite diario de tu proveedor.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = s.voiceAutoHint, onCheckedChange = { v -> container.settings.update { it.copy(voiceAutoHint = v) } })
+            }
+            if (s.voiceAutoHint) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(6, 8, 12, 20).forEach { sec ->
+                        AppToggle("$sec s", s.voiceAutoHintSec == sec) { container.settings.update { it.copy(voiceAutoHintSec = sec) } }
                     }
                 }
             }

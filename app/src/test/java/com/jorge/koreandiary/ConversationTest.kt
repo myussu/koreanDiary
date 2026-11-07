@@ -7,6 +7,10 @@ import com.jorge.koreandiary.conversation.ConversationParser
 import com.jorge.koreandiary.conversation.ConversationPrompts
 import com.jorge.koreandiary.conversation.ConversationRecord
 import com.jorge.koreandiary.conversation.ConversationStore
+import com.jorge.koreandiary.conversation.CorrectionStyle
+import com.jorge.koreandiary.conversation.Drill
+import com.jorge.koreandiary.conversation.DrillResult
+import com.jorge.koreandiary.ai.CorrectionDto
 import com.jorge.koreandiary.conversation.Line
 import com.jorge.koreandiary.conversation.Speaker
 import org.junit.Assert.assertEquals
@@ -125,5 +129,41 @@ class ConversationTest {
         assertTrue(ConversationMath.wordSeen("등산하다", "주말에 등산했어요"))
         assertFalse(ConversationMath.wordSeen("가다", "가방을 샀어요"))
         assertTrue(ConversationMath.wordSeen("회사", "회사에 갔어요"))
+    }
+
+    @Test
+    fun correctionStyleChangesVoicePrompt() {
+        val repeat = ConversationPrompts.voiceSystem("", "3A", 3, "", null, emptyList(), 10, CorrectionStyle.REPEAT)
+        val soft = ConversationPrompts.voiceSystem("", "3A", 3, "", null, emptyList(), 10, CorrectionStyle.SOFT)
+        assertTrue("따라 해 보세요" in repeat)
+        assertFalse("따라 해 보세요" in soft)
+        assertFalse("CORRECTION_RULES" in repeat || "CORRECTION_RULES" in soft)
+    }
+
+    @Test
+    fun drillAppliesCorrectionToTheWholeLine() {
+        val lines = listOf(Line(Speaker.AI, "뭐 했어요?"), Line(Speaker.USER, "어제 친구가 만났어요"), Line(Speaker.USER, "학교에 공부했어요"))
+        val items = Drill.build(
+            lines,
+            listOf(
+                CorrectionDto(1, "친구가", "친구를", "particula", "만나다 lleva 을/를.", null),
+                CorrectionDto(2, "도서관에서", "학교에서", "particula", "", null),
+            ),
+        )
+        assertEquals("어제 친구를 만났어요", items[0].target)
+        // El fragmento no está en la línea: se practica solo la sugerencia.
+        assertEquals("학교에서", items[1].target)
+    }
+
+    @Test
+    fun drillEvaluation() {
+        val item = Drill.build(
+            listOf(Line(Speaker.USER, "어제 친구가 만났어요")),
+            listOf(CorrectionDto(1, "친구가", "친구를", "particula", "", null)),
+        ).single()
+        assertEquals(DrillResult.OK, Drill.evaluate(item, "어제 친구를 만났어요."))
+        assertEquals(DrillResult.OK, Drill.evaluate(item, listOf("어제 친구가 만났어요", "어제 친구를 만났어요")))
+        assertEquals(DrillResult.MISSING_FIX, Drill.evaluate(item, "어제 친구가 만났어요"))
+        assertEquals(DrillResult.DIFFERENT, Drill.evaluate(item, "오늘 날씨가 좋아요"))
     }
 }

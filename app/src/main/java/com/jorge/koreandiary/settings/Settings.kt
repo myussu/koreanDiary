@@ -79,6 +79,11 @@ data class AppSettings(
     val voiceDailyMinutes: Int = 30,
     /** El texto de la IA aparece borroso hasta tocarlo: así practicas escuchar, no leer. */
     val voiceBlurText: Boolean = true,
+    /** "suave" (repite tu idea bien dicha) o "repetir" (en errores importantes te pide repetir). */
+    val voiceCorrection: String = "repetir",
+    /** Pista automática si la IA terminó y no respondes en [voiceAutoHintSec] segundos. */
+    val voiceAutoHint: Boolean = false,
+    val voiceAutoHintSec: Int = 8,
 ) {
     /** Grosor del trazo en dp (independiente de la densidad de la pantalla). */
     val penWidthDp: Float get() = when (penWidth) {
@@ -134,6 +139,9 @@ class SettingsStore(context: Context) {
         voiceSessionMinutes = prefs.getInt("voiceSessionMinutes", 10),
         voiceDailyMinutes = prefs.getInt("voiceDailyMinutes", 30),
         voiceBlurText = prefs.getBoolean("voiceBlurText", true),
+        voiceCorrection = prefs.getString("voiceCorrection", "repetir") ?: "repetir",
+        voiceAutoHint = prefs.getBoolean("voiceAutoHint", false),
+        voiceAutoHintSec = prefs.getInt("voiceAutoHintSec", 8),
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -167,6 +175,9 @@ class SettingsStore(context: Context) {
             .putInt("voiceSessionMinutes", s.voiceSessionMinutes)
             .putInt("voiceDailyMinutes", s.voiceDailyMinutes)
             .putBoolean("voiceBlurText", s.voiceBlurText)
+            .putString("voiceCorrection", s.voiceCorrection)
+            .putBoolean("voiceAutoHint", s.voiceAutoHint)
+            .putInt("voiceAutoHintSec", s.voiceAutoHintSec)
             .apply()
         _state.value = s
     }
