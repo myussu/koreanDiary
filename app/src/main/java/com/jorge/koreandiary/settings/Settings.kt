@@ -84,7 +84,24 @@ data class AppSettings(
     /** Pista automática si la IA terminó y no respondes en [voiceAutoHintSec] segundos. */
     val voiceAutoHint: Boolean = false,
     val voiceAutoHintSec: Int = 8,
+    /** Escuchar: modelo que escribe el guion (si se acaba su cuota se usa [geminiModel]). */
+    val listenScriptModel: String = "gemini-3.8-flash",
+    /** Escuchar: modelo de voz del narrador. */
+    val listenTtsModel: String = "gemini-3.8-flash-tts",
+    /** Escuchar: "gemini" (voz de estudio, cuota diaria baja) o "sistema" (voz del celular). */
+    val listenNarrator: String = "gemini",
+    /** Escuchar: velocidad de la narración (0.7–1.0). */
+    val listenSpeed: Float = 0.9f,
+    /** Escuchar: segundos de pausa entre segmentos sin pregunta (0 = seguido). */
+    val listenGapSec: Int = 2,
+    /** Escuchar: buscar en Google para temas actuales (último valor elegido). */
+    val listenSearch: Boolean = false,
+    val listenMinutes: Int = 10,
+    /** Escuchar: últimos temas, uno por línea. */
+    val listenRecentTopics: String = "",
 ) {
+    val recentTopics get() = listenRecentTopics.lines().map { it.trim() }.filter { it.isNotEmpty() }
+
     /** Grosor del trazo en dp (independiente de la densidad de la pantalla). */
     val penWidthDp: Float get() = when (penWidth) {
         "fino" -> 1.6f
@@ -142,6 +159,14 @@ class SettingsStore(context: Context) {
         voiceCorrection = prefs.getString("voiceCorrection", "repetir") ?: "repetir",
         voiceAutoHint = prefs.getBoolean("voiceAutoHint", false),
         voiceAutoHintSec = prefs.getInt("voiceAutoHintSec", 8),
+        listenScriptModel = prefs.getString("listenScriptModel", "gemini-3.8-flash") ?: "gemini-3.8-flash",
+        listenTtsModel = prefs.getString("listenTtsModel", "gemini-3.8-flash-tts") ?: "gemini-3.8-flash-tts",
+        listenNarrator = prefs.getString("listenNarrator", "gemini") ?: "gemini",
+        listenSpeed = prefs.getFloat("listenSpeed", 0.9f),
+        listenGapSec = prefs.getInt("listenGapSec", 2),
+        listenSearch = prefs.getBoolean("listenSearch", false),
+        listenMinutes = prefs.getInt("listenMinutes", 10),
+        listenRecentTopics = prefs.getString("listenRecentTopics", "") ?: "",
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -178,6 +203,14 @@ class SettingsStore(context: Context) {
             .putString("voiceCorrection", s.voiceCorrection)
             .putBoolean("voiceAutoHint", s.voiceAutoHint)
             .putInt("voiceAutoHintSec", s.voiceAutoHintSec)
+            .putString("listenScriptModel", s.listenScriptModel)
+            .putString("listenTtsModel", s.listenTtsModel)
+            .putString("listenNarrator", s.listenNarrator)
+            .putFloat("listenSpeed", s.listenSpeed)
+            .putInt("listenGapSec", s.listenGapSec)
+            .putBoolean("listenSearch", s.listenSearch)
+            .putInt("listenMinutes", s.listenMinutes)
+            .putString("listenRecentTopics", s.listenRecentTopics)
             .apply()
         _state.value = s
     }

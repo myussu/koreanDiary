@@ -20,6 +20,7 @@ import com.jorge.koreandiary.conversation.ConversationReview
 import com.jorge.koreandiary.conversation.Hint
 import com.jorge.koreandiary.conversation.ItemExplanation
 import com.jorge.koreandiary.conversation.Line
+import com.jorge.koreandiary.conversation.RecordMode
 import com.jorge.koreandiary.conversation.SentenceGloss
 import com.jorge.koreandiary.conversation.Speaker
 import com.jorge.koreandiary.conversation.WordGloss
@@ -97,6 +98,13 @@ data class DrillState(
 
 data class ConvUiState(
     val stage: ConvStage = ConvStage.Setup,
+    /** Conversar o Escuchar ([RecordMode]). */
+    val mode: String = RecordMode.CONVERSATION,
+    // Escuchar: tema en una frase (escrito o dictado), búsqueda en Google y duración.
+    val listenTopic: String = "",
+    val listenSearch: Boolean = false,
+    val listenMinutes: Int = 10,
+    val dictatingTopic: Boolean = false,
     // Preparación
     val loadingTargets: Boolean = true,
     val targets: List<PromptItem> = emptyList(),
@@ -175,7 +183,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     init {
         val s = c.settings.state.value
-        _state.update { it.copy(minutes = s.voiceSessionMinutes, turnMode = s.voiceTurnMode) }
+        _state.update {
+            it.copy(minutes = s.voiceSessionMinutes, turnMode = s.voiceTurnMode, listenSearch = s.listenSearch, listenMinutes = s.listenMinutes)
+        }
     }
 
     /**
@@ -237,9 +247,67 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     fun dismissMessage() = _state.update { it.copy(message = null) }
     fun showMessage(text: String) = _state.update { it.copy(message = text) }
 
+    // ---------- Escuchar ----------
+
+    fun setMode(mode: String) = _state.update { it.copy(mode = mode, message = null) }
+    fun setListenTopic(text: String) = _state.update { it.copy(listenTopic = text) }
+
+    fun setListenSearch(on: Boolean) {
+        _state.update { it.copy(listenSearch = on) }
+        c.settings.update { it.copy(listenSearch = on) }
+    }
+
+    fun setListenMinutes(m: Int) {
+        _state.update { it.copy(listenMinutes = m) }
+        c.settings.update { it.copy(listenMinutes = m) }
+    }
+
+    /** Dictar el tema en español. */
+    fun dictateTopic() {
+        if (_state.value.dictatingTopic) {
+            speech.stopListening()
+            return
+        }
+        if (!speech.recognitionAvailable()) {
+            _state.update { it.copy(message = "Tu celular no tiene reconocimiento de voz: escríbelo.") }
+            return
+        }
+        _state.update { it.copy(dictatingTopic = true, message = null) }
+        speech.listen(
+            onPartial = { text -> setListenTopic(text) },
+            onResult = { results -> _state.update { it.copy(listenTopic = results.first(), dictatingTopic = false) } },
+            onError = { message -> _state.update { it.copy(dictatingTopic = false, message = message) } },
+            language = "es-PE",
+        )
+    }
+
+    /** Empieza la escucha (permiso de micrófono ya concedido: lo usa para tus preguntas). */
+    fun startListening() {
+        val st = _state.value
+        if (st.stage == ConvStage.Live) return
+        if (st.dictatingTopic) speech.stopListening()
+        val topic = st.listenTopic.trim()
+        val error = c.listen.start(topic, topic.ifBlank { "Tema libre" }, st.listenMinutes, st.listenSearch, st.activeTargets)
+        if (error != null) {
+            _state.update { it.copy(message = error, dictatingTopic = false) }
+            return
+        }
+        _state.update { it.copy(message = null, dictatingTopic = false, panel = CoachPanel.None) }
+        if (topic.isNotEmpty()) {
+            c.settings.update { s ->
+                val recent = (listOf(topic) + s.recentTopics.filterNot { it.equals(topic, ignoreCase = true) }).take(6)
+                s.copy(listenRecentTopics = recent.joinToString("\n"))
+            }
+        }
+    }
+
     /** Empieza la sesión. Llamar con el permiso de micrófono ya concedido. */
     fun start() {
         if (_state.value.stage == ConvStage.Live) return
+        if (c.listen.state.value.phase.active) {
+            _state.update { it.copy(message = "Hay una sesión de escucha en curso: termínala primero.") }
+            return
+        }
         val s = c.settings.state.value
         val st = _state.value
         val key = c.secrets.get(SecretStore.GEMINI_KEY)
@@ -547,9 +615,13 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         if (clean.isEmpty()) return
         coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence)) { raw ->
             val gloss = ConversationParser.word(raw, clean)
-            lookups += "${gloss.form}: ${gloss.meaning}"
-            // El modelo de voz se entera en silencio y baja el nivel.
-            session?.send(LiveProtocol.context(ConversationPrompts.unknownWord(clean), respond = false))
+            if (c.listen.state.value.phase.active) {
+                c.listen.noteLookup(clean, "${gloss.form}: ${gloss.meaning}")
+            } else {
+                lookups += "${gloss.form}: ${gloss.meaning}"
+                // El modelo de voz se entera en silencio y baja el nivel.
+                session?.send(LiveProtocol.context(ConversationPrompts.unknownWord(clean), respond = false))
+            }
             CoachPanel.WordShown(gloss)
         }
     }

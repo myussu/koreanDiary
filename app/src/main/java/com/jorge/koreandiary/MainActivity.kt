@@ -21,6 +21,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.settings.ThemeMode
@@ -31,6 +32,7 @@ import com.jorge.koreandiary.ui.ProgressScreen
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
 import com.jorge.koreandiary.ui.conversation.ConversationScreen
+import com.jorge.koreandiary.ui.conversation.ListenMiniBar
 import com.jorge.koreandiary.ui.page.PageScreen
 import com.jorge.koreandiary.ui.workbook.WorkbookListScreen
 import com.jorge.koreandiary.ui.workbook.WorkbookSessionScreen
@@ -93,23 +95,30 @@ private fun AppNavigation(container: AppContainer) {
     }
 
     val route = stack.last()
-    when {
-        route.startsWith("page:") -> PageScreen(container, route.removePrefix("page:").toLong(), onBack = ::pop)
-        route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
-        route == "import" -> ImportScreen(container, onBack = ::pop)
-        route == "settings" -> SettingsScreen(container, onBack = ::pop)
-        route == "progress" -> ProgressScreen(container, onBack = ::pop)
-        route == "conversation" -> ConversationScreen(container, onBack = ::pop)
-        route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
-        route.startsWith("workbook:") -> WorkbookSessionScreen(container, route.removePrefix("workbook:").toLong(), onBack = ::pop)
-        else -> HomeScreen(
-            container,
-            onOpenPage = { push("page:$it") },
-            onStudy = { push("study") },
-            onSettings = { push("settings") },
-            onWorkbook = { push("workbook") },
-            onProgress = { push("progress") },
-            onConversation = { push("conversation") },
-        )
+    val listen by container.listen.state.collectAsStateWithLifecycle()
+    Box(Modifier.fillMaxSize()) {
+        when {
+            route.startsWith("page:") -> PageScreen(container, route.removePrefix("page:").toLong(), onBack = ::pop)
+            route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
+            route == "import" -> ImportScreen(container, onBack = ::pop)
+            route == "settings" -> SettingsScreen(container, onBack = ::pop)
+            route == "progress" -> ProgressScreen(container, onBack = ::pop)
+            route == "conversation" -> ConversationScreen(container, onBack = ::pop)
+            route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
+            route.startsWith("workbook:") -> WorkbookSessionScreen(container, route.removePrefix("workbook:").toLong(), onBack = ::pop)
+            else -> HomeScreen(
+                container,
+                onOpenPage = { push("page:$it") },
+                onStudy = { push("study") },
+                onSettings = { push("settings") },
+                onWorkbook = { push("workbook") },
+                onProgress = { push("progress") },
+                onConversation = { push("conversation") },
+            )
+        }
+        // Escucha en curso (sigue con la pantalla apagada): una barra para volver a ella desde cualquier pantalla.
+        if (listen.phase.active && route != "conversation") {
+            ListenMiniBar(listen, container.listen, onOpen = { push("conversation") }, modifier = Modifier.align(Alignment.BottomCenter))
+        }
     }
 }

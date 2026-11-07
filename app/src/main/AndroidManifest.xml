@@ -2,8 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Conversación por voz (solo con la pantalla abierta) -->
+    <!-- Conversación por voz y preguntas en el modo Escuchar -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Modo Escuchar con la pantalla apagada: reproducción y micrófono en primer plano -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Autoactualización desde el release "latest" de GitHub -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
@@ -41,6 +45,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".listen.ListenService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback|microphone" />
 
         <receiver
             android:name=".update.InstallResultReceiver"

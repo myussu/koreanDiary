@@ -56,6 +56,7 @@ import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.settings.SecretStore
 import com.jorge.koreandiary.conversation.CorrectionStyle
+import com.jorge.koreandiary.listen.Narrator
 import com.jorge.koreandiary.voice.TurnMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -76,6 +77,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     var voiceModel by remember { mutableStateOf(s.voiceModel) }
     var voiceName by remember { mutableStateOf(s.voiceName) }
     var voiceDaily by remember { mutableStateOf(s.voiceDailyMinutes.toString()) }
+    var listenScriptModel by remember { mutableStateOf(s.listenScriptModel) }
+    var listenTtsModel by remember { mutableStateOf(s.listenTtsModel) }
 
     fun save() = container.settings.update {
         it.copy(
@@ -90,6 +93,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             voiceModel = voiceModel.trim().ifEmpty { "gemini-3.8-live" },
             voiceName = voiceName.trim().ifEmpty { "Kore" },
             voiceDailyMinutes = voiceDaily.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+            listenScriptModel = listenScriptModel.trim().ifEmpty { "gemini-3.8-flash" },
+            listenTtsModel = listenTtsModel.trim().ifEmpty { "gemini-3.8-flash-tts" },
         )
     }
 
@@ -334,6 +339,39 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 value = voiceDaily, onValueChange = { voiceDaily = it.filter(Char::isDigit) },
                 label = { Text("Minutos de conversación por día") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
+        }
+
+        Section("Escuchar") {
+            Text(
+                "Un pódcast corto con pausas para preguntar. El guion lo escribe Gemini y lo narra una voz; las preguntas usan el modelo de voz de arriba. Cuenta para los mismos minutos por día.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Voz del narrador", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppToggle("Gemini", s.listenNarrator == Narrator.GEMINI) { container.settings.update { it.copy(listenNarrator = Narrator.GEMINI) } }
+                AppToggle("Voz del celular", s.listenNarrator == Narrator.SYSTEM) { container.settings.update { it.copy(listenNarrator = Narrator.SYSTEM) } }
+            }
+            Text(
+                if (s.listenNarrator == Narrator.GEMINI) "Voz natural (usa la voz elegida arriba). Son 2 pedidos por sesión y la capa gratuita da pocos al día: si se acaban, sigue sola con la voz del celular."
+                else "Sin conexión ni cuota, menos natural. Necesita la voz coreana instalada en el celular.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Velocidad", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(0.75f, 0.85f, 0.9f, 1f).forEach { v ->
+                    AppToggle("${v}×", kotlin.math.abs(s.listenSpeed - v) < 0.01f) { container.settings.update { it.copy(listenSpeed = v) } }
+                }
+            }
+            Text("Pausa entre segmentos", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(0, 2, 4, 6).forEach { sec ->
+                    AppToggle(if (sec == 0) "Seguido" else "$sec s", s.listenGapSec == sec) { container.settings.update { it.copy(listenGapSec = sec) } }
+                }
+            }
+            Text("Después de las preguntas de la IA siempre espera a que digas «sigue».", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(value = listenScriptModel, onValueChange = { listenScriptModel = it }, label = { Text("Modelo del guion") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Text("Si se acaba su cuota diaria se usa tu modelo de Gemini del diario.", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(value = listenTtsModel, onValueChange = { listenTtsModel = it }, label = { Text("Modelo de voz del narrador") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
 
         Section("Fuentes") {
