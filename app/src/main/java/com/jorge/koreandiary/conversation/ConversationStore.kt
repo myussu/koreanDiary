@@ -2,6 +2,7 @@ package com.jorge.koreandiary.conversation
 
 import android.content.Context
 import com.jorge.koreandiary.ai.PromptItem
+import com.jorge.koreandiary.listen.ComprehensionResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,8 +53,27 @@ data class ConversationRecord(
     /** Práctica en voz alta de las correcciones: cuántas dijiste bien de cuántas. */
     val drillPassed: Int = 0,
     val drillTotal: Int = 0,
+    /** [RecordMode.CONVERSATION] o [RecordMode.LISTEN]. */
+    val mode: String = RecordMode.CONVERSATION,
+    /** Modo Escuchar: el guion (JSON de ListenScriptParser.encode). */
+    val scriptRaw: String? = null,
+    /** Modo Escuchar: tus respuestas a las preguntas de comprensión, según la IA. */
+    val comprehension: List<ComprehensionResult> = emptyList(),
+    /** Modo Escuchar: veces que escuchaste cada objetivo en la narración (repeticiones incluidas). */
+    val heard: Map<String, Int> = emptyMap(),
+    val segmentsHeard: Int = 0,
+    val repeats: Int = 0,
+    val pauses: Int = 0,
+    /** Voz del narrador: "gemini", "sistema" o "gemini+sistema". */
+    val narrator: String = "",
 ) {
     val userLines get() = lines.count { it.speaker == Speaker.USER }
+    val isListen get() = mode == RecordMode.LISTEN
+}
+
+object RecordMode {
+    const val CONVERSATION = "conversacion"
+    const val LISTEN = "escuchar"
 }
 
 data class ConversationStats(val secondsToday: Int, val secondsTotal: Int, val sessions: Int, val days: Int)
@@ -151,6 +171,16 @@ class ConversationStore(context: Context) {
             .put("reconnections", r.reconnections)
             .put("endReason", r.endReason)
             .put("reviewRaw", r.reviewRaw ?: "")
+            .put("mode", r.mode)
+            .put("scriptRaw", r.scriptRaw ?: "")
+            .put("comprehension", JSONArray().apply {
+                r.comprehension.forEach { put(JSONObject().put("i", it.index).put("ok", it.correct).put("nota", it.note)) }
+            })
+            .put("heard", JSONObject().apply { r.heard.forEach { (k, v) -> put(k, v) } })
+            .put("segmentsHeard", r.segmentsHeard)
+            .put("repeats", r.repeats)
+            .put("pauses", r.pauses)
+            .put("narrator", r.narrator)
 
         fun decode(o: JSONObject): ConversationRecord {
             val lines = o.optJSONArray("lines")
@@ -159,6 +189,8 @@ class ConversationStore(context: Context) {
             val asked = o.optJSONArray("askedHowTo")
             val highlighted = o.optJSONArray("highlighted")
             val notes = o.optJSONArray("notes")
+            val comprehension = o.optJSONArray("comprehension")
+            val heard = o.optJSONObject("heard")
             return ConversationRecord(
                 id = o.getLong("id"),
                 startedAt = o.optLong("startedAt", o.getLong("id")),
@@ -185,6 +217,16 @@ class ConversationStore(context: Context) {
                 reconnections = o.optInt("reconnections"),
                 endReason = o.optString("endReason"),
                 reviewRaw = o.optString("reviewRaw").ifBlank { null },
+                mode = o.optString("mode").ifBlank { RecordMode.CONVERSATION },
+                scriptRaw = o.optString("scriptRaw").ifBlank { null },
+                comprehension = (0 until (comprehension?.length() ?: 0)).mapNotNull { i ->
+                    comprehension!!.optJSONObject(i)?.let { ComprehensionResult(it.optInt("i"), it.optBoolean("ok"), it.optString("nota")) }
+                },
+                heard = heard?.keys()?.asSequence()?.associateWith { heard.optInt(it) }.orEmpty(),
+                segmentsHeard = o.optInt("segmentsHeard"),
+                repeats = o.optInt("repeats"),
+                pauses = o.optInt("pauses"),
+                narrator = o.optString("narrator"),
             )
         }
     }

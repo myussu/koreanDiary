@@ -10,6 +10,7 @@ import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.standard.StandardCatalog
 import com.jorge.koreandiary.ink.HandwritingRecognizer
+import com.jorge.koreandiary.listen.ListenEngine
 import com.jorge.koreandiary.mascot.MascotPack
 import com.jorge.koreandiary.reminder.ReminderScheduler
 import com.jorge.koreandiary.workbook.WorkbookStore
@@ -37,6 +38,8 @@ class AppContainer(val app: Application) {
     val mascotPack = MascotPack(app)
     val workbook = WorkbookStore(app)
     val conversations = ConversationStore(app)
+    /** Modo Escuchar: vive aquí (no en la pantalla) para seguir con la pantalla apagada. */
+    val listen by lazy { ListenEngine(this) }
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

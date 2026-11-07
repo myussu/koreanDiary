@@ -65,6 +65,7 @@ import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.conversation.ConversationMath
 import com.jorge.koreandiary.conversation.ConversationRecord
 import com.jorge.koreandiary.conversation.DrillResult
+import com.jorge.koreandiary.conversation.RecordMode
 import com.jorge.koreandiary.conversation.Speaker
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppOutlinedButton
@@ -80,9 +81,9 @@ import java.util.Locale
 
 private val dateFormat = DateTimeFormatter.ofPattern("d MMM · HH:mm", Locale.forLanguageTag("es"))
 
-private fun formatDate(ms: Long) = dateFormat.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+internal fun formatDate(ms: Long) = dateFormat.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 
-private fun clock(sec: Int) = "%d:%02d".format(sec.coerceAtLeast(0) / 60, sec.coerceAtLeast(0) % 60)
+internal fun clock(sec: Int) = "%d:%02d".format(sec.coerceAtLeast(0) / 60, sec.coerceAtLeast(0) % 60)
 
 /** Conversación por voz con Gemini: preparación, sesión en vivo y revisión. */
 @Composable
@@ -92,8 +93,23 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    val listen by container.listen.state.collectAsStateWithLifecycle()
+    fun begin() = if (st.mode == RecordMode.LISTEN) vm.startListening() else vm.start()
+
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) vm.start() else vm.showMessage("Sin permiso de micrófono no se puede conversar. Puedes darlo en los ajustes del celular.")
+        if (granted) begin() else vm.showMessage("Sin permiso de micrófono no se puede conversar ni preguntar. Puedes darlo en los ajustes del celular.")
+    }
+
+    // Terminó una escucha: se abre su revisión. Si no pudo empezar, se muestra el motivo.
+    LaunchedEffect(listen.finishedId, listen.error) {
+        listen.finishedId?.let {
+            vm.openReview(it)
+            container.listen.acknowledge()
+        }
+        listen.error?.let {
+            vm.showMessage(it)
+            container.listen.acknowledge()
+        }
     }
 
     // Al entrar (no al rotar): objetivos y minutos de hoy al día.
@@ -106,7 +122,7 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
     }
     fun startWithPermission() {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        if (granted) vm.start() else permission.launch(Manifest.permission.RECORD_AUDIO)
+        if (granted) begin() else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     // Sin servicio en primer plano: al salir de la app se deja de enviar audio.
@@ -138,6 +154,12 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
     }
     BackHandler(enabled = st.stage == ConvStage.Review) { vm.backToSetup() }
 
+    // La escucha sigue aunque salgas de la pantalla (servicio en primer plano): al volver se ve aquí.
+    if (listen.phase.active) {
+        ListenLiveContent(listen, container.listen, st, vm, blur = settings.voiceBlurText)
+        return
+    }
+
     when (st.stage) {
         ConvStage.Setup -> SetupContent(
             container, st, vm,
@@ -164,6 +186,8 @@ private fun SetupContent(
     dailyMinutes: Int,
 ) {
     val sessions by container.conversations.sessions.collectAsStateWithLifecycle()
+    val settingsState by container.settings.state.collectAsStateWithLifecycle()
+    val recentTopics = settingsState.recentTopics
     Column(
         Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -178,23 +202,37 @@ private fun SetupContent(
         if (!st.hasCoach) {
             Note("Sin Gemini o Azure configurado no habrá pistas, traducciones ni revisión.")
         }
-
-        Label("Tema")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            AppToggle("Libre", st.topic == Topic.FREE) { vm.setTopic(Topic.FREE) }
-            if (st.diaryToday != null) AppToggle("Mi diario de hoy", st.topic == Topic.DIARY) { vm.setTopic(Topic.DIARY) }
-            AppToggle("Otro", st.topic == Topic.OTHER) { vm.setTopic(Topic.OTHER) }
-        }
-        if (st.topic == Topic.OTHER) {
-            OutlinedTextField(
-                value = st.customTopic, onValueChange = vm::setCustomTopic, singleLine = true,
-                label = { Text("¿De qué quieres hablar?") }, modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        Label("Duración")
+        val listenMode = st.mode == RecordMode.LISTEN
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(5, 10, 15, 20).forEach { m -> AppToggle("$m min", st.minutes == m) { vm.setMinutes(m) } }
+            AppToggle("Conversar", !listenMode) { vm.setMode(RecordMode.CONVERSATION) }
+            AppToggle("Escuchar", listenMode) { vm.setMode(RecordMode.LISTEN) }
+        }
+        if (listenMode) {
+            Text(
+                "Un pódcast corto a tu nivel: una voz lo narra y en las pausas puedes preguntar lo que no entendiste, " +
+                    "en coreano o en español. Funciona con la pantalla apagada y con los botones de los audífonos.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ListenSetupFields(st, vm, recentTopics)
+        } else {
+            Label("Tema")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                AppToggle("Libre", st.topic == Topic.FREE) { vm.setTopic(Topic.FREE) }
+                if (st.diaryToday != null) AppToggle("Mi diario de hoy", st.topic == Topic.DIARY) { vm.setTopic(Topic.DIARY) }
+                AppToggle("Otro", st.topic == Topic.OTHER) { vm.setTopic(Topic.OTHER) }
+            }
+            if (st.topic == Topic.OTHER) {
+                OutlinedTextField(
+                    value = st.customTopic, onValueChange = vm::setCustomTopic, singleLine = true,
+                    label = { Text("¿De qué quieres hablar?") }, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            Label("Duración")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(5, 10, 15, 20).forEach { m -> AppToggle("$m min", st.minutes == m) { vm.setMinutes(m) } }
+            }
         }
         Text(
             "Hoy: ${ConversationMath.format(st.secondsToday)} de $dailyMinutes min · Turnos: $turnModeLabel (cámbialo en Ajustes)",
@@ -228,7 +266,8 @@ private fun SetupContent(
                     )
                 }
                 Text(
-                    "La IA te hará preguntas donde los necesites. Toca uno para ver qué significa o quitarlo. Tu lista de estudio no cambia con la conversación.",
+                    if (listenMode) "La narración los usa y la IA te invita a usarlos en las pausas. Toca uno para ver qué significa o quitarlo. Tu lista de estudio no cambia."
+                    else "La IA te hará preguntas donde los necesites. Toca uno para ver qué significa o quitarlo. Tu lista de estudio no cambia con la conversación.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -240,7 +279,7 @@ private fun SetupContent(
             enabled = st.hasVoiceKey && !st.loadingTargets,
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 14.dp),
-        ) { Text("Empezar") }
+        ) { Text(if (listenMode) "Empezar a escuchar" else "Empezar") }
         Text(
             "Usa audífonos si eliges el modo automático: así la IA no se escucha a sí misma.",
             style = MaterialTheme.typography.bodySmall,
@@ -270,7 +309,8 @@ private fun SessionRow(r: ConversationRecord, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(formatDate(r.startedAt), style = MaterialTheme.typography.bodyMedium)
             Text(
-                "${ConversationMath.format(r.durationSec)} · ${r.userLines} intervenciones · ${r.topic}",
+                if (r.isListen) "Escucha · ${ConversationMath.format(r.durationSec)} · ${r.topic}"
+                else "${ConversationMath.format(r.durationSec)} · ${r.userLines} intervenciones · ${r.topic}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -395,7 +435,7 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
 }
 
 @Composable
-private fun UserBubble(text: String) {
+internal fun UserBubble(text: String) {
     Row(Modifier.fillMaxWidth()) {
         Spacer(Modifier.width(48.dp))
         Spacer(Modifier.weight(1f))
@@ -408,7 +448,7 @@ private fun UserBubble(text: String) {
 
 /** Texto de la IA: borroso hasta tocarlo; luego cada palabra se toca para traducirla. */
 @Composable
-private fun AiBubble(text: String, blur: Boolean, onWord: (String) -> Unit) {
+internal fun AiBubble(text: String, blur: Boolean, onWord: (String) -> Unit) {
     var revealed by rememberSaveable { mutableStateOf(!blur) }
     val scheme = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth()) {
@@ -444,7 +484,7 @@ private fun AiBubble(text: String, blur: Boolean, onWord: (String) -> Unit) {
 }
 
 /** Acciones del panel "¿Cómo digo?" (solo en la sesión en vivo). */
-private class HowToActions(
+internal class HowToActions(
     val onText: (String) -> Unit,
     val onDictate: () -> Unit,
     val onAsk: () -> Unit,
@@ -452,7 +492,7 @@ private class HowToActions(
 )
 
 @Composable
-private fun CoachPanelView(
+internal fun CoachPanelView(
     panel: CoachPanel,
     onMore: () -> Unit,
     onClose: () -> Unit,
@@ -580,6 +620,7 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
         r.notes.forEach {
             Text("⚠ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         }
+        if (r.isListen) ListenReviewSection(r)
 
         val review = st.review
         if (review == null) {
@@ -731,10 +772,10 @@ private fun DrillCard(d: DrillState, vm: ConversationViewModel) {
 }
 
 @Composable
-private fun Label(text: String) = Text(text.uppercase(), style = MaterialTheme.typography.labelMedium)
+internal fun Label(text: String) = Text(text.uppercase(), style = MaterialTheme.typography.labelMedium)
 
 @Composable
-private fun Note(text: String) = Text(
+internal fun Note(text: String) = Text(
     text,
     style = MaterialTheme.typography.bodySmall,
     color = MaterialTheme.colorScheme.secondary,

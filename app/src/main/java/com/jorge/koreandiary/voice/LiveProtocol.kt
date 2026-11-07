@@ -32,6 +32,8 @@ data class LiveConfig(
     val fallback: Int = 0,
     /** Declarar la herramienta [LiveProtocol.TOOL_HIGHLIGHT] (hay objetivos de repaso). */
     val highlightTool: Boolean = false,
+    /** Modo Escuchar: funciones para seguir, repetir o pausar la narración y anotar la comprensión. */
+    val listenTools: Boolean = false,
 )
 
 /** Lo que llega del servidor, ya interpretado. */
@@ -93,6 +95,41 @@ object LiveProtocol {
                 .put("required", JSONArray().put("ref")),
         )
 
+    /** Modo Escuchar: órdenes por voz y resultados de comprensión. */
+    const val TOOL_RESUME = "resume_narration"
+    const val TOOL_REPEAT = "repeat_segment"
+    const val TOOL_PAUSE = "pause_narration"
+    const val TOOL_COMPREHENSION = "comprehension_result"
+    const val TOOL_FINISH = "finish_listening"
+
+    private fun declaration(name: String, description: String, params: List<Triple<String, String, String>> = emptyList(), required: List<String> = emptyList()) =
+        JSONObject().put("name", name).put("description", description).put("behavior", "NON_BLOCKING").apply {
+            if (params.isNotEmpty()) {
+                val props = JSONObject()
+                params.forEach { (n, type, desc) -> props.put(n, JSONObject().put("type", type).put("description", desc)) }
+                put("parameters", JSONObject().put("type", "OBJECT").put("properties", props).put("required", JSONArray(required)))
+            }
+        }
+
+    private fun listenDeclarations() = listOf(
+        declaration(TOOL_RESUME, "Continue the narration (he said sigue / 계속, or he answered the pause question and you gave feedback)."),
+        declaration(
+            TOOL_REPEAT, "Play the current narration segment again from the start (he said repite / 다시).",
+            listOf(Triple("slower", "BOOLEAN", "true if he asked for it slower (más lento / 천천히)")),
+        ),
+        declaration(TOOL_PAUSE, "Stay paused: he needs more time (pausa / espera / 잠깐만)."),
+        declaration(
+            TOOL_COMPREHENSION, "Record his answer to a comprehension question, right after your feedback.",
+            listOf(
+                Triple("index", "INTEGER", "Question number, starting at 1"),
+                Triple("correct", "BOOLEAN", "Whether his answer was right"),
+                Triple("note", "STRING", "What he answered, in a few Spanish words"),
+            ),
+            required = listOf("index", "correct"),
+        ),
+        declaration(TOOL_FINISH, "End the listening session (after your goodbye, or when he asks to stop)."),
+    )
+
     /** Respuesta a una llamada de función: "SILENT" = el modelo no reacciona, solo lo sabe. */
     fun toolResponse(id: String, name: String): String {
         val response = JSONObject().put("id", id).put("name", name)
@@ -147,8 +184,13 @@ object LiveProtocol {
                     .put("slidingWindow", JSONObject().put("targetTokens", TARGET_TOKENS)),
             )
             .put("sessionResumption", JSONObject().apply { c.resumeHandle?.let { put("handle", it) } })
-        if (c.highlightTool && c.fallback < 2) {
-            setup.put("tools", JSONArray().put(JSONObject().put("functionDeclarations", JSONArray().put(highlightDeclaration()))))
+        val declarations = JSONArray()
+        if (c.fallback < 2) {
+            if (c.highlightTool) declarations.put(highlightDeclaration())
+            if (c.listenTools) listenDeclarations().forEach { declarations.put(it) }
+        }
+        if (declarations.length() > 0) {
+            setup.put("tools", JSONArray().put(JSONObject().put("functionDeclarations", declarations)))
         }
         return JSONObject().put("setup", setup).toString()
     }

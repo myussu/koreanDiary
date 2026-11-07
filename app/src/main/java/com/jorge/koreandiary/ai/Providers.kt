@@ -30,12 +30,18 @@ interface CorrectionProvider {
 open class ProviderException(message: String, val offline: Boolean = false) : Exception(message)
 
 /** POST JSON con manejo uniforme de errores. Devuelve el cuerpo de la respuesta ya parseado. */
-internal fun postJson(url: String, headers: Map<String, String>, body: JSONObject, providerName: String): JSONObject {
+internal fun postJson(
+    url: String,
+    headers: Map<String, String>,
+    body: JSONObject,
+    providerName: String,
+    readTimeoutMs: Int = 120_000,
+): JSONObject {
     val conn = try {
         (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
-            readTimeout = 120_000
+            readTimeout = readTimeoutMs
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             headers.forEach { (k, v) -> setRequestProperty(k, v) }
@@ -91,8 +97,8 @@ class GeminiProvider(
     }
 
     companion object {
-        private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
-        private const val API_REVISION = "2026-05-20"
+        internal const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
+        internal const val API_REVISION = "2026-05-20"
 
         /** Interactions API: steps[].content[] con type "text". Acepta también el formato de generateContent. */
         internal fun extractText(json: JSONObject): String? {
