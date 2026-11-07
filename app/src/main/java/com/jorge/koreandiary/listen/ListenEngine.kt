@@ -615,11 +615,13 @@ class ListenEngine(private val c: AppContainer) {
                 _state.update { it.copy(connected = false, talking = false) }
                 if (closing) return
                 notes += "La IA de voz se desconectó: ${signal.reason}"
-                val phase = _state.value.phase
-                if (phase.interactive) {
-                    earcon(Earcon.ERROR)
-                    showMessage("Se cortó la IA de voz: la narración sigue sin preguntas.")
-                    if (phase == ListenPhase.COMPREHENSION) finish("Se cortó la IA de voz.") else resume()
+                // Sin la IA la narración sigue, pero sin preguntas: se avisa con un tono aunque no mires.
+                earcon(Earcon.ERROR)
+                showMessage("Se cortó la IA de voz (${signal.reason}): la narración sigue sin preguntas.")
+                when (_state.value.phase) {
+                    ListenPhase.COMPREHENSION -> finish("Se cortó la IA de voz.")
+                    ListenPhase.PAUSED, ListenPhase.QUESTION -> resume()
+                    else -> Unit
                 }
             }
             is SessionSignal.Event -> onEvent(signal.event)
