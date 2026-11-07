@@ -172,13 +172,28 @@ private fun SetupContent(
             st.loadingTargets -> Text("Cargando…", style = MaterialTheme.typography.bodySmall)
             st.targets.isEmpty() -> Text("Tu lista de estudio está vacía: la conversación será libre.", style = MaterialTheme.typography.bodySmall)
             else -> {
+                val open = (st.panel as? CoachPanel.TargetShown)?.item?.ref
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     st.targets.forEach { t ->
-                        AppTag(t.label, selected = t.ref !in st.excluded, onClick = { vm.toggleTarget(t.ref) })
+                        val excluded = t.ref in st.excluded
+                        AppTag(
+                            if (excluded) "✕ ${t.label}" else t.label,
+                            selected = t.ref == open,
+                            accent = !excluded,
+                            onClick = { vm.showTarget(t.ref) },
+                        )
                     }
                 }
+                if (st.panel is CoachPanel.TargetShown || st.panel is CoachPanel.Loading || st.panel is CoachPanel.Error) {
+                    val ref = open
+                    CoachPanelView(
+                        st.panel, onMore = vm::hint, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = st.hasCoach,
+                        includeLabel = ref?.let { if (it in st.excluded) "Volver a incluir" else "Quitar de esta sesión" },
+                        onToggleInclude = { ref?.let(vm::toggleTarget) },
+                    )
+                }
                 Text(
-                    "La IA te hará preguntas donde los necesites. Toca uno para quitarlo. Tu lista de estudio no cambia con la conversación.",
+                    "La IA te hará preguntas donde los necesites. Toca uno para ver qué significa o quitarlo. Tu lista de estudio no cambia con la conversación.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -259,7 +274,8 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
             ) {
                 st.activeTargets.forEach { t ->
                     val seen = t.kind != "gramática" && ConversationMath.wordSeen(t.label, userText)
-                    AppTag(if (seen) "✓ ${t.label}" else t.label, accent = seen)
+                    val open = (st.panel as? CoachPanel.TargetShown)?.item?.ref == t.ref
+                    AppTag(if (seen) "✓ ${t.label}" else t.label, selected = open, accent = seen, onClick = { vm.showTarget(t.ref) })
                 }
             }
         }
@@ -275,7 +291,7 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
             }
         }
 
-        CoachPanelView(st.panel, onMore = vm::hint, onClose = vm::closePanel)
+        CoachPanelView(st.panel, onMore = vm::hint, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = st.hasCoach)
 
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AppOutlinedButton(onClick = vm::hint, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1f)) { Text("Pista") }
@@ -359,7 +375,16 @@ private fun AiBubble(text: String, blur: Boolean, onWord: (String) -> Unit) {
 }
 
 @Composable
-private fun CoachPanelView(panel: CoachPanel, onMore: () -> Unit, onClose: () -> Unit) {
+private fun CoachPanelView(
+    panel: CoachPanel,
+    onMore: () -> Unit,
+    onClose: () -> Unit,
+    onExplain: () -> Unit,
+    hasCoach: Boolean,
+    /** Solo en la preparación: quitar o volver a incluir el objetivo abierto. */
+    includeLabel: String? = null,
+    onToggleInclude: () -> Unit = {},
+) {
     if (panel == CoachPanel.None) return
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -392,10 +417,27 @@ private fun CoachPanelView(panel: CoachPanel, onMore: () -> Unit, onClose: () ->
                     Text(g.spanish)
                     g.simple?.let { Text("Más simple: $it", style = MaterialTheme.typography.bodySmall) }
                 }
+                is CoachPanel.TargetShown -> {
+                    Text("${panel.item.label} · ${panel.item.kind}", fontWeight = FontWeight.SemiBold)
+                    panel.detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    panel.explanation?.let { e ->
+                        Text(e.meaning)
+                        if (e.usage.isNotBlank()) Text(e.usage, style = MaterialTheme.typography.bodySmall)
+                        if (e.example.isNotBlank()) Text(e.example, style = MaterialTheme.typography.titleMedium)
+                        if (e.exampleSpanish.isNotBlank()) Text(e.exampleSpanish, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (panel.detail == null && panel.explanation == null) {
+                        Text("Tu lista no tiene el significado de este ítem.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 CoachPanel.None -> Unit
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 if (panel is CoachPanel.HintShown && panel.level < 3) AppTextButton(onClick = onMore) { Text("Más ayuda") }
+                if (panel is CoachPanel.TargetShown && panel.explanation == null && hasCoach) {
+                    AppTextButton(onClick = onExplain) { Text("Explicar con IA") }
+                }
+                if (panel is CoachPanel.TargetShown && includeLabel != null) AppTextButton(onClick = onToggleInclude) { Text(includeLabel) }
                 AppTextButton(onClick = onClose) { Text("Cerrar") }
             }
         }

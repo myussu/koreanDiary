@@ -66,6 +66,14 @@ class ConversationTest {
         assertNull(same.simple)
     }
 
+    @Test
+    fun parsesItemExplanation() {
+        val e = ConversationParser.item("""{"s": "querer hacer", "uso": "V-고 싶다: con verbos.", "k": "등산하고 싶어요.", "es": "Quiero hacer senderismo."}""")
+        assertEquals("querer hacer", e.meaning)
+        assertEquals("등산하고 싶어요.", e.example)
+        assertTrue("«-고 싶다» (gramática)" in ConversationPrompts.item("-고 싶다", "gramática", 3))
+    }
+
     @Test(expected = ParseException::class)
     fun hintWithoutSentenceFails() {
         ConversationParser.hint("""{"clave": "x"}""")

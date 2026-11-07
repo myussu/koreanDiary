@@ -123,6 +123,19 @@ object ConversationPrompts {
         {"f": "...", "s": "...", "nota": null}
     """.trimIndent()
 
+    /** Qué significa y cómo se usa un objetivo de repaso (palabra o gramática). */
+    fun item(label: String, kind: String, standardLevel: Int): String = """
+        Eres profesor de coreano para hispanohablantes de nivel ≈ $standardLevel de 6. Explica «${label.trim()}» (${kind.trim()}).
+        Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+        1. "s": su significado en español, máximo 10 palabras.
+        2. "uso": para qué sirve y cómo se usa en una conversación, en español, 1 o 2 frases. Si es gramática, con qué se combina (A/V/N) y cómo se conjuga.
+        3. "k": un ejemplo corto y natural en coreano (registro -어요) que podría decir en una conversación.
+        4. "es": la traducción del ejemplo.
+
+        FORMATO:
+        {"s": "...", "uso": "...", "k": "...", "es": "..."}
+    """.trimIndent()
+
     /** Traducción de la última oración de la IA, con una versión más simple. */
     fun sentence(sentence: String, standardLevel: Int): String = """
         Eres profesor de coreano para hispanohablantes. Traduce al español: «${sentence.trim()}»

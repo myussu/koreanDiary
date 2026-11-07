@@ -10,6 +10,8 @@ data class Hint(val key: String, val half: String, val full: String, val spanish
 
 data class WordGloss(val word: String, val form: String, val meaning: String, val note: String?)
 
+data class ItemExplanation(val meaning: String, val usage: String, val example: String, val exampleSpanish: String)
+
 data class SentenceGloss(val sentence: String, val spanish: String, val simple: String?)
 
 /** Revisión final: el contrato del diario más un comentario general. */
@@ -32,6 +34,12 @@ object ConversationParser {
         val o = obj(raw)
         val es = o.text("es") ?: throw ParseException("La respuesta no trae la traducción.")
         return SentenceGloss(sentence = sentence, spanish = es, simple = o.text("simple")?.takeIf { it != sentence.trim() })
+    }
+
+    fun item(raw: String): ItemExplanation {
+        val o = obj(raw)
+        val meaning = o.text("s") ?: throw ParseException("La explicación no trae el significado.")
+        return ItemExplanation(meaning, o.text("uso").orEmpty(), o.text("k").orEmpty(), o.text("es").orEmpty())
     }
 
     fun review(raw: String): ConversationReview =

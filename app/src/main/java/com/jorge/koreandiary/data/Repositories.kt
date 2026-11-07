@@ -139,6 +139,34 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         return ImportSummary(words, grammar, dupes)
     }
 
+    /**
+     * Qué significa y para qué sirve cada ítem, con lo que ya está en tu base o en el catálogo
+     * (mismo texto que las sugerencias del diario). Clave: el código del ítem ("w12", "sg3").
+     */
+    suspend fun details(refs: List<ItemRef>): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        study.wordsByIds(refs.filter { it.type == ItemType.WORD }.map { it.id }).forEach {
+            result["w${it.id}"] = listOfNotNull(it.type, it.meaning).joinToString(" · ")
+        }
+        study.grammarByIds(refs.filter { it.type == ItemType.GRAMMAR }.map { it.id }).forEach { g ->
+            result["g${g.id}"] = listOfNotNull(g.meaning, g.example).joinToString(" — ").ifEmpty { "Gramática ${g.level}" }
+        }
+        withContext(Dispatchers.Default) {
+            refs.forEach { ref ->
+                when (ref.type) {
+                    ItemType.STD_WORD -> catalog.wordById(ref.id.toInt())?.let {
+                        result[ref.code] = "Posible laguna · nivel ${it.level} del estándar · ${it.type} · ej.: ${it.guide}"
+                    }
+                    ItemType.STD_GRAMMAR -> catalog.grammarById(ref.id.toInt())?.let {
+                        val extra = listOf(it.category, it.meaning).filter { s -> s.isNotBlank() }.joinToString(" · ")
+                        result[ref.code] = "Posible laguna · nivel ${it.level} del estándar · $extra"
+                    }
+                }
+            }
+        }
+        return result
+    }
+
     /** Ítems para el prompt de corrección, con su id para que la IA los nombre sin ambigüedad. */
     suspend fun promptItems(refs: List<ItemRef>): List<PromptItem> {
         val words = study.wordsByIds(refs.filter { it.type == ItemType.WORD }.map { it.id })

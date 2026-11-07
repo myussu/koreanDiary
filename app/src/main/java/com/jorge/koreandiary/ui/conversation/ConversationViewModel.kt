@@ -13,6 +13,7 @@ import com.jorge.koreandiary.conversation.ConversationPrompts
 import com.jorge.koreandiary.conversation.ConversationRecord
 import com.jorge.koreandiary.conversation.ConversationReview
 import com.jorge.koreandiary.conversation.Hint
+import com.jorge.koreandiary.conversation.ItemExplanation
 import com.jorge.koreandiary.conversation.Line
 import com.jorge.koreandiary.conversation.SentenceGloss
 import com.jorge.koreandiary.conversation.Speaker
@@ -63,6 +64,8 @@ sealed interface CoachPanel {
     data class HintShown(val hint: Hint, val level: Int) : CoachPanel
     data class WordShown(val gloss: WordGloss) : CoachPanel
     data class SentenceShown(val gloss: SentenceGloss) : CoachPanel
+    /** Un objetivo de repaso: lo que dice tu lista y, si la pides, la explicación de la IA. */
+    data class TargetShown(val item: PromptItem, val detail: String?, val explanation: ItemExplanation? = null) : CoachPanel
     data class Error(val message: String) : CoachPanel
 }
 
@@ -72,6 +75,8 @@ data class ConvUiState(
     val loadingTargets: Boolean = true,
     val targets: List<PromptItem> = emptyList(),
     val excluded: Set<String> = emptySet(),
+    /** Significado y uso de cada objetivo según tu lista o el catálogo, por código ("w12"). */
+    val details: Map<String, String> = emptyMap(),
     val diaryToday: String? = null,
     val topic: String = Topic.FREE,
     val customTopic: String = "",
@@ -155,11 +160,12 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 val refs = sug.words.map { ItemRef(ItemType.WORD, it.id) } +
                     sug.grammar.map { ItemRef(ItemType.GRAMMAR, it.id) } +
                     sug.gapGrammar.map { ItemRef(ItemType.STD_GRAMMAR, it.id.toLong()) }
-                c.study.promptItems(refs)
-            }.getOrDefault(emptyList())
+                c.study.promptItems(refs) to c.study.details(refs)
+            }.getOrDefault(emptyList<PromptItem>() to emptyMap())
             _state.update {
                 it.copy(
-                    loadingTargets = false, targets = targets, diaryToday = diary, secondsToday = todaySec,
+                    loadingTargets = false, targets = targets.first, details = targets.second,
+                    diaryToday = diary, secondsToday = todaySec,
                     topic = if (diary != null && it.topic == Topic.FREE) Topic.DIARY else it.topic,
                 )
             }
@@ -400,6 +406,27 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /** Tocar un objetivo: muestra qué significa y para qué sirve (otra vez lo cierra). */
+    fun showTarget(ref: String) {
+        val st = _state.value
+        val current = st.panel
+        if (current is CoachPanel.TargetShown && current.item.ref == ref) {
+            closePanel()
+            return
+        }
+        val item = (st.targets + record?.targets.orEmpty()).firstOrNull { it.ref == ref } ?: return
+        _state.update { it.copy(panel = CoachPanel.TargetShown(item, st.details[ref]?.takeIf { d -> d.isNotBlank() })) }
+    }
+
+    /** Explicación de la IA para el objetivo abierto: significado, uso y un ejemplo. */
+    fun explainTarget() {
+        val shown = _state.value.panel as? CoachPanel.TargetShown ?: return
+        val s = c.settings.state.value
+        coach("Explicando «${shown.item.label}»…", ConversationPrompts.item(shown.item.label, shown.item.kind, s.standardLevel)) { raw ->
+            shown.copy(explanation = ConversationParser.item(raw))
+        }
+    }
+
     fun closePanel() = _state.update { it.copy(panel = CoachPanel.None) }
 
     private fun coach(loading: String, prompt: String, onResult: (String) -> CoachPanel) {
@@ -427,8 +454,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             } catch (e: Exception) {
                 CoachPanel.Error(e.message ?: e.javaClass.simpleName)
             }
-            // Si mientras tanto se cerró el panel o empezó otra consulta, igual se muestra la última.
-            _state.update { if (it.stage == ConvStage.Live || it.stage == ConvStage.Review) it.copy(panel = panel) else it }
+            _state.update { it.copy(panel = panel) }
         }
     }
 
