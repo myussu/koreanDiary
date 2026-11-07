@@ -72,6 +72,7 @@ import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.voice.TurnMode
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -92,7 +93,16 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
     val context = LocalContext.current
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) vm.start()
+        if (granted) vm.start() else vm.showMessage("Sin permiso de micrófono no se puede conversar. Puedes darlo en los ajustes del celular.")
+    }
+
+    // Al entrar (no al rotar): objetivos y minutos de hoy al día.
+    var entered by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!entered) {
+            entered = true
+            vm.onEnter()
+        }
     }
     fun startWithPermission() {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -109,7 +119,23 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
         onDispose { view.keepScreenOn = false }
     }
 
-    BackHandler(enabled = live) { vm.end() }
+    // En la sesión los avisos (p. ej. "vuelve a ir atrás") desaparecen solos.
+    LaunchedEffect(st.message, live) {
+        if (live && st.message != null) {
+            delay(3000)
+            vm.dismissMessage()
+        }
+    }
+
+    // Un gesto de "atrás" sin querer no debe terminar la sesión: hay que hacerlo dos veces seguidas.
+    var backArmedAt by remember { mutableStateOf(0L) }
+    BackHandler(enabled = live) {
+        val now = System.currentTimeMillis()
+        if (now - backArmedAt < 2500) vm.end() else {
+            backArmedAt = now
+            vm.showMessage("Vuelve a ir atrás para terminar la sesión.")
+        }
+    }
     BackHandler(enabled = st.stage == ConvStage.Review) { vm.backToSetup() }
 
     when (st.stage) {
@@ -333,7 +359,7 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AppOutlinedButton(onClick = vm::hint, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1f)) { Text("Pista") }
             AppOutlinedButton(onClick = vm::translateLast, enabled = st.lines.any { it.speaker == Speaker.AI }, modifier = Modifier.weight(1f)) { Text("Traducir") }
-            AppOutlinedButton(onClick = vm::slower, enabled = st.connected, modifier = Modifier.weight(1f)) { Text("Más lento") }
+            AppOutlinedButton(onClick = vm::slower, enabled = st.connected && !st.talking, modifier = Modifier.weight(1f)) { Text("Más lento") }
         }
         val status = when {
             !st.connected -> st.status
@@ -344,6 +370,7 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
             else -> "Pulsa «Hablar» para responder"
         }
         Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+        st.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         if (st.turnMode == TurnMode.PUSH_TO_TALK) {
             AppButton(
                 onClick = { if (st.talking) vm.stopTalking() else vm.startTalking() },
@@ -370,7 +397,7 @@ private fun UserBubble(text: String) {
         Surface(
             color = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ) { Text(text.trim(), modifier = Modifier.padding(10.dp)) }
+        ) { Text(text.trim().ifEmpty { "…" }, modifier = Modifier.padding(10.dp)) }
     }
 }
 
@@ -504,6 +531,9 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        r.notes.forEach {
+            Text("⚠ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+        }
 
         val review = st.review
         if (review == null) {

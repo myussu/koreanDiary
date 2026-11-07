@@ -14,9 +14,9 @@ import java.util.Base64
 
 class LiveProtocolTest {
 
-    private fun config(mode: String, minimal: Boolean = false, handle: String? = null) = LiveConfig(
+    private fun config(mode: String, fallback: Int = 0, handle: String? = null) = LiveConfig(
         model = "gemini-3.8-live", voice = "Kore", systemInstruction = "SYS", turnMode = mode, silenceMs = 2000,
-        vocabulary = listOf("등산", "등산", " ", "회사"), resumeHandle = handle, minimal = minimal,
+        vocabulary = listOf("등산", "등산", " ", "회사"), resumeHandle = handle, fallback = fallback,
     )
 
     @Test
@@ -44,7 +44,7 @@ class LiveProtocolTest {
         val full = JSONObject(LiveProtocol.setup(config(TurnMode.AUTO))).getJSONObject("setup")
         val vocab = full.getJSONObject("inputAudioTranscription").getJSONArray("customVocabulary")
         assertEquals(2, vocab.length())
-        val minimal = JSONObject(LiveProtocol.setup(config(TurnMode.AUTO, minimal = true))).getJSONObject("setup")
+        val minimal = JSONObject(LiveProtocol.setup(config(TurnMode.AUTO, fallback = 1))).getJSONObject("setup")
         assertEquals(0, minimal.getJSONObject("inputAudioTranscription").length())
         assertTrue(minimal.has("contextWindowCompression"))
     }
@@ -101,7 +101,9 @@ class LiveProtocolTest {
         assertEquals(LiveProtocol.TOOL_HIGHLIGHT, decl.getString("name"))
         assertEquals("NON_BLOCKING", decl.getString("behavior"))
         assertFalse(JSONObject(LiveProtocol.setup(config(TurnMode.AUTO))).getJSONObject("setup").has("tools"))
-        assertFalse(JSONObject(LiveProtocol.setup(config(TurnMode.AUTO, minimal = true).copy(highlightTool = true))).getJSONObject("setup").has("tools"))
+        // Nivel 1 conserva la herramienta; nivel 2 la quita.
+        assertTrue(JSONObject(LiveProtocol.setup(config(TurnMode.AUTO, fallback = 1).copy(highlightTool = true))).getJSONObject("setup").has("tools"))
+        assertFalse(JSONObject(LiveProtocol.setup(config(TurnMode.AUTO, fallback = 2).copy(highlightTool = true))).getJSONObject("setup").has("tools"))
     }
 
     @Test

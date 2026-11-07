@@ -34,6 +34,9 @@ import com.jorge.koreandiary.voice.Microphone
 import com.jorge.koreandiary.voice.SessionSignal
 import com.jorge.koreandiary.voice.Speaker as AudioOut
 import com.jorge.koreandiary.voice.TurnMode
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -151,13 +154,30 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private val speech by lazy { KoreanSpeech(c.app) }
     private var reconnections = 0
     private var highlighted = mutableListOf<String>()
-    /** Ya empezaste a responder la pregunta del objetivo que flota. */
-    private var floatingAnswered = false
+    /** Id de la primera línea creada después de que el objetivo empezó a flotar. */
+    private var floatingSince = Int.MAX_VALUE
+    /**
+     * Línea tuya del intercambio actual. La transcripción de lo que dices a veces llega tarde,
+     * cuando la IA ya empezó a responder: así se suma a tu línea y no aparece después de la IA.
+     */
+    private var userLineId = -1
+    private var notes = mutableListOf<String>()
+    private var coachJob: Job? = null
+    /** Guardado pendiente: la pantalla de inicio lo espera para contar bien los minutos de hoy. */
+    private var saveJob: Job? = null
+    private var focusRequest: AudioFocusRequest? = null
 
     init {
         val s = c.settings.state.value
         _state.update { it.copy(minutes = s.voiceSessionMinutes, turnMode = s.voiceTurnMode) }
-        loadSetup()
+    }
+
+    /**
+     * Cada vez que entras a la pantalla. El ViewModel vive mientras la app esté abierta, así que sin
+     * esto verías los objetivos y los minutos de hoy de la última vez.
+     */
+    fun onEnter() {
+        if (_state.value.stage == ConvStage.Setup) loadSetup()
     }
 
     // ---------- Preparación ----------
@@ -172,6 +192,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                     turnMode = s.voiceTurnMode,
                 )
             }
+            saveJob?.join()
             c.conversations.refresh()
             val today = LocalDate.now()
             val todaySec = ConversationMath.stats(c.conversations.sessions.value, today).secondsToday
@@ -208,6 +229,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         it.copy(excluded = if (ref in it.excluded) it.excluded - ref else it.excluded + ref)
     }
     fun dismissMessage() = _state.update { it.copy(message = null) }
+    fun showMessage(text: String) = _state.update { it.copy(message = text) }
 
     /** Empieza la sesión. Llamar con el permiso de micrófono ya concedido. */
     fun start() {
@@ -252,13 +274,21 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         autoHintLineId = -1
         reconnections = 0
         highlighted = mutableListOf()
+        floatingSince = Int.MAX_VALUE
+        userLineId = -1
+        notes = mutableListOf()
 
-        speaker = AudioOut(viewModelScope)
-        val live = LiveSession(key, viewModelScope) { handle, minimal ->
+        speaker = try {
+            AudioOut(viewModelScope)
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "No se pudo abrir el audio del celular: ${e.message}") }
+            return
+        }
+        val live = LiveSession(key, viewModelScope) { handle, fallback ->
             LiveConfig(
                 model = s.voiceModel, voice = s.voiceName, systemInstruction = system,
                 turnMode = s.voiceTurnMode, silenceMs = s.voiceSilenceMs,
-                vocabulary = vocabulary, resumeHandle = handle, minimal = minimal,
+                vocabulary = vocabulary, resumeHandle = handle, fallback = fallback,
                 highlightTool = targets.isNotEmpty(),
             )
         }
@@ -272,6 +302,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             )
         }
         viewModelScope.launch { live.events.collect { onSignal(it) } }
+        requestAudioFocus()
         live.start()
         startTicker()
     }
@@ -293,6 +324,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 }
             }
             SessionSignal.Reconnecting -> _state.update { it.copy(status = "Reconectando…", connected = false) }
+            is SessionSignal.Fallback -> {
+                val what = if (signal.level == 1) "sin idiomas ni vocabulario en la transcripción" else "sin la función de objetivos que flotan"
+                notes += "Gemini rechazó la configuración; se reintentó $what. Motivo: ${signal.reason}"
+            }
             is SessionSignal.Closed -> if (!ending) end(if (signal.error) "Se cortó: ${signal.reason}" else signal.reason)
             is SessionSignal.Event -> onEvent(signal.event)
         }
@@ -300,20 +335,31 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     private fun onEvent(e: LiveEvent) {
         when (e) {
-            is LiveEvent.Audio -> speaker?.play(e.pcm)
-            is LiveEvent.InputText -> append(Speaker.USER, e.text)
-            is LiveEvent.OutputText -> append(Speaker.AI, e.text)
+            // Mientras hablas (pulsar para hablar) se descarta lo que quedaba en camino de la respuesta anterior.
+            is LiveEvent.Audio -> if (!_state.value.talking) speaker?.play(e.pcm)
+            is LiveEvent.InputText -> appendUser(e.text)
+            is LiveEvent.OutputText -> if (!_state.value.talking) appendAi(e.text)
             LiveEvent.Interrupted -> {
                 speaker?.flush()
+                userLineId = -1
                 closeLines()
             }
-            LiveEvent.TurnComplete -> closeLines(Speaker.AI)
+            LiveEvent.TurnComplete -> {
+                userLineId = -1
+                closeLines(Speaker.AI)
+                // El objetivo deja de flotar cuando respondiste y la IA terminó de contestarte.
+                val st = _state.value
+                if (st.floating != null && st.lines.any { it.speaker == Speaker.USER && it.id >= floatingSince && it.text.isNotBlank() }) {
+                    _state.update { it.copy(floating = null) }
+                    floatingSince = Int.MAX_VALUE
+                }
+            }
             is LiveEvent.ToolCall -> {
                 session?.send(LiveProtocol.toolResponse(e.id, e.name))
                 val ref = e.args["ref"]?.trim()
                 if (e.name == LiveProtocol.TOOL_HIGHLIGHT && ref != null && _state.value.targets.any { it.ref == ref }) {
                     highlighted += ref
-                    floatingAnswered = false
+                    floatingSince = nextLineId
                     _state.update { it.copy(floating = ref) }
                 }
             }
@@ -324,32 +370,30 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    /** Las transcripciones llegan en trozos: se suman a la línea abierta del mismo hablante. */
-    private fun append(speaker: Speaker, text: String) {
-        val before = _state.value
-        val startsLine = before.lines.lastOrNull()?.let { it.speaker != speaker || !it.open } ?: true
-        // El objetivo flota hasta que respondes y la IA vuelve a hablar. La llamada de la IA puede
-        // llegar antes o después de su texto, por eso se marca primero que empezaste a responder.
-        var clearFloating = false
-        if (startsLine && before.floating != null) {
-            if (speaker == Speaker.USER) floatingAnswered = true
-            else if (floatingAnswered) {
-                clearFloating = true
-                floatingAnswered = false
-            }
+    /** Lo que dices llega en trozos: se suma a tu línea del intercambio actual, aunque la IA ya responda. */
+    private fun appendUser(text: String) = _state.update { st ->
+        val last = st.lines.lastOrNull()
+        val target = when {
+            last != null && last.speaker == Speaker.USER && last.open -> last.id
+            userLineId >= 0 && st.lines.any { it.id == userLineId } -> userLineId
+            else -> -1
         }
-        appendLine(speaker, text, clearFloating)
+        if (target >= 0) {
+            st.copy(lines = st.lines.map { if (it.id == target) it.copy(text = it.text + text) else it })
+        } else {
+            val id = nextLineId++
+            userLineId = id
+            st.copy(lines = st.lines.map { if (it.open) it.copy(open = false) else it } + UiLine(id, Speaker.USER, text.trimStart(), open = true))
+        }
     }
 
-    private fun appendLine(speaker: Speaker, text: String, clearFloating: Boolean) = _state.update { st ->
+    private fun appendAi(text: String) = _state.update { st ->
         val last = st.lines.lastOrNull()
-        val floating = if (clearFloating) null else st.floating
-        val lines = if (last != null && last.speaker == speaker && last.open) {
-            st.lines.dropLast(1) + last.copy(text = last.text + text)
+        if (last != null && last.speaker == Speaker.AI && last.open) {
+            st.copy(lines = st.lines.dropLast(1) + last.copy(text = last.text + text))
         } else {
-            st.lines.map { if (it.open) it.copy(open = false) else it } + UiLine(nextLineId++, speaker, text.trimStart(), open = true)
+            st.copy(lines = st.lines.map { if (it.open) it.copy(open = false) else it } + UiLine(nextLineId++, Speaker.AI, text.trimStart(), open = true))
         }
-        st.copy(lines = lines, floating = floating)
     }
 
     private fun closeLines(only: Speaker? = null) = _state.update { st ->
@@ -403,6 +447,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val s = c.settings.state.value
         val last = st.lines.lastOrNull()
         val waiting = s.voiceAutoHint && st.connected && !speaking && !st.talking && st.panel == CoachPanel.None &&
+            st.elapsedSec < st.totalSec - 60 &&
             last != null && last.speaker == Speaker.AI && !last.open && last.id != autoHintLineId
         if (!waiting) {
             quietSince = 0L
@@ -422,9 +467,17 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     fun startTalking() {
         val st = _state.value
         if (!st.connected || st.talking) return
-        if (st.aiSpeaking) speaker?.flush()
-        closeLines(Speaker.AI)
-        if (session?.send(LiveProtocol.activityStart()) == true) _state.update { it.copy(talking = true) }
+        if (session?.send(LiveProtocol.activityStart()) != true) return
+        speaker?.flush()
+        // Línea tuya vacía desde ya: tu transcripción la llena aunque llegue cuando la IA ya contesta.
+        _state.update { cur ->
+            val id = nextLineId++
+            userLineId = id
+            cur.copy(
+                talking = true,
+                lines = cur.lines.map { if (it.open) it.copy(open = false) else it } + UiLine(id, Speaker.USER, "", open = true),
+            )
+        }
     }
 
     fun stopTalking() {
@@ -448,6 +501,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun slower() {
+        if (_state.value.talking) return
         session?.send(LiveProtocol.context(ConversationPrompts.SLOWER, respond = true))
     }
 
@@ -463,7 +517,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         val s = c.settings.state.value
-        val recent = st.lines.map { Line(it.speaker, it.text) }
+        val recent = st.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text) }
         if (recent.none { it.speaker == Speaker.AI }) return
         coach("Pensando una pista…", ConversationPrompts.hint(s.level, s.standardLevel, recent, record?.targets.orEmpty())) { raw ->
             val hint = ConversationParser.hint(raw)
@@ -527,10 +581,14 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         _state.update { it.copy(panel = CoachPanel.Loading(loading)) }
-        viewModelScope.launch {
+        // Una consulta a la vez: si pides otra, la anterior se descarta y no pisa la nueva.
+        coachJob?.cancel()
+        coachJob = viewModelScope.launch {
             val panel = try {
                 val raw = provider.complete(CorrectionRequest(prompt))
                 c.settings.registerUse(providerId)
+                // La llamada HTTP no se puede interrumpir: si mientras tanto pediste otra cosa, se ignora.
+                if (!isActive) return@launch
                 onResult(raw)
             } catch (e: ProviderException) {
                 CoachPanel.Error(if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.")
@@ -541,7 +599,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             } catch (e: Exception) {
                 CoachPanel.Error(e.message ?: e.javaClass.simpleName)
             }
-            _state.update { it.copy(panel = panel) }
+            if (isActive) _state.update { it.copy(panel = panel) }
         }
     }
 
@@ -552,6 +610,8 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         if (ending || _state.value.stage != ConvStage.Live) return
         ending = true
         ticker?.cancel()
+        coachJob?.cancel()
+        abandonAudioFocus()
         mic?.stop()
         mic = null
         speaker?.release()
@@ -561,6 +621,16 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val st = _state.value
         val base = record ?: return
         val lines = st.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text.trim()) }
+        // Nada que guardar (p. ej. no se pudo conectar): de vuelta a la preparación con el motivo,
+        // sin crear una sesión vacía que además contaría para los minutos de hoy.
+        if (lines.isEmpty()) {
+            val why = (listOf(reason) + notes).joinToString("\n")
+            _state.update {
+                it.copy(stage = ConvStage.Setup, talking = false, connected = false, floating = null, panel = CoachPanel.None, message = why)
+            }
+            loadSetup()
+            return
+        }
         val saved = base.copy(
             durationSec = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt(),
             lines = lines,
@@ -571,6 +641,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             tokensTotal = st.tokensTotal,
             lastPromptTokens = st.contextTokens,
             reconnections = reconnections,
+            notes = notes.toList(),
             endReason = reason,
         )
         record = saved
@@ -581,7 +652,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             )
         }
         // appScope: se guarda aunque la pantalla se cierre en este momento.
-        c.appScope.launch { c.conversations.save(saved) }
+        saveJob = c.appScope.launch { c.conversations.save(saved) }
     }
 
     fun openReview(id: Long) {
@@ -673,6 +744,8 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             speech.stopListening()
             return
         }
+        // Que el micrófono no escuche la voz del celular leyendo la oración.
+        speech.stopSpeaking()
         _state.update { it.copy(drill = d.copy(listening = true, heard = "", result = null, error = null)) }
         speech.listen(
             onPartial = { text -> updateDrill { it.copy(heard = text) } },
@@ -743,6 +816,24 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         loadSetup()
     }
 
+    /** Pausa la música o los podcasts mientras conversas (y los reanuda al terminar). */
+    private fun requestAudioFocus() {
+        val am = c.app.getSystemService(AudioManager::class.java) ?: return
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(
+                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+            )
+            .build()
+        runCatching { am.requestAudioFocus(request) }
+        focusRequest = request
+    }
+
+    private fun abandonAudioFocus() {
+        val request = focusRequest ?: return
+        focusRequest = null
+        runCatching { c.app.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(request) }
+    }
+
     private fun providerName(id: String) = when (id) {
         ProviderId.GEMINI -> "Gemini"
         ProviderId.AZURE -> "Azure OpenAI"
@@ -754,6 +845,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         mic?.stop()
         speaker?.release()
         session?.close()
+        abandonAudioFocus()
         speech.release()
     }
 }

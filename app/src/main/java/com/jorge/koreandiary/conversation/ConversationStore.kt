@@ -41,6 +41,8 @@ data class ConversationRecord(
     /** Tamaño del contexto en el último turno. */
     val lastPromptTokens: Int = 0,
     val reconnections: Int = 0,
+    /** Avisos técnicos de la sesión (p. ej. planes B de configuración), para diagnosticar. */
+    val notes: List<String> = emptyList(),
     /** Por qué terminó: tú, el tiempo o un error (con el código de cierre). */
     val endReason: String = "",
     /** Respuesta cruda de la revisión final; se vuelve a leer con ConversationParser. */
@@ -136,6 +138,7 @@ class ConversationStore(context: Context) {
             })
             .put("lookups", JSONArray(r.lookups))
             .put("highlighted", JSONArray(r.highlighted))
+            .put("notes", JSONArray(r.notes))
             .put("hintsUsed", r.hintsUsed)
             .put("autoHints", r.autoHints)
             .put("drillPassed", r.drillPassed)
@@ -151,6 +154,7 @@ class ConversationStore(context: Context) {
             val targets = o.optJSONArray("targets")
             val lookups = o.optJSONArray("lookups")
             val highlighted = o.optJSONArray("highlighted")
+            val notes = o.optJSONArray("notes")
             return ConversationRecord(
                 id = o.getLong("id"),
                 startedAt = o.optLong("startedAt", o.getLong("id")),
@@ -166,6 +170,7 @@ class ConversationStore(context: Context) {
                 },
                 lookups = (0 until (lookups?.length() ?: 0)).map { lookups!!.optString(it) },
                 highlighted = (0 until (highlighted?.length() ?: 0)).map { highlighted!!.optString(it) },
+                notes = (0 until (notes?.length() ?: 0)).map { notes!!.optString(it) },
                 hintsUsed = o.optInt("hintsUsed"),
                 autoHints = o.optInt("autoHints"),
                 drillPassed = o.optInt("drillPassed"),

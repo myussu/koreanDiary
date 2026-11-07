@@ -25,8 +25,11 @@ data class LiveConfig(
     val languageCodes: List<String> = listOf("ko-KR", "es-US"),
     /** Token de reanudación: retoma la misma conversación en una conexión nueva. */
     val resumeHandle: String? = null,
-    /** Sin opciones de transcripción ni herramientas: plan B si el servidor rechaza la configuración completa. */
-    val minimal: Boolean = false,
+    /**
+     * Planes B si el servidor rechaza la configuración al conectar: 0 = completa; 1 = sin idiomas ni
+     * vocabulario en la transcripción; 2 = además sin herramientas. Se baja de a un nivel.
+     */
+    val fallback: Int = 0,
     /** Declarar la herramienta [LiveProtocol.TOOL_HIGHLIGHT] (hay objetivos de repaso). */
     val highlightTool: Boolean = false,
 )
@@ -113,7 +116,7 @@ object LiveProtocol {
                 .put("silenceDurationMs", c.silenceMs.coerceIn(500, 10_000))
         }
         val inputTranscription = JSONObject()
-        if (!c.minimal) {
+        if (c.fallback < 1) {
             if (c.languageCodes.isNotEmpty()) inputTranscription.put("languageCodes", JSONArray(c.languageCodes))
             val vocab = c.vocabulary.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_VOCABULARY)
             if (vocab.isNotEmpty()) inputTranscription.put("customVocabulary", JSONArray(vocab))
@@ -144,7 +147,7 @@ object LiveProtocol {
                     .put("slidingWindow", JSONObject().put("targetTokens", TARGET_TOKENS)),
             )
             .put("sessionResumption", JSONObject().apply { c.resumeHandle?.let { put("handle", it) } })
-        if (c.highlightTool && !c.minimal) {
+        if (c.highlightTool && c.fallback < 2) {
             setup.put("tools", JSONArray().put(JSONObject().put("functionDeclarations", JSONArray().put(highlightDeclaration()))))
         }
         return JSONObject().put("setup", setup).toString()

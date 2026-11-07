@@ -71,6 +71,10 @@ class KoreanSpeech(private val context: Context) {
         if (ttsReady) speak(text) else pendingSay = text
     }
 
+    fun stopSpeaking() {
+        tts?.stop()
+    }
+
     private fun speak(text: String) {
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "drill")
     }
