@@ -75,7 +75,36 @@ object Prompts {
         {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": ["-었던"]}, "nota": "...", "w": [{"f": "다니다", "s": "asistir"}]}
     """.trimIndent()
 
-    /** Workbook, paso 1: pistas por ejercicio a partir de la foto de la página. */
+    /**
+     * Significado y ejemplos naturales de las sugerencias del diario, todas en una llamada:
+     * al tocar la primera se piden las de la página y quedan guardadas para siempre.
+     * [items]: forma y si es gramática.
+     */
+    fun explainItems(profile: String, level: String, standardLevel: Int, items: List<Pair<String, Boolean>>): String = buildString {
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe su diario a mano y la app le sugirió estas palabras y gramáticas. Explica cada una y muestra cómo la usaría un coreano en la vida diaria. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        if (profile.isNotBlank()) {
+            appendLine()
+            appendLine("SOBRE EL ESTUDIANTE: ${profile.trim().replace('\n', ' ')}")
+        }
+        appendLine()
+        appendLine("ÍTEMS:")
+        items.forEach { (form, isGrammar) -> appendLine("- $form (${if (isGrammar) "gramática" else "palabra"})") }
+        appendLine()
+        appendLine(
+            """
+            Para cada ítem, en el mismo orden, en "items":
+            - "f": la forma tal como aparece arriba.
+            - "s": significado en español, máximo 10 palabras.
+            - "u": cuándo y cómo se usa de forma natural, en español, 1 o 2 frases: matiz, registro, con qué partícula o palabras suele ir, o con qué no confundirla.
+            - "c": en gramática, cómo se une a verbos y adjetivos con 2 o 3 ejemplos cortos (가다 → 가느라고, 먹다 → 먹느라고). En palabras, la conjugación en -어요 si es irregular (듣다 → 들어요); si no, null.
+            - "ej": 2 oraciones naturales y cotidianas, como las diría un coreano, que el estudiante podría escribir en su diario (su día, la universidad, amigos, planes). Fuera del ítem, vocabulario y gramática de nivel $standardLevel o menor. Registro -어요. Cada una: "ko" y "en" (traducción al inglés).
+
+            FORMATO:
+            {"items": [{"f": "-느라고", "s": "...", "u": "...", "c": "...", "ej": [{"ko": "...", "en": "..."}]}]}
+            """.trimIndent()
+        )
+    }
+
     /**
      * Página de cualquier libro (student book, workbook u otro), paso 1: gramática de la página y,
      * si hay ejercicios, pistas para combinar la gramática de la lección con lo que ya estudiaste.

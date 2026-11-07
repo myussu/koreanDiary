@@ -6,6 +6,7 @@ import com.jorge.koreandiary.ai.CorrectionProvider
 import com.jorge.koreandiary.ai.GeminiProvider
 import com.jorge.koreandiary.conversation.ConversationStore
 import com.jorge.koreandiary.data.DiaryRepository
+import com.jorge.koreandiary.data.ExplanationStore
 import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.standard.StandardCatalog
@@ -38,6 +39,8 @@ class AppContainer(val app: Application) {
     val mascotPack = MascotPack(app)
     val workbook = WorkbookStore(app)
     val conversations = ConversationStore(app)
+    /** Significado y ejemplos de las sugerencias ya pedidos a la IA. */
+    val explanations = ExplanationStore(app)
     /** Modo Escuchar: vive aquí (no en la pantalla) para seguir con la pantalla apagada. */
     val listen by lazy { ListenEngine(this) }
 

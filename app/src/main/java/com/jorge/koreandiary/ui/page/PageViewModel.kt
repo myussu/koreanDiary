@@ -7,13 +7,16 @@ import androidx.lifecycle.viewModelScope
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.ai.CorrectionParser
 import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.ai.ExplainParser
 import com.jorge.koreandiary.ai.HowToSayParser
 import com.jorge.koreandiary.ai.HowToSayResponse
+import com.jorge.koreandiary.ai.ItemExplanation
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.Prompts
 import com.jorge.koreandiary.ai.ProviderException
 import com.jorge.koreandiary.ai.ShareFlow
 import com.jorge.koreandiary.data.AnnotatedItem
+import com.jorge.koreandiary.data.ExplanationStore
 import com.jorge.koreandiary.data.ItemRef
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
@@ -66,7 +69,22 @@ sealed interface HowTo {
 /** Vibración breve para los momentos clave (como el clic de un botón físico). */
 enum class Feedback { SUCCESS, FAIL, TICK }
 
-data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean, val isGap: Boolean = false)
+data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean, val isGap: Boolean = false) {
+    /** Clave de su explicación guardada. */
+    val key: String get() = ExplanationStore.key(label, isGrammar)
+}
+
+/**
+ * Tarjeta al tocar una sugerencia. Al instante muestra lo que la app ya sabe; el significado y
+ * los ejemplos naturales vienen de la IA una sola vez y quedan guardados.
+ */
+data class ExplainCard(
+    val chip: SuggestionChip,
+    val explanation: ItemExplanation? = null,
+    val loading: Boolean = false,
+    val note: String? = null,
+    val canRetry: Boolean = false,
+)
 
 data class PageUiState(
     val page: DiaryPage? = null,
@@ -102,6 +120,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     private val _howTo = MutableStateFlow<HowTo>(HowTo.Idle)
     val howTo: StateFlow<HowTo> = _howTo.asStateFlow()
+
+    private val _explain = MutableStateFlow<ExplainCard?>(null)
+    val explain: StateFlow<ExplainCard?> = _explain.asStateFlow()
+    private var explainJob: Job? = null
 
     private val _shareIntents = Channel<Intent>(Channel.BUFFERED)
     val shareIntents = _shareIntents.receiveAsFlow()
@@ -289,6 +311,87 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     fun cancelConfirm() = setPhase(Phase.Writing)
+
+    // ---------- Significado y ejemplos de las sugerencias ----------
+
+    /** Tocar una sugerencia abre su tarjeta; tocarla otra vez la cierra. */
+    fun toggleExplain(chip: SuggestionChip) {
+        if (_explain.value?.chip == chip) {
+            _explain.value = null
+            return
+        }
+        viewModelScope.launch {
+            val cached = c.explanations.get(chip.key)
+            _explain.value = ExplainCard(chip, cached)
+            if (cached == null) fetchExplanations()
+        }
+    }
+
+    fun closeExplain() {
+        _explain.value = null
+    }
+
+    fun retryExplain() = fetchExplanations()
+
+    private fun updateExplain(transform: (ExplainCard) -> ExplainCard) = _explain.update { it?.let(transform) }
+
+    /**
+     * Pide en una sola llamada las explicaciones de todas las sugerencias de la página que aún no
+     * tienen: tocar las demás después es instantáneo y no gasta más. Solo con API (no tiene sentido
+     * compartir con un chat por cada palabra); sin API se queda lo que la app ya sabe.
+     */
+    private fun fetchExplanations() {
+        if (explainJob?.isActive == true) {
+            updateExplain { it.copy(loading = true, note = null, canRetry = false) }
+            return
+        }
+        explainJob = viewModelScope.launch {
+            val settings = c.settings.state.value
+            val providerId = listOf(settings.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
+                .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
+            val api = providerId?.let { c.apiProvider(it) }
+            if (providerId == null || api == null) {
+                updateExplain { it.copy(note = "Para ver el significado con ejemplos naturales, configura Gemini (es gratis) en Ajustes.") }
+                return@launch
+            }
+            if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
+                updateExplain { it.copy(note = "Llegaste al límite diario de ${providerName(providerId)}.") }
+                return@launch
+            }
+            val open = _explain.value?.chip
+            val missing = (listOfNotNull(open) + _state.value.suggestions)
+                .distinctBy { it.key }
+                .filter { c.explanations.get(it.key) == null }
+                .take(MAX_EXPLAIN)
+                .map { it.label to it.isGrammar }
+            if (missing.isEmpty()) return@launch
+            updateExplain { it.copy(loading = true, note = null, canRetry = false) }
+            val error = try {
+                val prompt = Prompts.explainItems(settings.profile, settings.level, settings.standardLevel, missing)
+                val raw = api.complete(CorrectionRequest(prompt))
+                c.settings.registerUse(providerId)
+                c.explanations.putAll(ExplanationStore.match(missing, ExplainParser.parse(raw)))
+                null
+            } catch (e: ProviderException) {
+                if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor."
+            } catch (e: ParseException) {
+                "No se pudo leer la respuesta: ${e.message}"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.message ?: e.javaClass.simpleName
+            }
+            // La tarjeta abierta puede ser otra que la que se tocó primero.
+            val current = _explain.value ?: return@launch
+            val found = c.explanations.get(current.chip.key)
+            _explain.value = current.copy(
+                explanation = found,
+                loading = false,
+                note = error ?: if (found == null) "La IA no devolvió esta sugerencia." else null,
+                canRetry = found == null,
+            )
+        }
+    }
 
     // ---------- ¿Cómo digo esto? ----------
 
@@ -551,5 +654,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     companion object {
         /** Radio mínimo del borrador (px); el normal es ~18 % del alto de línea. */
         private const val MIN_ERASE_RADIUS = 24f
+        /** Máximo de sugerencias por llamada de explicaciones (una página trae menos). */
+        private const val MAX_EXPLAIN = 12
     }
 }

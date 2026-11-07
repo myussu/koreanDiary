@@ -119,6 +119,38 @@ object CorrectionParser {
     }
 }
 
+/** Explicaciones de sugerencias: la respuesta de la IA y la caché usan el mismo formato. */
+object ExplainParser {
+    fun parse(raw: String): List<ItemExplanation> {
+        val json = try {
+            JSONObject(extractJsonObject(raw))
+        } catch (e: org.json.JSONException) {
+            throw ParseException("JSON inválido: ${e.message}")
+        }
+        val items = json.optJSONArray("items").mapObjects { fromJson(it) }
+        if (items.isEmpty()) throw ParseException("La respuesta no trae explicaciones.")
+        return items
+    }
+
+    fun fromJson(o: JSONObject): ItemExplanation? {
+        val form = o.str("f") ?: return null
+        val meaning = o.str("s") ?: return null
+        val examples = o.optJSONArray("ej").mapObjects { e ->
+            e.str("ko")?.let { ExampleSentence(it, e.str("en")) }
+        }
+        return ItemExplanation(form, meaning, o.str("u"), o.str("c"), examples)
+    }
+
+    fun toJson(item: ItemExplanation): JSONObject = JSONObject()
+        .put("f", item.form)
+        .put("s", item.meaning)
+        .put("u", item.usage ?: JSONObject.NULL)
+        .put("c", item.conjugation ?: JSONObject.NULL)
+        .put("ej", JSONArray().apply {
+            item.examples.forEach { put(JSONObject().put("ko", it.korean).put("en", it.english ?: JSONObject.NULL)) }
+        })
+}
+
 object HowToSayParser {
     fun parse(raw: String): HowToSayResponse {
         val json = try {

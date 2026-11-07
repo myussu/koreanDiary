@@ -3,6 +3,7 @@
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="file" path="workbook/" />
+    <include domain="file" path="explanations/" />
     <include domain="file" path="conversation/" />
     <include domain="file" path="mascot/" />
     <include domain="sharedpref" path="settings.xml" />

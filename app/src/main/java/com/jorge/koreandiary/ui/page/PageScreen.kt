@@ -3,6 +3,7 @@ package com.jorge.koreandiary.ui.page
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -81,6 +82,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val corrections by vm.corrections.collectAsStateWithLifecycle()
     val howTo by vm.howTo.collectAsStateWithLifecycle()
+    val explain by vm.explain.collectAsStateWithLifecycle()
     val reaction by vm.mascotMood.collectAsStateWithLifecycle()
     var howToOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -142,9 +144,13 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         }
 
         // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
-        val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking) MascotMood.THINKING else reaction
+        val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking || explain?.loading == true) MascotMood.THINKING else reaction
         SuggestionsBar(
             state.suggestions,
+            explain = explain,
+            onChip = vm::toggleExplain,
+            onCloseExplain = vm::closeExplain,
+            onRetryExplain = vm::retryExplain,
             onHowTo = { howToOpen = !howToOpen },
             mascot = if (settings.showMascot) {
                 { AppMascot(container.mascotPack, mascotMood, 36.dp, Modifier.padding(end = 6.dp)) }
@@ -288,9 +294,17 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SuggestionsBar(chips: List<SuggestionChip>, onHowTo: () -> Unit, mascot: (@Composable () -> Unit)? = null) {
+private fun SuggestionsBar(
+    chips: List<SuggestionChip>,
+    explain: ExplainCard?,
+    onChip: (SuggestionChip) -> Unit,
+    onCloseExplain: () -> Unit,
+    onRetryExplain: () -> Unit,
+    onHowTo: () -> Unit,
+    mascot: (@Composable () -> Unit)? = null,
+) {
     var expanded by remember { mutableStateOf(true) }
-    var selected by remember { mutableStateOf<SuggestionChip?>(null) }
+    val selected = explain?.chip
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             mascot?.invoke()
@@ -315,13 +329,11 @@ private fun SuggestionsBar(chips: List<SuggestionChip>, onHowTo: () -> Unit, mas
                     selected = isSelected,
                     accent = chip.isGrammar,
                     fontSize = 17.sp,
-                    onClick = { selected = if (isSelected) null else chip },
+                    onClick = { onChip(chip) },
                 )
             }
         }
-        selected?.let {
-            Text(it.detail, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-        }
+        explain?.let { SuggestionCard(it, onClose = onCloseExplain, onRetry = onRetryExplain) }
         if (selected == null && chips.any { it.isGap }) {
             Text(
                 "“+” = posible laguna: de tu nivel según el estándar, pero no está en tus listas.",
@@ -331,6 +343,63 @@ private fun SuggestionsBar(chips: List<SuggestionChip>, onHowTo: () -> Unit, mas
             )
         }
         Spacer(Modifier.padding(bottom = 4.dp))
+    }
+}
+
+/**
+ * Significado, uso natural y ejemplos de una sugerencia. Va arriba, bajo las sugerencias, para que la
+ * mano que escribe no la tape; tiene alto máximo y desplazamiento para no comerse el papel.
+ */
+@Composable
+private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val chip = card.chip
+    val e = card.explanation
+    Column(
+        Modifier.fillMaxWidth().padding(top = 6.dp)
+            .border(1.dp, scheme.outlineVariant)
+            .heightIn(max = 280.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(chip.label, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (chip.isGrammar) "  gramática" else "  palabra",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            AppTextButton(onClick = onClose) { Text("Cerrar") }
+        }
+        if (e != null) {
+            Text(e.meaning, style = MaterialTheme.typography.bodyLarge)
+            e.usage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            e.conjugation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.secondary) }
+            e.examples.forEach { ex ->
+                Column(Modifier.padding(top = 4.dp)) {
+                    Text(ex.korean, fontSize = 17.sp)
+                    ex.english?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+                }
+            }
+        } else {
+            // Lo que la app ya sabe, mientras llega la IA o si no hay API.
+            Text(chip.detail, style = MaterialTheme.typography.bodySmall)
+        }
+        if (chip.isGap) {
+            Text(
+                "“+” = posible laguna: de tu nivel según el estándar, pero no está en tus listas.",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        if (card.loading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            Text("Buscando el significado y ejemplos naturales…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        }
+        card.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
+        if (card.canRetry) AppTextButton(onClick = onRetry) { Text("Reintentar") }
     }
 }
 

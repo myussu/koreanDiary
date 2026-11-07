@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Copia de seguridad (Android 12+): diarios (base de datos), workbook, conversaciones, mascota y ajustes.
+  Copia de seguridad (Android 12+): diarios (base de datos), workbook, conversaciones, explicaciones de sugerencias, mascota y ajustes.
   Se excluyen las claves de API: están cifradas con una llave del Keystore que no viaja a otro
   dispositivo, así que no servirían; se vuelven a escribir en Ajustes.
 -->
@@ -8,6 +8,7 @@
     <cloud-backup>
         <include domain="database" path="." />
         <include domain="file" path="workbook/" />
+        <include domain="file" path="explanations/" />
         <include domain="file" path="conversation/" />
         <include domain="file" path="mascot/" />
         <include domain="sharedpref" path="settings.xml" />
@@ -15,6 +16,7 @@
     <device-transfer>
         <include domain="database" path="." />
         <include domain="file" path="workbook/" />
+        <include domain="file" path="explanations/" />
         <include domain="file" path="conversation/" />
         <include domain="file" path="mascot/" />
         <include domain="sharedpref" path="settings.xml" />

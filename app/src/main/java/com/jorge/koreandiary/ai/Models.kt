@@ -62,6 +62,20 @@ data class ImportGrammar(
 /** Ítem que se manda en el prompt: "w12 | 먹다 | verbo". */
 data class PromptItem(val ref: String, val label: String, val kind: String)
 
+/** Explicación de una sugerencia del diario: qué significa y cómo la usaría un coreano. */
+data class ItemExplanation(
+    val form: String,
+    /** Significado en español. */
+    val meaning: String,
+    /** Cuándo y cómo se usa de forma natural (matiz, registro, con qué suele ir). */
+    val usage: String?,
+    /** Gramática: cómo se une a verbos y adjetivos. Palabras: conjugación si es irregular. */
+    val conjugation: String?,
+    val examples: List<ExampleSentence>,
+)
+
+data class ExampleSentence(val korean: String, val english: String?)
+
 /** Respuesta de "¿Cómo digo esto?". */
 data class HowToSayResponse(
     /** La frase con vocabulario y gramática hasta el nivel del estudiante. */
