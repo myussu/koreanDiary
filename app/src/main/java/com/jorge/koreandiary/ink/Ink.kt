@@ -39,6 +39,25 @@ data class InkStroke(val points: List<InkPoint>) {
  * Las coordenadas se guardan normalizadas al ancho del lienzo (0..1 en x),
  * para que la página se vea igual si cambia el tamaño de pantalla.
  */
+/** Transformaciones de toda la tinta de una página. */
+object InkOps {
+    /** Escala x e y por igual (la tinta se guarda relativa al ancho de la hoja). */
+    fun scale(strokes: List<InkStroke>, factor: Float): List<InkStroke> =
+        if (factor == 1f) strokes
+        else strokes.map { s -> InkStroke(s.points.map { it.copy(x = it.x * factor, y = it.y * factor) }) }
+
+    /**
+     * Si algo se sale de la hoja por la derecha (páginas guardadas al girar el celular antes de
+     * que la hoja tuviera ancho fijo), lo achica todo para que vuelva a verse. null si ya entra.
+     */
+    fun fitToWidth(strokes: List<InkStroke>, width: Float): List<InkStroke>? {
+        if (width <= 0f) return null
+        val maxX = strokes.maxOfOrNull { s -> s.points.maxOfOrNull { it.x } ?: 0f } ?: return null
+        if (maxX <= width * 1.02f) return null
+        return scale(strokes, width * 0.98f / maxX)
+    }
+}
+
 object InkSerializer {
     fun toJson(strokes: List<InkStroke>, width: Float): String {
         val w = if (width > 0f) width else 1f

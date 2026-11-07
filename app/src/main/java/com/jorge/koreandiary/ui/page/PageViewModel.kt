@@ -23,6 +23,7 @@ import com.jorge.koreandiary.data.db.CorrectionStatus
 import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.data.db.PageStatus
+import com.jorge.koreandiary.ink.InkOps
 import com.jorge.koreandiary.ink.InkSerializer
 import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.TextMatch
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -152,9 +154,21 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     fun onCanvasSized(w: Float, h: Float, line: Float) {
         if (w <= 0f || h <= 0f) return
+        val previous = width
         width = w
         height = h
         lineHeight = line
+        // La hoja mide lo mismo en vertical y en horizontal; si aun así cambia (pantalla dividida,
+        // otra pantalla), se escala la tinta igual que al guardar, para que nada quede fuera.
+        if (strokesLoaded && previous > 0f && abs(w - previous) > 0.5f) {
+            val factor = w / previous
+            _state.update { it.copy(strokes = InkOps.scale(it.strokes, factor)) }
+            listOf(undoStack, redoStack).forEach { stack ->
+                val scaled = stack.map { snap -> snap.copy(strokes = InkOps.scale(snap.strokes, factor)) }
+                stack.clear()
+                stack.addAll(scaled)
+            }
+        }
         tryLoadStrokes()
     }
 
@@ -162,7 +176,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val page = _state.value.page ?: return
         if (strokesLoaded || width <= 0f) return
         strokesLoaded = true
-        _state.update { it.copy(strokes = InkSerializer.fromJson(page.inkJson, width)) }
+        val loaded = InkSerializer.fromJson(page.inkJson, width)
+        // Páginas que quedaron con tinta fuera de la hoja al girar el celular: se achican para verse enteras.
+        val fitted = InkOps.fitToWidth(loaded, width)
+        _state.update { it.copy(strokes = fitted ?: loaded) }
+        if (fitted != null) scheduleSave()
     }
 
     private suspend fun loadSuggestions(page: DiaryPage): List<SuggestionChip> {

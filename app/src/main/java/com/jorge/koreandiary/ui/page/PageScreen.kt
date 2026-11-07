@@ -2,15 +2,21 @@ package com.jorge.koreandiary.ui.page
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.util.DisplayMetrics
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -20,51 +26,55 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
-import com.jorge.koreandiary.data.AnnotatedItem
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.data.AnnotatedItem
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkTool
 import com.jorge.koreandiary.ink.rememberInkScrollState
-import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.mascot.MascotMood
+import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppMascot
 import com.jorge.koreandiary.ui.AppOutlinedButton
@@ -84,13 +94,13 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val howTo by vm.howTo.collectAsStateWithLifecycle()
     val explain by vm.explain.collectAsStateWithLifecycle()
     val reaction by vm.mascotMood.collectAsStateWithLifecycle()
-    var howToOpen by remember { mutableStateOf(false) }
+    var howToOpen by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val paper = LocalPaperStyle.current
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
-    var tool by remember { mutableStateOf(InkTool.PEN) }
+    var tool by rememberSaveable { mutableStateOf(InkTool.PEN) }
     val density = LocalDensity.current
     val lineHeightPx = with(density) { 64.dp.toPx() }
     val strokeWidthPx = with(density) { settings.penWidthDp.dp.toPx() }
@@ -128,7 +138,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(scheme.background)) {
+    // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
+    val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking || explain?.loading == true) MascotMood.THINKING else reaction
+
+    val header: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -142,9 +155,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             page?.let { AppTag(pageStatusLabel(it.status), accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
             AppTextButton(onClick = { confirmDelete = true }) { Text("Borrar") }
         }
+    }
 
-        // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
-        val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking || explain?.loading == true) MascotMood.THINKING else reaction
+    // Sugerencias, "¿Cómo digo?", correcciones y avisos: arriba en vertical, al costado en horizontal.
+    val panels: @Composable () -> Unit = {
         SuggestionsBar(
             state.suggestions,
             explain = explain,
@@ -179,8 +193,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 Text(msg, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
             }
         }
+    }
 
-        HorizontalDivider(color = scheme.outlineVariant)
+    val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
         Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper)) {
             InkCanvas(
                 strokes = state.strokes,
@@ -201,8 +216,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                     tool = InkTool.PEN
                 },
                 scroll = inkScroll,
-                // clipToBounds: si el lienzo se achica (panel abierto), los trazos no se dibujan encima de los botones.
-                modifier = Modifier.fillMaxSize().clipToBounds().onSizeChanged {
+                // Ancho fijo de hoja (centrada si sobra espacio). clipToBounds: si el lienzo se achica
+                // (panel abierto), los trazos no se dibujan encima de los botones.
+                modifier = Modifier.align(Alignment.TopCenter).width(paperWidth).fillMaxHeight().clipToBounds().onSizeChanged {
                     vm.onCanvasSized(it.width.toFloat(), it.height.toFloat(), lineHeightPx)
                 },
             )
@@ -262,6 +278,33 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         }
     }
 
+    BoxWithConstraints(Modifier.fillMaxSize().background(scheme.background)) {
+        // La hoja mide siempre el ancho del celular en vertical: lo escrito girado se ve igual al volver.
+        val paperWidth = minOf(rememberPaperWidth(), maxWidth)
+        // En horizontal sobra ancho: los paneles van a la izquierda (la mano derecha no los tapa)
+        // y la hoja usa todo el alto, en vez de quedar aplastada debajo de ellos.
+        val sideBySide = maxWidth > maxHeight && maxWidth - paperWidth >= 240.dp
+        if (sideBySide) {
+            Row(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    header()
+                    panels()
+                }
+                VerticalDivider(color = scheme.outlineVariant)
+                Column(Modifier.width(paperWidth).fillMaxHeight()) {
+                    paperAndTools(paperWidth)
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                header()
+                panels()
+                HorizontalDivider(color = scheme.outlineVariant)
+                paperAndTools(paperWidth)
+            }
+        }
+    }
+
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -290,6 +333,26 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         }
         Phase.AwaitingPaste -> PasteDialog(onSubmit = vm::submitPasted, onDismiss = vm::cancelConfirm)
         else -> Unit
+    }
+}
+
+/** Lado corto de la pantalla completa (con barras incluidas): el ancho del celular en vertical. */
+@Composable
+private fun rememberPaperWidth(): Dp {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    return remember(configuration, density) {
+        val wm = context.getSystemService(WindowManager::class.java)
+        val px = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.maximumWindowMetrics.bounds
+            minOf(bounds.width(), bounds.height())
+        } else {
+            @Suppress("DEPRECATION")
+            val metrics = DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+            minOf(metrics.widthPixels, metrics.heightPixels)
+        }
+        with(density) { px.toDp() }
     }
 }
 
