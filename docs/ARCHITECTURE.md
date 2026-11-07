@@ -4,7 +4,7 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 
 ## Resumen
 
-- **Objetivo:** diario manuscrito en coreano (escritura y lectura), en ratos cortos y en silencio. Sin listening ni speaking.
+- **Objetivo:** dos modos. **Diario** (escritura y lectura), en ratos cortos y en silencio. **Conversación** (speaking y listening) por voz, con la pantalla abierta.
 - **Lienzo:** página que crece hacia abajo (siempre 6 líneas libres bajo lo escrito o revisado) y se desplaza: con “solo S Pen” el dedo desplaza; si el dedo escribe, se desplaza con dos dedos. Los trazos se guardan en coordenadas de página. “+ Línea” inserta un renglón vacío donde tocas (lo de abajo baja, como insertar fila en Excel); si cae en la zona revisada, la zona crece. “Verificar” revisa toda la página, así que puedes reescribir debajo o en el mismo lugar.
 - **Flujo:** página nueva → sugerencias FSRS (sin IA) → escribir con S Pen → Revisar → ML Kit reconoce línea por línea → confirmar texto → proveedor de IA → correcciones arriba → reescribir debajo → Verificar (comparación local, sin IA).
 - **Proveedores:** interfaz `CorrectionProvider`. Gemini (Interactions API, capa gratuita), Azure OpenAI (API v1 + Responses API, despliegue recomendado `gpt-5.6-luna` en Global Standard, razonamiento bajo) y “Compartir con un chat” (Claude/ChatGPT, copiar y pegar). Futuro: servidor propio.
@@ -20,6 +20,20 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 - **Recordatorio:** opcional, a la hora elegida (`reminder/Reminder.kt`). Alarma con ventana de 10 minutos que se reprograma cada día (sin permiso de alarma exacta); al sonar, solo notifica si hoy no hay página, con una frase de la mascota y la racha. Se reprograma al reiniciar el celular, al actualizar la app y al abrirla.
 - **Copia de seguridad:** Auto Backup de Android (`res/xml/data_extraction_rules.xml` y `backup_rules.xml`) guarda la base, los workbooks, la mascota importada y los ajustes. Las claves de API no viajan: su clave de cifrado vive en el Keystore del celular, así que en un celular nuevo hay que volver a pegarlas.
 - **Palabras fuera del estándar:** se agregan solas si son hangul válido; si no, quedan en “Por revisar”. Pendiente: validar con la API del 한국어기초사전.
+
+## Conversación (speaking)
+
+- **Pantalla `ui/conversation`:** preparación → sesión en vivo → revisión. Entrada desde el inicio (“Hablar”).
+- **Voz:** Live API de Gemini (`gemini-3.8-live`, elegible en Ajustes; misma clave que el diario) por WebSocket con OkHttp (`voice/LiveSession.kt`), única dependencia nueva. Protocolo en funciones puras con tests (`voice/LiveProtocol.kt`). Micrófono PCM 16 kHz en trozos de 40 ms con cancelación de eco; parlante PCM 24 kHz que se vacía al interrumpir (`voice/AudioIO.kt`).
+- **Sesiones largas:** compresión de contexto con ventana deslizante (48K → 24K tokens) y reanudación: con `goAway` o una caída, reconecta con el token y la conversación sigue. Si el servidor rechaza la configuración antes de empezar, reintenta con la mínima. El motivo de cierre (código y texto) se guarda en la sesión.
+- **Turnos:** “Pulsar para hablar” por defecto (VAD del servidor apagado, `activityStart`/`activityEnd`: la IA no corta aunque pienses mucho) o “Automático” (sensibilidad baja y silencio configurable, 1–4 s).
+- **Prompt de voz (`conversation/ConversationPrompts.kt`):** en inglés; la ayuda en español tiene prioridad sobre “solo coreano”, con ejemplos; los “음/eh/este” son pensar; corrección por reformulación, una por turno. Mensajes de la app con prefijo `[APP]` (cerrar la sesión, palabra desconocida, más lento).
+- **Lista de estudio: solo lectura.** FSRS elige objetivos (4 palabras, 2 gramáticas, 1 laguna) que la IA intenta provocar con preguntas; también alimentan el vocabulario de la transcripción junto con el diario de hoy. La conversación **no** cambia FSRS ni agrega palabras: se guarda todo (líneas, objetivos, palabras consultadas, pistas, revisión) para decidir después, con datos, cómo debería contar.
+- **Coach (texto, proveedor de corrección):** pistas en 3 niveles (palabra o patrón → media oración → oración completa), traducir la última frase de la IA, tocar una palabra para traducirla (y avisar en silencio al modelo de voz para que simplifique). No cortan el audio.
+- **Texto de la IA borroso** hasta tocarlo (Android 12+; antes, oculto): se practica escuchar.
+- **Revisión:** primero confirmas la transcripción de lo que dijiste (el reconocimiento puede fallar); luego el mismo contrato JSON del diario (`CorrectionParser`) más `comentario`.
+- **Guardado:** archivos en `filesDir/conversation/<id>.json` (sin migrar Room), incluidos en la copia de seguridad. Progreso muestra minutos hablados; no suma a la racha.
+- **Límites:** duración por sesión (5–20 min, con aviso de cierre un minuto antes) y minutos por día (30 por defecto). Sin servicio en primer plano: al salir de la app se deja de enviar audio.
 
 ## Distribución y actualizaciones
 

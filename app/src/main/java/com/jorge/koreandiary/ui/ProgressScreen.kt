@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.conversation.ConversationMath
 import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.mascot.MascotBrain
 import com.jorge.koreandiary.progress.HeatDay
@@ -48,6 +50,8 @@ fun ProgressScreen(container: AppContainer, onBack: () -> Unit) {
     val days by container.diary.pagesPerDay.collectAsStateWithLifecycle(emptyList())
     val states by container.study.memoryStates.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
+    val conversations by container.conversations.sessions.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { container.conversations.refresh() }
     val today = LocalDate.now()
 
     val perDay = remember(days) {
@@ -78,6 +82,19 @@ fun ProgressScreen(container: AppContainer, onBack: () -> Unit) {
             StatBox("Racha", streak, if (streak == 1) "día" else "días", Modifier.weight(1f))
             StatBox("Mejor racha", best, if (best == 1) "día" else "días", Modifier.weight(1f))
             StatBox("Páginas", perDay.values.sum(), "en ${perDay.size} días", Modifier.weight(1f))
+        }
+
+        if (conversations.isNotEmpty()) {
+            // La conversación no suma a la racha (por ahora): solo se muestra el tiempo hablado.
+            val talk = remember(conversations, today) { ConversationMath.stats(conversations, today) }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionLabel("Conversación")
+                Text(
+                    "Hoy ${ConversationMath.format(talk.secondsToday)} · en total ${ConversationMath.format(talk.secondsTotal)} " +
+                        "en ${talk.sessions} ${if (talk.sessions == 1) "sesión" else "sesiones"} (${talk.days} ${if (talk.days == 1) "día" else "días"})",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -4,6 +4,7 @@ import android.app.Application
 import com.jorge.koreandiary.ai.AzureOpenAIProvider
 import com.jorge.koreandiary.ai.CorrectionProvider
 import com.jorge.koreandiary.ai.GeminiProvider
+import com.jorge.koreandiary.conversation.ConversationStore
 import com.jorge.koreandiary.data.DiaryRepository
 import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
@@ -35,6 +36,7 @@ class AppContainer(val app: Application) {
     val updater = Updater(app)
     val mascotPack = MascotPack(app)
     val workbook = WorkbookStore(app)
+    val conversations = ConversationStore(app)
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -51,6 +53,17 @@ class AppContainer(val app: Application) {
             }
             else -> null
         }
+    }
+
+    /**
+     * Proveedor de texto para el "coach" de la conversación (pistas, traducciones, revisión):
+     * el de corrección por defecto si es una API; si no, la primera API configurada.
+     */
+    fun coachProvider(): Pair<String, CorrectionProvider>? {
+        val s = settings.state.value
+        val id = listOf(s.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
+            .firstOrNull { it != ProviderId.SHARE && isConfigured(it) } ?: return null
+        return apiProvider(id)?.let { id to it }
     }
 
     /** Chequeo barato para la UI (no descifra la clave). */

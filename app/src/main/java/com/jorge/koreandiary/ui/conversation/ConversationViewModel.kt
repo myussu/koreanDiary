@@ -1,0 +1,559 @@
+package com.jorge.koreandiary.ui.conversation
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.ai.ParseException
+import com.jorge.koreandiary.ai.PromptItem
+import com.jorge.koreandiary.ai.ProviderException
+import com.jorge.koreandiary.conversation.ConversationMath
+import com.jorge.koreandiary.conversation.ConversationParser
+import com.jorge.koreandiary.conversation.ConversationPrompts
+import com.jorge.koreandiary.conversation.ConversationRecord
+import com.jorge.koreandiary.conversation.ConversationReview
+import com.jorge.koreandiary.conversation.Hint
+import com.jorge.koreandiary.conversation.Line
+import com.jorge.koreandiary.conversation.SentenceGloss
+import com.jorge.koreandiary.conversation.Speaker
+import com.jorge.koreandiary.conversation.WordGloss
+import com.jorge.koreandiary.data.ItemRef
+import com.jorge.koreandiary.data.db.ItemType
+import com.jorge.koreandiary.settings.ProviderId
+import com.jorge.koreandiary.settings.SecretStore
+import com.jorge.koreandiary.voice.LiveConfig
+import com.jorge.koreandiary.voice.LiveEvent
+import com.jorge.koreandiary.voice.LiveProtocol
+import com.jorge.koreandiary.voice.LiveSession
+import com.jorge.koreandiary.voice.Microphone
+import com.jorge.koreandiary.voice.SessionSignal
+import com.jorge.koreandiary.voice.Speaker as AudioOut
+import com.jorge.koreandiary.voice.TurnMode
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.time.LocalDate
+
+sealed interface ConvStage {
+    data object Setup : ConvStage
+    data object Live : ConvStage
+    data object Review : ConvStage
+}
+
+object Topic {
+    const val FREE = "libre"
+    const val DIARY = "diario"
+    const val OTHER = "otro"
+}
+
+/** Una línea en pantalla. [open] = todavía llega texto de la transcripción. */
+data class UiLine(val id: Int, val speaker: Speaker, val text: String, val open: Boolean)
+
+/** Panel del coach, encima de los botones. */
+sealed interface CoachPanel {
+    data object None : CoachPanel
+    data class Loading(val what: String) : CoachPanel
+    /** [level]: 1 = palabra o patrón, 2 = media oración, 3 = oración completa. */
+    data class HintShown(val hint: Hint, val level: Int) : CoachPanel
+    data class WordShown(val gloss: WordGloss) : CoachPanel
+    data class SentenceShown(val gloss: SentenceGloss) : CoachPanel
+    data class Error(val message: String) : CoachPanel
+}
+
+data class ConvUiState(
+    val stage: ConvStage = ConvStage.Setup,
+    // Preparación
+    val loadingTargets: Boolean = true,
+    val targets: List<PromptItem> = emptyList(),
+    val excluded: Set<String> = emptySet(),
+    val diaryToday: String? = null,
+    val topic: String = Topic.FREE,
+    val customTopic: String = "",
+    val minutes: Int = 10,
+    val secondsToday: Int = 0,
+    val hasVoiceKey: Boolean = false,
+    val hasCoach: Boolean = false,
+    // En vivo
+    val status: String = "",
+    val connected: Boolean = false,
+    val lines: List<UiLine> = emptyList(),
+    val talking: Boolean = false,
+    val muted: Boolean = false,
+    val aiSpeaking: Boolean = false,
+    val elapsedSec: Int = 0,
+    val totalSec: Int = 0,
+    val panel: CoachPanel = CoachPanel.None,
+    val tokensTotal: Long = 0,
+    val contextTokens: Int = 0,
+    val turnMode: String = TurnMode.PUSH_TO_TALK,
+    // Revisión
+    val record: ConversationRecord? = null,
+    val edits: Map<Int, String> = emptyMap(),
+    val reviewing: Boolean = false,
+    val review: ConversationReview? = null,
+    val reviewError: String? = null,
+    val message: String? = null,
+) {
+    val activeTargets get() = targets.filter { it.ref !in excluded }
+}
+
+class ConversationViewModel(private val c: AppContainer) : ViewModel() {
+    private val _state = MutableStateFlow(ConvUiState())
+    val state: StateFlow<ConvUiState> = _state.asStateFlow()
+
+    private var session: LiveSession? = null
+    private var mic: Microphone? = null
+    private var speaker: AudioOut? = null
+    private var ticker: Job? = null
+    private var record: ConversationRecord? = null
+    private var startedAtMs = 0L
+    private var nextLineId = 0
+    private var wrapUpSent = false
+    private var ending = false
+    private var lookups = mutableListOf<String>()
+    private var hintsUsed = 0
+    private var reconnections = 0
+
+    init {
+        val s = c.settings.state.value
+        _state.update { it.copy(minutes = s.voiceSessionMinutes, turnMode = s.voiceTurnMode) }
+        loadSetup()
+    }
+
+    // ---------- Preparación ----------
+
+    fun loadSetup() {
+        viewModelScope.launch {
+            val s = c.settings.state.value
+            _state.update {
+                it.copy(
+                    hasVoiceKey = c.isConfigured(ProviderId.GEMINI),
+                    hasCoach = c.coachProvider() != null,
+                    turnMode = s.voiceTurnMode,
+                )
+            }
+            c.conversations.refresh()
+            val today = LocalDate.now()
+            val todaySec = ConversationMath.stats(c.conversations.sessions.value, today).secondsToday
+            val diary = c.diary.pageSummaries.first()
+                .filter { it.date == today.toString() }
+                .mapNotNull { it.preview?.takeIf { p -> p.isNotBlank() } }
+                .joinToString("\n")
+                .ifBlank { null }
+            // La lista de estudio solo se lee: los objetivos salen de FSRS igual que en el diario.
+            val targets = runCatching {
+                val sug = c.suggestions.suggest(
+                    System.currentTimeMillis(), s.grammarLevelList, s.standardLevel,
+                    wordCount = 4, grammarCount = 2, newWordsPerPage = 1, gapWordCount = 0, gapGrammarCount = 1,
+                )
+                val refs = sug.words.map { ItemRef(ItemType.WORD, it.id) } +
+                    sug.grammar.map { ItemRef(ItemType.GRAMMAR, it.id) } +
+                    sug.gapGrammar.map { ItemRef(ItemType.STD_GRAMMAR, it.id.toLong()) }
+                c.study.promptItems(refs)
+            }.getOrDefault(emptyList())
+            _state.update {
+                it.copy(
+                    loadingTargets = false, targets = targets, diaryToday = diary, secondsToday = todaySec,
+                    topic = if (diary != null && it.topic == Topic.FREE) Topic.DIARY else it.topic,
+                )
+            }
+        }
+    }
+
+    fun setTopic(topic: String) = _state.update { it.copy(topic = topic) }
+    fun setCustomTopic(text: String) = _state.update { it.copy(customTopic = text) }
+    fun setMinutes(m: Int) = _state.update { it.copy(minutes = m) }
+    fun toggleTarget(ref: String) = _state.update {
+        it.copy(excluded = if (ref in it.excluded) it.excluded - ref else it.excluded + ref)
+    }
+    fun dismissMessage() = _state.update { it.copy(message = null) }
+
+    /** Empieza la sesión. Llamar con el permiso de micrófono ya concedido. */
+    fun start() {
+        if (_state.value.stage == ConvStage.Live) return
+        val s = c.settings.state.value
+        val st = _state.value
+        val key = c.secrets.get(SecretStore.GEMINI_KEY)
+        if (key == null) {
+            _state.update { it.copy(message = "Falta tu clave de Gemini: pégala en Ajustes (es la misma del diario).") }
+            return
+        }
+        val remaining = s.voiceDailyMinutes * 60 - st.secondsToday
+        if (remaining < 60) {
+            _state.update { it.copy(message = "Llegaste a tu límite de ${s.voiceDailyMinutes} min por hoy. Puedes subirlo en Ajustes.") }
+            return
+        }
+        val total = minOf(st.minutes * 60, remaining)
+        val topic = when (st.topic) {
+            Topic.DIARY -> "what he wrote in his diary today"
+            Topic.OTHER -> st.customTopic.trim().ifBlank { "" }
+            else -> ""
+        }
+        val diary = if (st.topic == Topic.DIARY) st.diaryToday else null
+        val targets = st.activeTargets
+        val system = ConversationPrompts.voiceSystem(s.profile, s.level, s.standardLevel, topic, diary, targets, total / 60)
+        val vocabulary = ConversationPrompts.vocabulary(targets, st.diaryToday)
+
+        val now = System.currentTimeMillis()
+        record = ConversationRecord(
+            id = now, startedAt = now, model = s.voiceModel, turnMode = s.voiceTurnMode,
+            topic = when (st.topic) { Topic.DIARY -> "Diario de hoy"; Topic.OTHER -> st.customTopic.trim(); else -> "Libre" },
+            targets = targets,
+        )
+        startedAtMs = now
+        nextLineId = 0
+        wrapUpSent = false
+        ending = false
+        lookups = mutableListOf()
+        hintsUsed = 0
+        reconnections = 0
+
+        speaker = AudioOut(viewModelScope)
+        val live = LiveSession(key, viewModelScope) { handle, minimal ->
+            LiveConfig(
+                model = s.voiceModel, voice = s.voiceName, systemInstruction = system,
+                turnMode = s.voiceTurnMode, silenceMs = s.voiceSilenceMs,
+                vocabulary = vocabulary, resumeHandle = handle, minimal = minimal,
+            )
+        }
+        session = live
+        _state.update {
+            it.copy(
+                stage = ConvStage.Live, status = "Conectando…", connected = false, lines = emptyList(),
+                talking = false, muted = false, aiSpeaking = false, elapsedSec = 0, totalSec = total,
+                panel = CoachPanel.None, tokensTotal = 0, contextTokens = 0, turnMode = s.voiceTurnMode,
+                review = null, reviewError = null, record = null, message = null,
+            )
+        }
+        viewModelScope.launch { live.events.collect { onSignal(it) } }
+        live.start()
+        startTicker()
+    }
+
+    // ---------- En vivo ----------
+
+    private fun onSignal(signal: SessionSignal) {
+        when (signal) {
+            is SessionSignal.Connected -> {
+                _state.update { it.copy(status = "En vivo", connected = true) }
+                if (!signal.resumed) {
+                    startMic()
+                    // Sin esto el modelo espera a que hables primero.
+                    session?.send(LiveProtocol.context("[APP] Empieza la conversación.", respond = true))
+                } else {
+                    reconnections++
+                    // La reconexión cerró tu turno a medias: se vuelve a abrir.
+                    if (_state.value.talking) session?.send(LiveProtocol.activityStart())
+                }
+            }
+            SessionSignal.Reconnecting -> _state.update { it.copy(status = "Reconectando…", connected = false) }
+            is SessionSignal.Closed -> if (!ending) end(if (signal.error) "Se cortó: ${signal.reason}" else signal.reason)
+            is SessionSignal.Event -> onEvent(signal.event)
+        }
+    }
+
+    private fun onEvent(e: LiveEvent) {
+        when (e) {
+            is LiveEvent.Audio -> speaker?.play(e.pcm)
+            is LiveEvent.InputText -> append(Speaker.USER, e.text)
+            is LiveEvent.OutputText -> append(Speaker.AI, e.text)
+            LiveEvent.Interrupted -> {
+                speaker?.flush()
+                closeLines()
+            }
+            LiveEvent.TurnComplete -> closeLines(Speaker.AI)
+            is LiveEvent.Usage -> _state.update {
+                it.copy(tokensTotal = it.tokensTotal + e.total, contextTokens = maxOf(e.prompt, 0))
+            }
+            else -> Unit
+        }
+    }
+
+    /** Las transcripciones llegan en trozos: se suman a la línea abierta del mismo hablante. */
+    private fun append(speaker: Speaker, text: String) = _state.update { st ->
+        val last = st.lines.lastOrNull()
+        val lines = if (last != null && last.speaker == speaker && last.open) {
+            st.lines.dropLast(1) + last.copy(text = last.text + text)
+        } else {
+            st.lines.map { if (it.open) it.copy(open = false) } + UiLine(nextLineId++, speaker, text.trimStart(), open = true)
+        }
+        st.copy(lines = lines)
+    }
+
+    private fun closeLines(only: Speaker? = null) = _state.update { st ->
+        st.copy(lines = st.lines.map { if (it.open && (only == null || it.speaker == only)) it.copy(open = false) else it })
+    }
+
+    private fun startMic() {
+        if (mic != null) return
+        val m = Microphone { buffer, n ->
+            val st = _state.value
+            val send = if (st.turnMode == TurnMode.PUSH_TO_TALK) st.talking else !st.muted
+            if (send && st.connected) session?.send(LiveProtocol.audio(buffer, n))
+        }
+        try {
+            m.start(viewModelScope)
+            mic = m
+        } catch (e: Exception) {
+            _state.update { it.copy(message = e.message ?: "No se pudo abrir el micrófono.") }
+            end("Sin micrófono.")
+        }
+    }
+
+    private fun startTicker() {
+        ticker?.cancel()
+        ticker = viewModelScope.launch {
+            while (isActive) {
+                delay(250)
+                val st = _state.value
+                if (st.stage != ConvStage.Live) break
+                val elapsed = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt()
+                val speaking = (speaker?.pendingMs() ?: 0) > 0
+                _state.update { it.copy(elapsedSec = elapsed, aiSpeaking = speaking) }
+                if (!wrapUpSent && elapsed >= st.totalSec - 60) {
+                    wrapUpSent = session?.send(LiveProtocol.context(ConversationPrompts.WRAP_UP, respond = false)) == true
+                }
+                // Al cumplirse el tiempo se espera a que la IA termine de despedirse (máximo un minuto extra).
+                if (elapsed >= st.totalSec && (!speaking && !st.talking || elapsed >= st.totalSec + 60)) {
+                    end("Se cumplió el tiempo.")
+                    break
+                }
+            }
+        }
+    }
+
+    /** Pulsar para hablar: abre tu turno. Si la IA estaba hablando, la corta. */
+    fun startTalking() {
+        val st = _state.value
+        if (!st.connected || st.talking) return
+        if (st.aiSpeaking) speaker?.flush()
+        closeLines(Speaker.AI)
+        if (session?.send(LiveProtocol.activityStart()) == true) _state.update { it.copy(talking = true) }
+    }
+
+    fun stopTalking() {
+        if (!_state.value.talking) return
+        session?.send(LiveProtocol.activityEnd())
+        _state.update { it.copy(talking = false) }
+    }
+
+    fun toggleMute() {
+        val muted = !_state.value.muted
+        _state.update { it.copy(muted = muted) }
+        if (muted) session?.send(LiveProtocol.audioStreamEnd())
+    }
+
+    /** La app pasó a segundo plano: sin servicio en primer plano no se puede seguir grabando. */
+    fun onBackground() {
+        val st = _state.value
+        if (st.stage != ConvStage.Live) return
+        if (st.talking) stopTalking()
+        if (st.turnMode == TurnMode.AUTO && !st.muted) toggleMute()
+    }
+
+    fun slower() {
+        session?.send(LiveProtocol.context(ConversationPrompts.SLOWER, respond = true))
+    }
+
+    // ---------- Coach: pistas y traducciones (texto, no corta la conversación) ----------
+
+    fun hint() {
+        val st = _state.value
+        val current = st.panel
+        if (current is CoachPanel.HintShown && current.level < 3) {
+            _state.update { it.copy(panel = current.copy(level = current.level + 1)) }
+            return
+        }
+        val s = c.settings.state.value
+        val recent = st.lines.map { Line(it.speaker, it.text) }
+        if (recent.none { it.speaker == Speaker.AI }) return
+        coach("Pensando una pista…", ConversationPrompts.hint(s.level, s.standardLevel, recent, record?.targets.orEmpty())) { raw ->
+            val hint = ConversationParser.hint(raw)
+            hintsUsed++
+            CoachPanel.HintShown(hint, level = 1)
+        }
+    }
+
+    fun translateLast() {
+        val last = _state.value.lines.lastOrNull { it.speaker == Speaker.AI && it.text.isNotBlank() } ?: return
+        val s = c.settings.state.value
+        coach("Traduciendo…", ConversationPrompts.sentence(last.text, s.standardLevel)) { raw ->
+            CoachPanel.SentenceShown(ConversationParser.sentence(raw, last.text))
+        }
+    }
+
+    fun lookup(word: String, sentence: String) {
+        val clean = word.trim { !it.isLetterOrDigit() }
+        if (clean.isEmpty()) return
+        coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence)) { raw ->
+            val gloss = ConversationParser.word(raw, clean)
+            lookups += "${gloss.form}: ${gloss.meaning}"
+            // El modelo de voz se entera en silencio y baja el nivel.
+            session?.send(LiveProtocol.context(ConversationPrompts.unknownWord(clean), respond = false))
+            CoachPanel.WordShown(gloss)
+        }
+    }
+
+    fun closePanel() = _state.update { it.copy(panel = CoachPanel.None) }
+
+    private fun coach(loading: String, prompt: String, onResult: (String) -> CoachPanel) {
+        val (providerId, provider) = c.coachProvider() ?: run {
+            _state.update { it.copy(panel = CoachPanel.Error("Configura Gemini o Azure en Ajustes para usar pistas y traducciones.")) }
+            return
+        }
+        val s = c.settings.state.value
+        if (c.settings.usageToday(providerId) >= s.dailyLimit(providerId)) {
+            _state.update { it.copy(panel = CoachPanel.Error("Llegaste al límite diario de consultas de ${providerName(providerId)}.")) }
+            return
+        }
+        _state.update { it.copy(panel = CoachPanel.Loading(loading)) }
+        viewModelScope.launch {
+            val panel = try {
+                val raw = provider.complete(CorrectionRequest(prompt))
+                c.settings.registerUse(providerId)
+                onResult(raw)
+            } catch (e: ProviderException) {
+                CoachPanel.Error(if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.")
+            } catch (e: ParseException) {
+                CoachPanel.Error("No se pudo leer la respuesta: ${e.message}")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CoachPanel.Error(e.message ?: e.javaClass.simpleName)
+            }
+            // Si mientras tanto se cerró el panel o empezó otra consulta, igual se muestra la última.
+            _state.update { if (it.stage == ConvStage.Live || it.stage == ConvStage.Review) it.copy(panel = panel) else it }
+        }
+    }
+
+    // ---------- Fin y revisión ----------
+
+    /** Termina la sesión y la guarda. */
+    fun end(reason: String = "Terminaste la sesión.") {
+        if (ending || _state.value.stage != ConvStage.Live) return
+        ending = true
+        ticker?.cancel()
+        mic?.stop()
+        mic = null
+        speaker?.release()
+        speaker = null
+        session?.close()
+        session = null
+        val st = _state.value
+        val base = record ?: return
+        val lines = st.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text.trim()) }
+        val saved = base.copy(
+            durationSec = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt(),
+            lines = lines,
+            lookups = lookups.toList(),
+            hintsUsed = hintsUsed,
+            tokensTotal = st.tokensTotal,
+            lastPromptTokens = st.contextTokens,
+            reconnections = reconnections,
+            endReason = reason,
+        )
+        record = saved
+        _state.update {
+            it.copy(
+                stage = ConvStage.Review, record = saved, edits = editsFor(saved), review = null,
+                reviewError = null, reviewing = false, panel = CoachPanel.None, talking = false, connected = false,
+            )
+        }
+        // appScope: se guarda aunque la pantalla se cierre en este momento.
+        c.appScope.launch { c.conversations.save(saved) }
+    }
+
+    fun openReview(id: Long) {
+        viewModelScope.launch {
+            val r = c.conversations.load(id) ?: return@launch
+            record = r
+            val review = r.reviewRaw?.let { runCatching { ConversationParser.review(it) }.getOrNull() }
+            _state.update {
+                it.copy(
+                    stage = ConvStage.Review, record = r, edits = editsFor(r), review = review,
+                    reviewError = null, reviewing = false, hasCoach = c.coachProvider() != null,
+                )
+            }
+        }
+    }
+
+    private fun editsFor(r: ConversationRecord): Map<Int, String> =
+        r.lines.withIndex().filter { it.value.speaker == Speaker.USER }.associate { it.index to it.value.text }
+
+    fun editLine(index: Int, text: String) = _state.update { it.copy(edits = it.edits + (index to text)) }
+
+    /** Corrige lo que dijiste. Solo guarda la revisión: la lista de estudio no cambia. */
+    fun runReview() {
+        val st = _state.value
+        val r = st.record ?: return
+        val (providerId, provider) = c.coachProvider() ?: run {
+            _state.update { it.copy(reviewError = "Configura Gemini o Azure en Ajustes para revisar la conversación.") }
+            return
+        }
+        val s = c.settings.state.value
+        if (c.settings.usageToday(providerId) >= s.dailyLimit(providerId)) {
+            _state.update { it.copy(reviewError = "Llegaste al límite diario de ${providerName(providerId)}.") }
+            return
+        }
+        // Tus correcciones a la transcripción reemplazan lo que entendió el reconocimiento de voz.
+        val lines = r.lines.mapIndexed { i, line ->
+            if (line.speaker == Speaker.USER) line.copy(text = st.edits[i]?.trim() ?: line.text) else line
+        }.filter { it.text.isNotBlank() }
+        if (lines.none { it.speaker == Speaker.USER }) {
+            _state.update { it.copy(reviewError = "No hay nada tuyo que revisar.") }
+            return
+        }
+        _state.update { it.copy(reviewing = true, reviewError = null) }
+        viewModelScope.launch {
+            try {
+                val prompt = ConversationPrompts.review(s.profile, s.level, s.standardLevel, r.targets, lines)
+                val raw = provider.complete(CorrectionRequest(prompt))
+                c.settings.registerUse(providerId)
+                val review = ConversationParser.review(raw)
+                val updated = r.copy(lines = lines, reviewRaw = raw)
+                c.conversations.save(updated)
+                record = updated
+                _state.update { it.copy(reviewing = false, review = review, record = updated, edits = editsFor(updated)) }
+            } catch (e: ProviderException) {
+                _state.update { it.copy(reviewing = false, reviewError = if (e.offline) "Sin conexión." else e.message) }
+            } catch (e: ParseException) {
+                _state.update { it.copy(reviewing = false, reviewError = "No se pudo leer la respuesta: ${e.message}") }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(reviewing = false, reviewError = e.message ?: e.javaClass.simpleName) }
+            }
+        }
+    }
+
+    fun deleteSession(id: Long) {
+        viewModelScope.launch {
+            c.conversations.delete(id)
+            backToSetup()
+        }
+    }
+
+    fun backToSetup() {
+        _state.update { it.copy(stage = ConvStage.Setup, record = null, review = null, reviewError = null, panel = CoachPanel.None) }
+        loadSetup()
+    }
+
+    private fun providerName(id: String) = when (id) {
+        ProviderId.GEMINI -> "Gemini"
+        ProviderId.AZURE -> "Azure OpenAI"
+        else -> id
+    }
+
+    override fun onCleared() {
+        if (_state.value.stage == ConvStage.Live) end("Saliste de la pantalla.")
+        mic?.stop()
+        speaker?.release()
+        session?.close()
+    }
+}

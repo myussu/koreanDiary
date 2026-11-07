@@ -71,6 +71,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onWorkbook: () -> Unit,
     onProgress: () -> Unit,
+    onConversation: () -> Unit,
 ) {
     val pages by container.diary.pageSummaries.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
@@ -138,7 +139,9 @@ fun HomeScreen(
                 contentPadding = PaddingValues(vertical = 14.dp),
             ) { Text("Nueva página") }
             // Pistas y revisión para ejercicios del workbook, con foto.
-            AppOutlinedButton(onClick = onWorkbook, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)) { Text("Workbook") }
+            AppOutlinedButton(onClick = onWorkbook, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)) { Text("Workbook") }
+            // Conversación por voz con Gemini (speaking).
+            AppOutlinedButton(onClick = onConversation, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)) { Text("Hablar") }
         }
 
         if (pages.isEmpty()) {
