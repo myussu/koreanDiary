@@ -67,6 +67,9 @@ dependencies {
 
     implementation(libs.mlkit.digital.ink)
 
+    // Única excepción a "HTTP con HttpURLConnection": la conversación por voz necesita WebSocket.
+    implementation(libs.okhttp)
+
     testImplementation(libs.junit)
     // org.json real para los tests de JVM (el de android.jar es un stub que lanza excepciones).
     testImplementation(libs.json)

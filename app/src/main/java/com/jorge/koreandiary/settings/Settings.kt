@@ -65,6 +65,20 @@ data class AppSettings(
     val reminderMinute: Int = 0,
     /** Última gramática de la lección elegida en el workbook ("" = que la IA la detecte). */
     val lessonGrammar: String = "",
+    /** Conversación: modelo de la Live API de Gemini (usa la misma clave que Gemini). */
+    val voiceModel: String = "gemini-3.8-live",
+    /** Voz prediseñada de Gemini (Kore, Puck, Charon...). */
+    val voiceName: String = "Kore",
+    /** "ptt" (pulsas para hablar) o "auto" (la IA detecta cuándo terminaste). */
+    val voiceTurnMode: String = "ptt",
+    /** Modo automático: silencio que espera antes de responder. Alto para poder pensar. */
+    val voiceSilenceMs: Int = 2000,
+    /** Duración por defecto de una sesión, en minutos. */
+    val voiceSessionMinutes: Int = 10,
+    /** Minutos de conversación por día como máximo (cuida la capa gratuita). */
+    val voiceDailyMinutes: Int = 30,
+    /** El texto de la IA aparece borroso hasta tocarlo: así practicas escuchar, no leer. */
+    val voiceBlurText: Boolean = true,
 ) {
     /** Grosor del trazo en dp (independiente de la densidad de la pantalla). */
     val penWidthDp: Float get() = when (penWidth) {
@@ -113,6 +127,13 @@ class SettingsStore(context: Context) {
         reminderHour = prefs.getInt("reminderHour", 20),
         reminderMinute = prefs.getInt("reminderMinute", 0),
         lessonGrammar = prefs.getString("lessonGrammar", "") ?: "",
+        voiceModel = prefs.getString("voiceModel", "gemini-3.8-live") ?: "gemini-3.8-live",
+        voiceName = prefs.getString("voiceName", "Kore") ?: "Kore",
+        voiceTurnMode = prefs.getString("voiceTurnMode", "ptt") ?: "ptt",
+        voiceSilenceMs = prefs.getInt("voiceSilenceMs", 2000),
+        voiceSessionMinutes = prefs.getInt("voiceSessionMinutes", 10),
+        voiceDailyMinutes = prefs.getInt("voiceDailyMinutes", 30),
+        voiceBlurText = prefs.getBoolean("voiceBlurText", true),
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -139,6 +160,13 @@ class SettingsStore(context: Context) {
             .putInt("reminderHour", s.reminderHour)
             .putInt("reminderMinute", s.reminderMinute)
             .putString("lessonGrammar", s.lessonGrammar)
+            .putString("voiceModel", s.voiceModel)
+            .putString("voiceName", s.voiceName)
+            .putString("voiceTurnMode", s.voiceTurnMode)
+            .putInt("voiceSilenceMs", s.voiceSilenceMs)
+            .putInt("voiceSessionMinutes", s.voiceSessionMinutes)
+            .putInt("voiceDailyMinutes", s.voiceDailyMinutes)
+            .putBoolean("voiceBlurText", s.voiceBlurText)
             .apply()
         _state.value = s
     }

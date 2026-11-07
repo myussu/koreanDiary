@@ -55,6 +55,7 @@ import com.jorge.koreandiary.settings.DarkPaper
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.settings.SecretStore
+import com.jorge.koreandiary.voice.TurnMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -71,6 +72,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     var azureDeployment by remember { mutableStateOf(s.azureDeployment) }
     var azureLimit by remember { mutableStateOf(s.azureDailyLimit.toString()) }
     var modelStatus by remember { mutableStateOf<String?>(null) }
+    var voiceModel by remember { mutableStateOf(s.voiceModel) }
+    var voiceName by remember { mutableStateOf(s.voiceName) }
+    var voiceDaily by remember { mutableStateOf(s.voiceDailyMinutes.toString()) }
 
     fun save() = container.settings.update {
         it.copy(
@@ -82,6 +86,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             azureEndpoint = azureEndpoint.trim(),
             azureDeployment = azureDeployment.trim(),
             azureDailyLimit = azureLimit.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+            voiceModel = voiceModel.trim().ifEmpty { "gemini-3.8-live" },
+            voiceName = voiceName.trim().ifEmpty { "Kore" },
+            voiceDailyMinutes = voiceDaily.toIntOrNull()?.coerceAtLeast(1) ?: 30,
         )
     }
 
@@ -252,6 +259,49 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             )
             Text("Usadas hoy: ${container.settings.usageToday(ProviderId.AZURE)}", style = MaterialTheme.typography.bodySmall)
             TestConnection(container, ProviderId.AZURE, beforeTest = ::save)
+        }
+
+        Section("Conversación") {
+            Text(
+                "Usa la Live API de Gemini con la misma clave del diario. Las pistas, traducciones y la revisión final usan tu proveedor de corrección.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text("Turnos", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppToggle("Pulsar para hablar", s.voiceTurnMode == TurnMode.PUSH_TO_TALK) {
+                    container.settings.update { it.copy(voiceTurnMode = TurnMode.PUSH_TO_TALK) }
+                }
+                AppToggle("Automático", s.voiceTurnMode == TurnMode.AUTO) {
+                    container.settings.update { it.copy(voiceTurnMode = TurnMode.AUTO) }
+                }
+            }
+            Text(
+                if (s.voiceTurnMode == TurnMode.AUTO) "La IA responde tras un silencio. Si dudas mucho, súbelo; con audífonos funciona mejor."
+                else "Pulsas «Hablar» y luego «Listo»: la IA no te corta aunque pienses un minuto.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (s.voiceTurnMode == TurnMode.AUTO) {
+                Text("Silencio antes de responder", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(1000, 2000, 3000, 4000).forEach { ms ->
+                        AppToggle("${ms / 1000} s", s.voiceSilenceMs == ms) { container.settings.update { it.copy(voiceSilenceMs = ms) } }
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Texto de la IA borroso")
+                    Text("Se ve al tocarlo: practicas escuchar en lugar de leer.", style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = s.voiceBlurText, onCheckedChange = { v -> container.settings.update { it.copy(voiceBlurText = v) } })
+            }
+            OutlinedTextField(value = voiceModel, onValueChange = { voiceModel = it }, label = { Text("Modelo de voz") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Text("gemini-3.8-live (rápido y barato) o gemini-3.8-live-extended-thinking (razona más, ~4 veces más caro).", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(value = voiceName, onValueChange = { voiceName = it }, label = { Text("Voz (Kore, Puck, Charon, Aoede…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = voiceDaily, onValueChange = { voiceDaily = it.filter(Char::isDigit) },
+                label = { Text("Minutos de conversación por día") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         Section("Fuentes") {
