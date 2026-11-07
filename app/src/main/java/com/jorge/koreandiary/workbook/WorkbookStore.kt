@@ -15,7 +15,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 
-/** Una página de workbook: foto, pistas de la IA y revisión de lo que escribiste. */
+/** Una página de un libro (workbook, student book u otro): foto, pistas de la IA y revisión de lo que escribiste. */
 data class WorkbookSession(
     val id: Long,
     val createdAt: Long,
@@ -29,6 +29,8 @@ data class WorkbookSession(
     val fsrsApplied: Boolean = false,
     val reviewedItems: Int = 0,
     val exerciseCount: Int = 0,
+    /** Gramática de la lección con la que se pidieron las pistas; null = la detectó la IA. */
+    val focus: String? = null,
 )
 
 /**
@@ -123,6 +125,7 @@ class WorkbookStore(private val context: Context) {
                 fsrsApplied = o.optBoolean("fsrsApplied"),
                 reviewedItems = o.optInt("reviewedItems"),
                 exerciseCount = o.optInt("exerciseCount"),
+                focus = o.optString("focus").ifBlank { null },
             )
         } catch (e: org.json.JSONException) {
             null
@@ -141,6 +144,7 @@ class WorkbookStore(private val context: Context) {
             .put("fsrsApplied", s.fsrsApplied)
             .put("reviewedItems", s.reviewedItems)
             .put("exerciseCount", s.exerciseCount)
+            .put("focus", s.focus ?: "")
         File(dir(s.id).apply { mkdirs() }, "session.json").writeText(o.toString())
     }
 

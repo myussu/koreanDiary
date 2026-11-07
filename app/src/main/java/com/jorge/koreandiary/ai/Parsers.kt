@@ -176,7 +176,8 @@ object WorkbookParser {
             val f = o.str("f") ?: return@mapObjects null
             WorkbookGrammar(form = f, meaning = o.str("s"), focus = isTrue(o.opt("foco")), where = o.str("d"))
         }.distinctBy { it.form }
-        if (exercises.isEmpty()) throw ParseException("No se encontraron ejercicios en la respuesta.")
+        // Una página de explicación (student book) puede no tener ejercicios: basta con su gramática o vocabulario.
+        if (exercises.isEmpty() && grammar.isEmpty() && vocab.isEmpty()) throw ParseException("No se encontraron ejercicios ni gramática en la respuesta.")
         return WorkbookHints(exercises, vocab, grammar, unit(json.opt("unidad")))
     }
 

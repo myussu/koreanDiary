@@ -63,6 +63,8 @@ data class AppSettings(
     val reminderEnabled: Boolean = false,
     val reminderHour: Int = 20,
     val reminderMinute: Int = 0,
+    /** Última gramática de la lección elegida en el workbook ("" = que la IA la detecte). */
+    val lessonGrammar: String = "",
 ) {
     /** Grosor del trazo en dp (independiente de la densidad de la pantalla). */
     val penWidthDp: Float get() = when (penWidth) {
@@ -110,6 +112,7 @@ class SettingsStore(context: Context) {
         reminderEnabled = prefs.getBoolean("reminderEnabled", false),
         reminderHour = prefs.getInt("reminderHour", 20),
         reminderMinute = prefs.getInt("reminderMinute", 0),
+        lessonGrammar = prefs.getString("lessonGrammar", "") ?: "",
     )
 
     fun update(transform: (AppSettings) -> AppSettings) {
@@ -135,6 +138,7 @@ class SettingsStore(context: Context) {
             .putBoolean("reminderEnabled", s.reminderEnabled)
             .putInt("reminderHour", s.reminderHour)
             .putInt("reminderMinute", s.reminderMinute)
+            .putString("lessonGrammar", s.lessonGrammar)
             .apply()
         _state.value = s
     }

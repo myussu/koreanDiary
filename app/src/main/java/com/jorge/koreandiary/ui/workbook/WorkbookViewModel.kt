@@ -13,6 +13,8 @@ import com.jorge.koreandiary.ai.ShareFlow
 import com.jorge.koreandiary.ai.WorkbookHints
 import com.jorge.koreandiary.ai.WorkbookParser
 import com.jorge.koreandiary.ai.WorkbookReview
+import com.jorge.koreandiary.data.ItemSource
+import com.jorge.koreandiary.data.db.GrammarPoint
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.workbook.WorkbookSession
 import kotlinx.coroutines.CancellationException
@@ -43,6 +45,10 @@ data class WorkbookUiState(
     val knownGrammar: Set<String> = emptySet(),
     /** Gramáticas marcadas para agregar a tu lista. */
     val grammarSelection: Set<String> = emptySet(),
+    /** Gramática de la lección que practicas; null = que la IA la detecte en la página. */
+    val focus: String? = null,
+    /** Tu lista de gramática, para el buscador del selector. */
+    val myGrammar: List<GrammarPoint> = emptyList(),
 )
 
 class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long) : ViewModel() {
@@ -69,22 +75,45 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
         viewModelScope.launch {
             val session = c.workbook.load(sessionId) ?: return@launch
             val hints = session.hintsRaw?.let { raw -> runCatching { WorkbookParser.parseHints(raw) }.getOrNull() }
+            val myGrammar = c.study.allGrammarPoints()
             _state.update {
                 it.copy(
                     session = session,
                     hints = hints,
                     review = session.reviewRaw?.let { raw -> runCatching { WorkbookParser.parseReview(raw) }.getOrNull() },
+                    myGrammar = myGrammar,
+                    // Con pistas ya pedidas, la de esa vez; si no, la última que practicaste (otra página del mismo capítulo).
+                    focus = if (hints != null) session.focus else defaultFocus(myGrammar),
                 )
             }
             hints?.let { refreshPageGrammar(it) }
         }
     }
 
+    // ---------- Gramática de la lección ----------
+
+    /** La última elegida; si nunca elegiste, la última que agregaste desde una página; si no, que la IA la detecte. */
+    private fun defaultFocus(myGrammar: List<GrammarPoint>): String? =
+        c.settings.state.value.lessonGrammar.ifBlank { null }
+            ?: myGrammar.filter { it.source == ItemSource.WORKBOOK }.maxByOrNull { it.id }?.pattern
+
+    /** Elegir la gramática que practicas (null = detectar en la página). Se recuerda para las páginas siguientes. */
+    fun setFocus(pattern: String?) {
+        _state.update { it.copy(focus = pattern) }
+        c.settings.update { it.copy(lessonGrammar = pattern ?: "") }
+    }
+
+    /** Las agregadas más recientemente, para elegir con un toque. */
+    val recentGrammar: List<GrammarPoint>
+        get() = _state.value.myGrammar.sortedByDescending { it.id }.take(6)
+
     // ---------- Gramática de la página ----------
 
     /** Marca cuáles ya tienes y preselecciona las de la lección (las "foco") que aún no están en tu lista. */
     private suspend fun refreshPageGrammar(hints: WorkbookHints) {
-        val known = c.study.knownGrammar(hints.grammar.map { it.form })
+        // También las de las pistas, para marcar las que salen de tu lista.
+        val forms = hints.grammar.map { it.form } + hints.exercises.flatMap { e -> e.hints.filter { it.isGrammar }.map { it.form } }
+        val known = c.study.knownGrammar(forms.distinct())
         _state.update { st ->
             st.copy(
                 knownGrammar = known,
@@ -106,12 +135,25 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
         viewModelScope.launch {
             val added = c.study.registerWorkbookGrammar(chosen, hints.unit)
             refreshPageGrammar(hints)
+            // La de la lección (★) pasa a ser la que practicas: las páginas siguientes ya la traen elegida.
+            val lesson = chosen.firstOrNull { it.focus }?.let { added[it.form] }?.pattern
+            if (lesson != null) {
+                c.settings.update { it.copy(lessonGrammar = lesson) }
+                val session = _state.value.session
+                if (session != null && session.focus == null) {
+                    val updated = session.copy(focus = lesson)
+                    c.workbook.save(updated)
+                    _state.update { it.copy(session = updated, focus = lesson) }
+                }
+            }
+            val myGrammar = c.study.allGrammarPoints()
             _state.update {
                 it.copy(
-                    message = when (added) {
+                    myGrammar = myGrammar,
+                    message = when (added.size) {
                         0 -> "Ya estaban en tu lista."
                         1 -> "1 gramática agregada a tu lista. El diario te la va a sugerir."
-                        else -> "$added gramáticas agregadas a tu lista. El diario te las va a sugerir."
+                        else -> "${added.size} gramáticas agregadas a tu lista. El diario te las va a sugerir."
                     }
                 )
             }
@@ -154,13 +196,23 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 return@launch
             }
             val prompt = when (stage) {
-                WorkbookStage.HINTS -> Prompts.workbookHints(settings.level, settings.standardLevel)
+                WorkbookStage.HINTS -> {
+                    // Se guarda con qué gramática se pidieron, para la revisión y para reabrir la sesión.
+                    if (session.focus != st.focus) {
+                        val updated = session.copy(focus = st.focus)
+                        c.workbook.save(updated)
+                        _state.update { it.copy(session = updated) }
+                    }
+                    val previous = c.study.previousGrammar(settings.grammarLevelList, st.focus, System.currentTimeMillis())
+                    Prompts.workbookHints(settings.level, settings.standardLevel, st.focus, previous)
+                }
                 WorkbookStage.REVIEW -> {
                     val hints = st.hints ?: run {
                         _state.update { it.copy(message = "Primero pide las pistas de la página.") }
                         return@launch
                     }
-                    Prompts.workbookReview(settings.level, settings.standardLevel, hints.exercises)
+                    val lesson = listOfNotNull(_state.value.session?.focus).ifEmpty { hints.grammar.filter { it.focus }.map { it.form } }
+                    Prompts.workbookReview(settings.level, settings.standardLevel, hints.exercises, lesson)
                 }
             }
             val photo = c.workbook.file(session.id, photoName)
@@ -225,9 +277,10 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 )
                 c.workbook.save(updated)
                 val vocabNote = if (added > 0) " $added palabras de la página pasaron a tu vocabulario." else ""
-                val grammarNote = if (hints.grammar.isNotEmpty()) " Elige arriba qué gramática agregar a tu lista." else ""
+                val grammarNote = if (hints.grammar.isNotEmpty()) " Elige qué gramática agregar a tu lista." else ""
+                val exercisesNote = if (hints.exercises.isEmpty()) "Página sin ejercicios." else "${hints.exercises.size} ejercicios con pistas."
                 _state.update {
-                    it.copy(session = updated, hints = hints, busy = null, message = "${hints.exercises.size} ejercicios con pistas.$vocabNote$grammarNote")
+                    it.copy(session = updated, hints = hints, busy = null, message = "$exercisesNote$vocabNote$grammarNote")
                 }
                 refreshPageGrammar(hints)
             }

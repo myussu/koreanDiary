@@ -76,36 +76,59 @@ object Prompts {
     """.trimIndent()
 
     /** Workbook, paso 1: pistas por ejercicio a partir de la foto de la página. */
-    fun workbookHints(level: String, standardLevel: Int): String = """
-        Eres profesor de coreano. La imagen es una página de un workbook de coreano que un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) va a resolver a mano. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+    /**
+     * Página de cualquier libro (student book, workbook u otro), paso 1: gramática de la página y,
+     * si hay ejercicios, pistas para combinar la gramática de la lección con lo que ya estudiaste.
+     * [focus]: la gramática que el estudiante dice que practica, o null para que la IA la deduzca.
+     * [previous]: patrones que ya estudió (máx. ~30), para que las pistas salgan de su lista.
+     */
+    fun workbookHints(level: String, standardLevel: Int, focus: String?, previous: List<String>): String = buildString {
+        appendLine("Eres profesor de coreano. La imagen es una página de un libro de coreano (student book, workbook u otro) de un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정). Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine()
+        if (focus.isNullOrBlank()) {
+            appendLine("GRAMÁTICA DE LA LECCIÓN: no se indicó. Dedúcela de la página (título, recuadros o lo que piden los ejercicios) y márcala con \"foco\" en \"gram\".")
+        } else {
+            appendLine("GRAMÁTICA DE LA LECCIÓN (la eligió el estudiante): $focus")
+        }
+        if (previous.isNotEmpty()) {
+            appendLine("GRAMÁTICAS QUE YA ESTUDIÓ: ${previous.joinToString(" · ")}")
+        }
+        appendLine()
+        appendLine(
+            """
+            1. "ejercicios": cada ejercicio o pregunta por completar, en orden. "n": el número como aparece en la página ("1", "2-3", "(4)"). "e": qué pide, en español, máximo 15 palabras. Si la página no tiene ejercicios (p. ej. una explicación), devuelve [] y llena igual "vocab" y "gram".
+            2. "p": de 1 a 3 pistas por ejercicio. El estudiante ya entiende la gramática de la lección y la va a usar: NO la des como pista. Propón cómo enriquecer la MISMA oración combinándola con otra cosa: una gramática que ya estudió (prioriza las de su lista), un conector, o un sustantivo o verbo útil. Son sugerencias opcionales. NO des la respuesta. Cada pista:
+               - "f": la forma. Gramática en notación estándar (-느라고, -더라고요, -을 텐데); palabras en forma de diccionario.
+               - "t": g (gramática), c (conector), x (expresión), n (sustantivo), v (verbo), a (adjetivo), adv (adverbio).
+               - "u": para qué sirve y cómo combinarla con la gramática de la lección en este ejercicio, en español, 1 o 2 frases.
+               - "k": un ejemplo corto en coreano que use la pista y la gramática de la lección juntas, distinto al ejercicio.
+               - "en": la traducción del ejemplo al inglés.
+            3. "r": una respuesta modelo que use la gramática de la lección y, si encaja, una de las pistas (se mostrará escondida).
+            4. "vocab": las palabras de vocabulario impresas en la página (listas, recuadros, alrededor y dentro de las preguntas), sobre todo sustantivos, en forma de diccionario. "t" como arriba y "s": significado en español. Sin gramática ni partículas.
+            5. "gram": TODAS las gramáticas, conectores y expresiones gramaticales impresas en la página (título, recuadros, ejemplos, instrucciones, preguntas y textos), sin repetir, en notación estándar (-느라고, -(으)ㄹ 텐데, N만 하다). Omite las básicas: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -았/었-. Cada una:
+               - "f": la forma.
+               - "s": significado en español, máximo 8 palabras.
+               - "foco": true si es la gramática que enseña esta lección: resaltada arriba o en el título, en un recuadro de explicación, o la que practican la mayoría de los ejercicios. Si no, false. Puede haber más de una o ninguna.
+               - "d": dónde aparece: titulo, recuadro, ejercicios, instrucciones o texto.
+            6. "unidad": el número de la unidad o lección si se ve en la página (5 para "5과" o "Unit 5"); si no, null.
 
-        1. "ejercicios": cada ejercicio o pregunta por completar, en orden. "n": el número como aparece en la página ("1", "2-3", "(4)"). "e": qué pide, en español, máximo 15 palabras.
-        2. "p": de 1 a 3 pistas por ejercicio: gramáticas, conectores, formas de construir la oración o sustantivos que encajen. NO des la respuesta en las pistas. Cada pista:
-           - "f": la forma. Gramática en notación estándar (-느라고, -더라고요, -을 텐데); palabras en forma de diccionario.
-           - "t": g (gramática), c (conector), x (expresión), n (sustantivo), v (verbo), a (adjetivo), adv (adverbio).
-           - "u": para qué sirve y en qué situación se usa, en español, 1 o 2 frases.
-           - "k": un ejemplo corto en coreano, distinto al ejercicio.
-           - "en": la traducción del ejemplo al inglés.
-        3. "r": una respuesta modelo del ejercicio (se mostrará escondida).
-        4. "vocab": las palabras de vocabulario impresas en la página (listas, recuadros, alrededor y dentro de las preguntas), sobre todo sustantivos, en forma de diccionario. "t" como arriba y "s": significado en español. Sin gramática ni partículas.
-        5. "gram": TODAS las gramáticas, conectores y expresiones gramaticales impresas en la página (título, recuadros, ejemplos, instrucciones, preguntas y textos), sin repetir, en notación estándar (-느라고, -(으)ㄹ 텐데, N만 하다). Omite las básicas: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -았/었-. Cada una:
-           - "f": la forma.
-           - "s": significado en español, máximo 8 palabras.
-           - "foco": true si es la gramática que enseña esta lección: resaltada arriba o en el título, en un recuadro de explicación, o la que practican la mayoría de los ejercicios. Si no, false. Puede haber más de una o ninguna.
-           - "d": dónde aparece: titulo, recuadro, ejercicios, instrucciones o texto.
-        6. "unidad": el número de la unidad o lección si se ve en la página (5 para "5과" o "Unit 5"); si no, null.
-
-        FORMATO:
-        {"ejercicios": [{"n": "1", "e": "...", "p": [{"f": "-느라고", "t": "g", "u": "...", "k": "...", "en": "..."}], "r": "..."}], "vocab": [{"f": "미용실", "t": "n", "s": "peluquería"}], "gram": [{"f": "-느라고", "s": "por estar haciendo (causa negativa)", "foco": true, "d": "titulo"}], "unidad": 5}
-    """.trimIndent()
+            FORMATO:
+            {"ejercicios": [{"n": "1", "e": "...", "p": [{"f": "-는데", "t": "c", "u": "...", "k": "...", "en": "..."}], "r": "..."}], "vocab": [{"f": "미용실", "t": "n", "s": "peluquería"}], "gram": [{"f": "-느라고", "s": "por estar haciendo (causa negativa)", "foco": true, "d": "titulo"}], "unidad": 5}
+            """.trimIndent()
+        )
+    }
 
     /**
      * Workbook, paso 2: revisa lo que el estudiante escribió. Se mandan los ejercicios y pistas
      * del paso 1 (texto corto) para que la IA no tenga que volver a interpretar la página entera.
      */
-    fun workbookReview(level: String, standardLevel: Int, exercises: List<WorkbookExercise>): String = buildString {
-        appendLine("Eres profesor de coreano. La imagen muestra las respuestas que un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6) escribió a mano en una página de workbook. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+    fun workbookReview(level: String, standardLevel: Int, exercises: List<WorkbookExercise>, lesson: List<String> = emptyList()): String = buildString {
+        appendLine("Eres profesor de coreano. La imagen muestra las respuestas que un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6) escribió a mano en una página de su libro. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
+        if (lesson.isNotEmpty()) {
+            appendLine("GRAMÁTICA DE LA LECCIÓN (solo contexto): ${lesson.joinToString(" · ")}. Las pistas eran sugerencias opcionales: no exijas usarlas. Si eligió otra conexión válida, evalúala igual por si está bien y es natural.")
+            appendLine()
+        }
         appendLine("EJERCICIOS DE LA PÁGINA (n | qué pide | pistas que vio):")
         exercises.forEach { e -> appendLine("${e.number} | ${e.ask} | ${e.hints.joinToString(", ") { it.form }}") }
         appendLine()

@@ -5,6 +5,7 @@ import com.jorge.koreandiary.ai.ImportPayload
 import com.jorge.koreandiary.ai.PromptItem
 import com.jorge.koreandiary.ai.UsedItemDto
 import com.jorge.koreandiary.ai.WorkbookGrammar
+import com.jorge.koreandiary.workbook.LessonContext
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
@@ -316,11 +317,11 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
 
     /**
      * Gramática que elegiste de una página del workbook (p. ej. la que enseña la lección).
-     * Entra a tu lista sin contar como repaso, para que el diario te la sugiera. Devuelve cuántas se agregaron.
+     * Entra a tu lista sin contar como repaso, para que el diario te la sugiera. Devuelve lo agregado por forma de la página.
      */
-    suspend fun registerWorkbookGrammar(items: List<WorkbookGrammar>, unit: Int?): Int {
+    suspend fun registerWorkbookGrammar(items: List<WorkbookGrammar>, unit: Int?): Map<String, GrammarPoint> {
         val mine = study.allGrammar().toMutableList()
-        var added = 0
+        val added = linkedMapOf<String, GrammarPoint>()
         for (g in items.distinctBy { it.form.trim() }) {
             val form = g.form.trim()
             if (form.isEmpty() || findMine(form, mine) != null) continue
@@ -338,10 +339,24 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
                 meaning = g.meaning ?: std?.meaning?.takeIf { it.isNotBlank() },
                 source = ItemSource.WORKBOOK,
             )
-            mine += point.copy(id = study.insertGrammar(point))
-            added++
+            val stored = point.copy(id = study.insertGrammar(point))
+            mine += stored
+            added[g.form] = stored
         }
         return added
+    }
+
+    suspend fun allGrammarPoints(): List<GrammarPoint> = study.allGrammar()
+
+    /**
+     * Gramáticas que ya estudiaste (las de tus niveles, las detectadas y las que practicaste),
+     * para que la IA proponga combinaciones con ellas. Ver [LessonContext.previousGrammar].
+     */
+    suspend fun previousGrammar(levels: List<String>, focus: String?, now: Long): List<String> {
+        val poolIds = study.grammarIdsForLevels(levels).toSet()
+        val states = memory.allOfType(ItemType.GRAMMAR).associateBy { it.itemId }
+        val pool = study.allGrammar().filter { it.id in poolIds || it.id in states }
+        return withContext(Dispatchers.Default) { LessonContext.previousGrammar(pool, states, focus, now) }
     }
 
     private data class Resolved(val ref: ItemRef, val isNew: Boolean, val wasSuggested: Boolean)

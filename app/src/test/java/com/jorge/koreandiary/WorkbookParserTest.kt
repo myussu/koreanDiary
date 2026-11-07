@@ -70,6 +70,13 @@ class WorkbookParserTest {
         assertTrue(r.used[0].isGrammar)
     }
 
+    @Test
+    fun explanationPageWithoutExercisesKeepsItsGrammar() {
+        val r = WorkbookParser.parseHints("""{"ejercicios": [], "vocab": [], "gram": [{"f": "-느라고", "s": "causa", "foco": true, "d": "recuadro"}], "unidad": 3}""")
+        assertTrue(r.exercises.isEmpty())
+        assertEquals("-느라고", r.grammar.single().form)
+    }
+
     @Test(expected = ParseException::class)
     fun hintsWithoutExercisesFail() {
         WorkbookParser.parseHints("""{"ejercicios": [], "vocab": []}""")

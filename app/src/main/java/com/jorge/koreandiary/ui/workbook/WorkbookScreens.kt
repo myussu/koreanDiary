@@ -20,6 +20,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedTextField
+import com.jorge.koreandiary.data.db.GrammarPoint
+import com.jorge.koreandiary.workbook.GrammarSearch
 import androidx.compose.ui.semantics.Role
 import com.jorge.koreandiary.ai.WorkbookGrammar
 import androidx.compose.foundation.clickable
@@ -88,7 +91,8 @@ fun WorkbookListScreen(container: AppContainer, onBack: () -> Unit, onOpen: (Lon
             Text("Workbook", style = MaterialTheme.typography.titleLarge)
         }
         Text(
-            "Toma una foto de una página: la IA te da pistas por ejercicio (gramática, conectores, sustantivos) con su uso y un ejemplo. " +
+            "Sirve para cualquier página de tu libro (student book o workbook). La IA detecta su gramática y tú eliges cuál agregar a tu lista. " +
+                "Si tiene ejercicios, te da pistas para combinar la gramática de la lección con las que ya estudiaste. " +
                 "Después fotografías lo que escribiste y te dice qué está bien, qué corregir y cómo lo diría un coreano.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(vertical = 8.dp),
@@ -172,6 +176,13 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
 
         // Paso 1: la página.
         StepHeader("1. La página")
+        LessonPicker(
+            focus = state.focus,
+            recent = vm.recentGrammar,
+            all = state.myGrammar,
+            enabled = state.busy == null,
+            onSelect = vm::setFocus,
+        )
         val pagePhoto = vm.photoFile(session?.pagePhoto)
         if (pagePhoto != null) PhotoPreview(pagePhoto)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -179,8 +190,11 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
                 Text(if (pagePhoto == null) "Tomar foto" else "Otra foto")
             }
             AppOutlinedButton(onClick = { pickPhoto(WorkbookStage.HINTS) }, enabled = state.busy == null) { Text("Galería") }
-            if (pagePhoto != null && state.hints == null) {
-                AppOutlinedButton(onClick = { vm.request(WorkbookStage.HINTS) }, enabled = state.busy == null) { Text("Pedir pistas") }
+        }
+        // Sin pistas aún, o cambiaste la gramática de la lección después de pedirlas.
+        if (pagePhoto != null && (state.hints == null || state.focus != session?.focus)) {
+            AppOutlinedButton(onClick = { vm.request(WorkbookStage.HINTS) }, enabled = state.busy == null) {
+                Text(if (state.hints == null) "Pedir pistas" else "Pedir pistas otra vez con esta gramática")
             }
         }
 
@@ -215,7 +229,7 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
                     onAdd = vm::addSelectedGrammar,
                 )
             }
-            hints.exercises.forEach { ex -> ExerciseCard(ex, reviewByNumber[ex.number]) }
+            hints.exercises.forEach { ex -> ExerciseCard(ex, reviewByNumber[ex.number], state.knownGrammar) }
             if (hints.vocab.isNotEmpty()) {
                 Text(
                     "Vocabulario de la página: " + hints.vocab.joinToString(" · ") { v -> v.form + (v.meaning?.let { ": $it" } ?: "") },
@@ -224,24 +238,32 @@ fun WorkbookSessionScreen(container: AppContainer, sessionId: Long, onBack: () -
                 )
             }
 
-            // Paso 2: revisar lo escrito.
-            StepHeader("2. Tus respuestas")
-            Text(
-                "Resuelve los ejercicios en tu workbook y tómales una foto. Lo que escribiste cuenta para tu repaso" +
-                    if (session?.fsrsApplied == true) " (ya se contó en la primera revisión)." else ".",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            val reviewPhoto = vm.photoFile(session?.reviewPhoto)
-            if (reviewPhoto != null) PhotoPreview(reviewPhoto)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AppButton(onClick = { takePhoto(WorkbookStage.REVIEW) }, enabled = state.busy == null) {
-                    Text(if (state.review == null) "Foto de mis respuestas" else "Revisar otra vez")
+            if (hints.exercises.isEmpty()) {
+                Text(
+                    "Esta página no tiene ejercicios: solo se detectó su gramática y vocabulario.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            } else {
+                // Paso 2: revisar lo escrito.
+                StepHeader("2. Tus respuestas")
+                Text(
+                    "Resuelve los ejercicios en tu libro y tómales una foto. Lo que escribiste cuenta para tu repaso" +
+                        if (session?.fsrsApplied == true) " (ya se contó en la primera revisión)." else ".",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                val reviewPhoto = vm.photoFile(session?.reviewPhoto)
+                if (reviewPhoto != null) PhotoPreview(reviewPhoto)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppButton(onClick = { takePhoto(WorkbookStage.REVIEW) }, enabled = state.busy == null) {
+                        Text(if (state.review == null) "Foto de mis respuestas" else "Revisar otra vez")
+                    }
+                    AppOutlinedButton(onClick = { pickPhoto(WorkbookStage.REVIEW) }, enabled = state.busy == null) { Text("Galería") }
                 }
-                AppOutlinedButton(onClick = { pickPhoto(WorkbookStage.REVIEW) }, enabled = state.busy == null) { Text("Galería") }
-            }
-            // Respuestas que la IA no pudo asociar a un ejercicio de las pistas.
-            state.review?.items?.filter { it.number !in hints.exercises.map { e -> e.number } }?.forEach { item ->
-                Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { ReviewBlock(item) } }
+                // Respuestas que la IA no pudo asociar a un ejercicio de las pistas.
+                state.review?.items?.filter { it.number !in hints.exercises.map { e -> e.number } }?.forEach { item ->
+                    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { ReviewBlock(item) } }
+                }
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -367,8 +389,93 @@ private fun PageGrammarCard(
     }
 }
 
+/**
+ * "¿Qué gramática practicas?": viene elegida la última; se cambia con un toque entre las recientes,
+ * con el buscador (ignora guiones, A/V/N y (으)) o dejando que la IA la detecte en la página.
+ */
 @Composable
-private fun ExerciseCard(ex: WorkbookExercise, review: WorkbookReviewItem?) {
+private fun LessonPicker(
+    focus: String?,
+    recent: List<GrammarPoint>,
+    all: List<GrammarPoint>,
+    enabled: Boolean,
+    onSelect: (String?) -> Unit,
+) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val scheme = MaterialTheme.colorScheme
+    val current = remember(focus, all) { focus?.let { f -> all.firstOrNull { it.pattern == f } } }
+    fun choose(pattern: String?) {
+        onSelect(pattern)
+        open = false
+        query = ""
+    }
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("GRAMÁTICA QUE PRACTICAS", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    focus ?: "Detectar en la página",
+                    fontSize = 18.sp,
+                    fontWeight = if (focus != null) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (focus != null) scheme.onSurface else scheme.onSurfaceVariant,
+                )
+                current?.meaning?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+            }
+            AppTextButton(onClick = { open = !open }, enabled = enabled) { Text(if (open) "Cerrar" else "Cambiar") }
+        }
+        if (open) {
+            Text(
+                "Las pistas no te la repiten: la combinan con gramáticas que ya estudiaste.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppTag("Detectar en la página", selected = focus == null, fontSize = 15.sp) { choose(null) }
+                recent.forEach { g -> AppTag(g.pattern, selected = g.pattern == focus, fontSize = 15.sp) { choose(g.pattern) } }
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Buscar en tu lista (느라, 텐데, causa…)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (query.isNotBlank()) {
+                val results = remember(query, all) { GrammarSearch.search(query, all, limit = 8) }
+                if (results.isEmpty()) {
+                    Text(
+                        "No está en tu lista. Elige “Detectar en la página” y agrégala desde la foto.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                results.forEach { g ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { choose(g.pattern) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(g.pattern, fontSize = 17.sp)
+                            g.meaning?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+                        }
+                        Text(
+                            listOfNotNull(g.level, g.unit?.let { "u. $it" }).joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseCard(ex: WorkbookExercise, review: WorkbookReviewItem?, known: Set<String>) {
     var showAnswer by remember(ex.number) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
     Card(Modifier.fillMaxWidth()) {
@@ -379,7 +486,11 @@ private fun ExerciseCard(ex: WorkbookExercise, review: WorkbookReviewItem?) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppTag(h.form, accent = h.isGrammar, fontSize = 16.sp)
-                        Text(h.kind, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                        Text(
+                            h.kind + if (h.form in known) " · de tu lista" else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (h.form in known) scheme.secondary else scheme.onSurfaceVariant,
+                        )
                     }
                     if (h.use.isNotBlank()) Text(h.use, style = MaterialTheme.typography.bodySmall)
                     if (h.example.isNotBlank()) Text(h.example, fontSize = 17.sp)
