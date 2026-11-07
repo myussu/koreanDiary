@@ -115,6 +115,8 @@ data class ConvUiState(
     val tokensTotal: Long = 0,
     val contextTokens: Int = 0,
     val turnMode: String = TurnMode.PUSH_TO_TALK,
+    /** Objetivo que la IA acaba de pedir con su pregunta: flota en pantalla hasta que respondas. */
+    val floating: String? = null,
     // Revisión
     val record: ConversationRecord? = null,
     val edits: Map<Int, String> = emptyMap(),
@@ -148,6 +150,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private var autoHintLineId = -1
     private val speech by lazy { KoreanSpeech(c.app) }
     private var reconnections = 0
+    private var highlighted = mutableListOf<String>()
+    /** Ya empezaste a responder la pregunta del objetivo que flota. */
+    private var floatingAnswered = false
 
     init {
         val s = c.settings.state.value
@@ -246,6 +251,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         quietSince = 0L
         autoHintLineId = -1
         reconnections = 0
+        highlighted = mutableListOf()
 
         speaker = AudioOut(viewModelScope)
         val live = LiveSession(key, viewModelScope) { handle, minimal ->
@@ -253,6 +259,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 model = s.voiceModel, voice = s.voiceName, systemInstruction = system,
                 turnMode = s.voiceTurnMode, silenceMs = s.voiceSilenceMs,
                 vocabulary = vocabulary, resumeHandle = handle, minimal = minimal,
+                highlightTool = targets.isNotEmpty(),
             )
         }
         session = live
@@ -260,7 +267,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             it.copy(
                 stage = ConvStage.Live, status = "Conectando…", connected = false, lines = emptyList(),
                 talking = false, muted = false, aiSpeaking = false, elapsedSec = 0, totalSec = total,
-                panel = CoachPanel.None, tokensTotal = 0, contextTokens = 0, turnMode = s.voiceTurnMode,
+                panel = CoachPanel.None, tokensTotal = 0, contextTokens = 0, turnMode = s.voiceTurnMode, floating = null,
                 review = null, reviewError = null, record = null, message = null,
             )
         }
@@ -301,6 +308,15 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 closeLines()
             }
             LiveEvent.TurnComplete -> closeLines(Speaker.AI)
+            is LiveEvent.ToolCall -> {
+                session?.send(LiveProtocol.toolResponse(e.id, e.name))
+                val ref = e.args["ref"]?.trim()
+                if (e.name == LiveProtocol.TOOL_HIGHLIGHT && ref != null && _state.value.targets.any { it.ref == ref }) {
+                    highlighted += ref
+                    floatingAnswered = false
+                    _state.update { it.copy(floating = ref) }
+                }
+            }
             is LiveEvent.Usage -> _state.update {
                 it.copy(tokensTotal = it.tokensTotal + e.total, contextTokens = maxOf(e.prompt, 0))
             }
@@ -309,14 +325,31 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Las transcripciones llegan en trozos: se suman a la línea abierta del mismo hablante. */
-    private fun append(speaker: Speaker, text: String) = _state.update { st ->
+    private fun append(speaker: Speaker, text: String) {
+        val before = _state.value
+        val startsLine = before.lines.lastOrNull()?.let { it.speaker != speaker || !it.open } ?: true
+        // El objetivo flota hasta que respondes y la IA vuelve a hablar. La llamada de la IA puede
+        // llegar antes o después de su texto, por eso se marca primero que empezaste a responder.
+        var clearFloating = false
+        if (startsLine && before.floating != null) {
+            if (speaker == Speaker.USER) floatingAnswered = true
+            else if (floatingAnswered) {
+                clearFloating = true
+                floatingAnswered = false
+            }
+        }
+        appendLine(speaker, text, clearFloating)
+    }
+
+    private fun appendLine(speaker: Speaker, text: String, clearFloating: Boolean) = _state.update { st ->
         val last = st.lines.lastOrNull()
+        val floating = if (clearFloating) null else st.floating
         val lines = if (last != null && last.speaker == speaker && last.open) {
             st.lines.dropLast(1) + last.copy(text = last.text + text)
         } else {
             st.lines.map { if (it.open) it.copy(open = false) else it } + UiLine(nextLineId++, speaker, text.trimStart(), open = true)
         }
-        st.copy(lines = lines)
+        st.copy(lines = lines, floating = floating)
     }
 
     private fun closeLines(only: Speaker? = null) = _state.update { st ->
@@ -532,6 +565,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             durationSec = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt(),
             lines = lines,
             lookups = lookups.toList(),
+            highlighted = highlighted.toList(),
             hintsUsed = hintsUsed,
             autoHints = autoHints,
             tokensTotal = st.tokensTotal,
@@ -543,7 +577,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         _state.update {
             it.copy(
                 stage = ConvStage.Review, record = saved, edits = editsFor(saved), review = null,
-                reviewError = null, reviewing = false, panel = CoachPanel.None, talking = false, connected = false,
+                reviewError = null, reviewing = false, panel = CoachPanel.None, talking = false, connected = false, floating = null,
             )
         }
         // appScope: se guarda aunque la pantalla se cierre en este momento.

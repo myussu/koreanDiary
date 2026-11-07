@@ -6,16 +6,23 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,6 +54,7 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -269,15 +277,43 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
             AppOutlinedButton(onClick = { vm.end() }) { Text("Terminar") }
         }
         if (st.activeTargets.isNotEmpty()) {
+            // El objetivo que la IA acaba de pedir va primero y flota (sube y baja) hasta que respondas.
+            val ordered = st.activeTargets.sortedByDescending { it.ref == st.floating }
+            val bob = rememberInfiniteTransition(label = "flotar")
+            val lift by bob.animateFloat(
+                initialValue = 0f, targetValue = -6f,
+                animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse), label = "altura",
+            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()),
+                // El espacio va dentro del scroll: si no, el recorte cortaría el objetivo al subir.
+                modifier = Modifier.padding(top = 2.dp).horizontalScroll(rememberScrollState()).padding(top = 8.dp),
             ) {
-                st.activeTargets.forEach { t ->
+                ordered.forEach { t ->
                     val seen = t.kind != "gramática" && ConversationMath.wordSeen(t.label, userText)
                     val open = (st.panel as? CoachPanel.TargetShown)?.item?.ref == t.ref
-                    AppTag(if (seen) "✓ ${t.label}" else t.label, selected = open, accent = seen, onClick = { vm.showTarget(t.ref) })
+                    val floating = t.ref == st.floating
+                    Box(if (floating) Modifier.offset { IntOffset(0, lift.dp.roundToPx()) } else Modifier) {
+                        AppTag(
+                            when {
+                                floating -> "↑ ${t.label}"
+                                seen -> "✓ ${t.label}"
+                                else -> t.label
+                            },
+                            selected = open || floating,
+                            accent = seen,
+                            onClick = { vm.showTarget(t.ref) },
+                        )
+                    }
                 }
+            }
+            if (st.floating != null) {
+                Text(
+                    "Buena oportunidad para usar «${st.targets.firstOrNull { it.ref == st.floating }?.label.orEmpty()}». Tócalo si no recuerdas qué significa.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
         }
 

@@ -93,4 +93,24 @@ class LiveProtocolTest {
         assertEquals(listOf(LiveEvent.InputText("저는"), LiveEvent.Interrupted), LiveProtocol.parse("""{"serverContent": {"inputTranscription": {"text": "저는"}, "interrupted": true}}"""))
         assertTrue(LiveProtocol.parse("no es json").isEmpty())
     }
+
+    @Test
+    fun highlightToolDeclaredOnlyWhenAskedAndNotMinimal() {
+        val withTool = JSONObject(LiveProtocol.setup(config(TurnMode.AUTO).copy(highlightTool = true))).getJSONObject("setup")
+        val decl = withTool.getJSONArray("tools").getJSONObject(0).getJSONArray("functionDeclarations").getJSONObject(0)
+        assertEquals(LiveProtocol.TOOL_HIGHLIGHT, decl.getString("name"))
+        assertEquals("NON_BLOCKING", decl.getString("behavior"))
+        assertFalse(JSONObject(LiveProtocol.setup(config(TurnMode.AUTO))).getJSONObject("setup").has("tools"))
+        assertFalse(JSONObject(LiveProtocol.setup(config(TurnMode.AUTO, minimal = true).copy(highlightTool = true))).getJSONObject("setup").has("tools"))
+    }
+
+    @Test
+    fun parsesToolCallAndBuildsSilentResponse() {
+        val events = LiveProtocol.parse("""{"toolCall": {"functionCalls": [{"id": "c1", "name": "highlight_target", "args": {"ref": "w12"}}]}}""")
+        assertEquals(listOf(LiveEvent.ToolCall("c1", "highlight_target", mapOf("ref" to "w12"))), events)
+        val r = JSONObject(LiveProtocol.toolResponse("c1", "highlight_target")).getJSONObject("toolResponse")
+            .getJSONArray("functionResponses").getJSONObject(0)
+        assertEquals("c1", r.getString("id"))
+        assertEquals("SILENT", r.getJSONObject("response").getString("scheduling"))
+    }
 }

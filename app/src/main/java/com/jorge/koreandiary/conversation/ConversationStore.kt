@@ -29,6 +29,8 @@ data class ConversationRecord(
     val lines: List<Line> = emptyList(),
     /** Objetivos de repaso que se le pasaron al modelo de voz. */
     val targets: List<PromptItem> = emptyList(),
+    /** Objetivos que la IA resaltó (flotaron) durante la sesión, en orden. */
+    val highlighted: List<String> = emptyList(),
     /** Palabras que tocaste para traducir: "forma: significado". */
     val lookups: List<String> = emptyList(),
     val hintsUsed: Int = 0,
@@ -133,6 +135,7 @@ class ConversationStore(context: Context) {
                 r.targets.forEach { put(JSONObject().put("ref", it.ref).put("label", it.label).put("kind", it.kind)) }
             })
             .put("lookups", JSONArray(r.lookups))
+            .put("highlighted", JSONArray(r.highlighted))
             .put("hintsUsed", r.hintsUsed)
             .put("autoHints", r.autoHints)
             .put("drillPassed", r.drillPassed)
@@ -147,6 +150,7 @@ class ConversationStore(context: Context) {
             val lines = o.optJSONArray("lines")
             val targets = o.optJSONArray("targets")
             val lookups = o.optJSONArray("lookups")
+            val highlighted = o.optJSONArray("highlighted")
             return ConversationRecord(
                 id = o.getLong("id"),
                 startedAt = o.optLong("startedAt", o.getLong("id")),
@@ -161,6 +165,7 @@ class ConversationStore(context: Context) {
                     targets!!.optJSONObject(i)?.let { PromptItem(it.optString("ref"), it.optString("label"), it.optString("kind")) }
                 },
                 lookups = (0 until (lookups?.length() ?: 0)).map { lookups!!.optString(it) },
+                highlighted = (0 until (highlighted?.length() ?: 0)).map { highlighted!!.optString(it) },
                 hintsUsed = o.optInt("hintsUsed"),
                 autoHints = o.optInt("autoHints"),
                 drillPassed = o.optInt("drillPassed"),

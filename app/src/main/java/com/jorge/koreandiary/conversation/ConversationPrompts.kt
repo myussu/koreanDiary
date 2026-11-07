@@ -79,8 +79,9 @@ object ConversationPrompts {
         }
         if (targets.isNotEmpty()) {
             appendLine()
-            appendLine("PRACTICE TARGETS — vocabulary and grammar he is reviewing. Ask questions whose natural answer needs them, one at a time. Do not name them, do not quiz him, do not translate them unless he asks:")
-            targets.forEach { appendLine("- ${it.label} (${it.kind})") }
+            appendLine("PRACTICE TARGETS — vocabulary and grammar he is reviewing. Ask questions whose natural answer needs them, one at a time. Do not name them, do not quiz him, do not translate them unless he asks.")
+            appendLine("Whenever you ask such a question, call highlight_target with that target's id at the same time (the app shows it to him). Never say the id.")
+            targets.forEach { appendLine("- ${it.ref}: ${it.label} (${it.kind})") }
         }
         appendLine()
         append("Start: greet him in Korean and ask your first question about the topic.")

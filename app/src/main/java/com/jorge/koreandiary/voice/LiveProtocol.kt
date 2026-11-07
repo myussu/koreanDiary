@@ -25,8 +25,10 @@ data class LiveConfig(
     val languageCodes: List<String> = listOf("ko-KR", "es-US"),
     /** Token de reanudación: retoma la misma conversación en una conexión nueva. */
     val resumeHandle: String? = null,
-    /** Sin opciones de transcripción: plan B si el servidor rechaza la configuración completa. */
+    /** Sin opciones de transcripción ni herramientas: plan B si el servidor rechaza la configuración completa. */
     val minimal: Boolean = false,
+    /** Declarar la herramienta [LiveProtocol.TOOL_HIGHLIGHT] (hay objetivos de repaso). */
+    val highlightTool: Boolean = false,
 )
 
 /** Lo que llega del servidor, ya interpretado. */
@@ -45,6 +47,8 @@ sealed interface LiveEvent {
     data class ResumeHandle(val handle: String) : LiveEvent
     /** El servidor va a cerrar la conexión pronto (unos 10 minutos por conexión). */
     data class GoAway(val timeLeftMs: Long?) : LiveEvent
+    /** El modelo llamó a una función (p. ej. resaltar un objetivo). Hay que responderle. */
+    data class ToolCall(val id: String, val name: String, val args: Map<String, String>) : LiveEvent
 }
 
 /**
@@ -62,6 +66,36 @@ object LiveProtocol {
      */
     const val TRIGGER_TOKENS = 48_000
     const val TARGET_TOKENS = 24_000
+
+    /**
+     * Función que el modelo llama cuando hace una pregunta pensada para un objetivo de repaso:
+     * la app hace "flotar" ese objetivo en pantalla. No bloquea la conversación y la respuesta
+     * es silenciosa, así que el modelo sigue hablando como si nada.
+     */
+    const val TOOL_HIGHLIGHT = "highlight_target"
+
+    private fun highlightDeclaration() = JSONObject()
+        .put("name", TOOL_HIGHLIGHT)
+        .put(
+            "description",
+            "Call this at the same moment you ask a question whose natural answer could use one of the " +
+                "learner's practice targets, so the app can show that target on his screen. Never mention it.",
+        )
+        .put("behavior", "NON_BLOCKING")
+        .put(
+            "parameters",
+            JSONObject()
+                .put("type", "OBJECT")
+                .put("properties", JSONObject().put("ref", JSONObject().put("type", "STRING").put("description", "Target id, e.g. w12 or g3")))
+                .put("required", JSONArray().put("ref")),
+        )
+
+    /** Respuesta a una llamada de función: "SILENT" = el modelo no reacciona, solo lo sabe. */
+    fun toolResponse(id: String, name: String): String {
+        val response = JSONObject().put("id", id).put("name", name)
+            .put("response", JSONObject().put("result", "ok").put("scheduling", "SILENT"))
+        return JSONObject().put("toolResponse", JSONObject().put("functionResponses", JSONArray().put(response))).toString()
+    }
 
     /** Máximo de términos para la transcripción: la documentación dice que rinde mejor hasta ~100. */
     const val MAX_VOCABULARY = 100
@@ -110,6 +144,9 @@ object LiveProtocol {
                     .put("slidingWindow", JSONObject().put("targetTokens", TARGET_TOKENS)),
             )
             .put("sessionResumption", JSONObject().apply { c.resumeHandle?.let { put("handle", it) } })
+        if (c.highlightTool && !c.minimal) {
+            setup.put("tools", JSONArray().put(JSONObject().put("functionDeclarations", JSONArray().put(highlightDeclaration()))))
+        }
         return JSONObject().put("setup", setup).toString()
     }
 
@@ -173,6 +210,14 @@ object LiveProtocol {
         o.optJSONObject("sessionResumptionUpdate")?.let { u ->
             val handle = u.optString("newHandle")
             if (u.optBoolean("resumable") && handle.isNotEmpty()) events += LiveEvent.ResumeHandle(handle)
+        }
+        o.optJSONObject("toolCall")?.optJSONArray("functionCalls")?.let { calls ->
+            for (i in 0 until calls.length()) {
+                val call = calls.optJSONObject(i) ?: continue
+                val args = call.optJSONObject("args")
+                val map = args?.keys()?.asSequence()?.associateWith { args.optString(it) }.orEmpty()
+                events += LiveEvent.ToolCall(call.optString("id"), call.optString("name"), map)
+            }
         }
         if (o.has("goAway")) events += LiveEvent.GoAway(durationMs(o.optJSONObject("goAway")?.opt("timeLeft")))
         o.optJSONObject("usageMetadata")?.let { u ->
