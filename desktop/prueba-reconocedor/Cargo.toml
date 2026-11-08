@@ -1,0 +1,31 @@
+# Prueba aislada del reconocedor de escritura de Windows para la versión de escritorio.
+# Versiones verificadas el 2026-11-08 en crates.io.
+[package]
+name = "prueba-reconocedor"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+tiny_http = "0.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+
+# El crate `windows` 0.62 no reexporta colecciones, async ni matrices: van como crates propios,
+# en las mismas versiones que usa `windows` internamente.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Foundation",
+    "Foundation_Collections",
+    "Foundation_Numerics",
+    "UI_Input_Inking",
+    "Win32_System_WinRT",
+] }
+windows-core = "0.62.2"
+windows-collections = "0.3.2"
+windows-future = "0.3.2"
+windows-numerics = "0.3.1"
+
+[profile.release]
+opt-level = 3
+strip = true

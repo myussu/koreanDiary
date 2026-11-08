@@ -3,6 +3,10 @@ name: APK
 on:
   push:
     branches: [main]
+    # La prueba de escritorio no cambia el APK: no publica un "latest" nuevo para el celular.
+    paths-ignore:
+      - "desktop/**"
+      - ".github/workflows/prueba-reconocedor.yml"
   pull_request:
   workflow_dispatch:
 

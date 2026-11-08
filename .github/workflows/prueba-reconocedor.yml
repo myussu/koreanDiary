@@ -1,0 +1,61 @@
+name: Prueba del reconocedor (Windows)
+
+# Compila en Windows la prueba del reconocedor de escritura y la publica en el release
+# "prueba-reconocedor" (enlace fijo, aparte del release "latest" del APK).
+on:
+  push:
+    paths:
+      - "desktop/prueba-reconocedor/**"
+      - ".github/workflows/prueba-reconocedor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prueba-reconocedor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop/prueba-reconocedor
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust estable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      # En Windows sí se compila el código WinRT: aquí se verifica de verdad.
+      - name: Tests y compilación
+        run: |
+          cargo test --locked
+          cargo build --release --locked
+
+      - name: Preparar ejecutable
+        run: cp target/release/prueba-reconocedor.exe ../../prueba-reconocedor.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prueba-reconocedor-${{ github.run_number }}
+          path: prueba-reconocedor.exe
+
+      - name: Publicar release "prueba-reconocedor"
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          gh release delete prueba-reconocedor --yes --cleanup-tag || true
+          gh release create prueba-reconocedor prueba-reconocedor.exe \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Prueba del reconocedor (${GITHUB_SHA::7})" \
+            --notes "Ejecutable de prueba del reconocedor de escritura de Windows. Rama ${GITHUB_REF_NAME}, commit ${GITHUB_SHA::7}: ${COMMIT_MSG}"

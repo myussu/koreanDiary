@@ -11,3 +11,6 @@
 .kotlin/
 *.apk
 *.aab
+
+# Escritorio (Rust)
+/desktop/**/target/
