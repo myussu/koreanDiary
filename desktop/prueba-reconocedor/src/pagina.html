@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prueba del reconocedor · 일기</title>
+<style>
+  :root {
+    --fondo: #f4f1ea; --papel: #fffdf8; --tinta: #1f2a44; --renglon: #d9d2c3; --texto: #22252b;
+    --suave: #6b6f78; --borde: #c9c3b6; --acento: #2f5d8a; --acento-texto: #fff; --malo: #a33a2c;
+    --bien: #2e7d4f; --chip: #ebe6db;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #16181c; --papel: #1f2227; --tinta: #e8e4da; --renglon: #3a3e46; --texto: #e6e6e6;
+      --suave: #9aa0aa; --borde: #3c4049; --acento: #7fb0e0; --acento-texto: #0d1420; --malo: #e07a6a;
+      --bien: #7cc79a; --chip: #2a2e35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.45 system-ui, "Segoe UI", "Malgun Gothic", sans-serif; }
+  header { padding: 14px 20px 6px; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .suave { color: var(--suave); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 8px 20px 24px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .barra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  button, select, label.boton {
+    font: inherit; color: var(--texto); background: var(--papel); border: 1px solid var(--borde);
+    border-radius: 0; padding: 6px 12px; cursor: pointer;
+  }
+  button.principal { background: var(--acento); color: var(--acento-texto); border-color: var(--acento); font-weight: 600; }
+  button[aria-pressed="true"] { outline: 2px solid var(--acento); outline-offset: -2px; }
+  button:disabled { opacity: .5; cursor: default; }
+  select { max-width: 340px; }
+  #hojaCaja { background: var(--papel); border: 1px solid var(--borde); overflow: auto; max-height: calc(100vh - 170px); }
+  canvas { display: block; touch-action: none; cursor: crosshair; }
+  .panel { background: var(--papel); border: 1px solid var(--borde); padding: 12px 14px; margin-bottom: 12px; }
+  .panel h2 { font-size: 14px; margin: 0 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
+  textarea { width: 100%; min-height: 70px; font: 16px/1.5 "Malgun Gothic", system-ui, sans-serif; background: var(--fondo);
+    color: var(--texto); border: 1px solid var(--borde); border-radius: 0; padding: 6px 8px; resize: vertical; }
+  .linea { border-top: 1px solid var(--borde); padding: 8px 0; }
+  .linea:first-child { border-top: 0; padding-top: 0; }
+  .linea .cab { display: flex; justify-content: space-between; font-size: 12px; color: var(--suave); }
+  .linea .txt { font: 22px/1.35 "Malgun Gothic", system-ui, sans-serif; margin: 2px 0 4px; word-break: keep-all; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { background: var(--chip); padding: 1px 6px; font-size: 13px; }
+  .chip b { font-weight: 600; }
+  .ok { color: var(--bien); } .mal { color: var(--malo); }
+  #aviso { display: none; border: 1px solid var(--malo); color: var(--malo); padding: 10px 14px; margin: 0 20px 8px; background: var(--papel); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 3px 4px; border-top: 1px solid var(--borde); }
+  th { color: var(--suave); font-weight: 500; }
+  #info { font-size: 13px; }
+  kbd { border: 1px solid var(--borde); padding: 0 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prueba del reconocedor de escritura</h1>
+  <span class="suave">Motor de Windows · todo local, nada sale a internet</span>
+</header>
+<div id="aviso"></div>
+<main>
+  <section>
+    <div class="barra">
+      <button class="principal" id="btnReconocer" title="Ctrl+Enter">Reconocer</button>
+      <button id="btnModo" title="Cómo se manda la tinta al reconocedor">Modo: línea por línea</button>
+      <button id="btnBorrador" aria-pressed="false" title="También funciona la goma del lápiz">Borrador</button>
+      <button id="btnDeshacer" title="Ctrl+Z">Deshacer</button>
+      <button id="btnLimpiar">Borrar todo</button>
+      <label class="boton"><input type="checkbox" id="soloLapiz"> Solo lápiz</label>
+      <button id="btnGuardar">Guardar muestra</button>
+      <label class="boton">Cargar muestra<input type="file" id="archivo" accept=".json,application/json" hidden></label>
+    </div>
+    <div id="hojaCaja"><canvas id="hoja"></canvas></div>
+    <p class="suave" id="info">Escribe en coreano entre los renglones, una oración por renglón, como en el celular.
+      <kbd>Ctrl</kbd>+<kbd>Enter</kbd> reconoce · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace.</p>
+  </section>
+  <aside>
+    <div class="panel">
+      <h2>Reconocedor</h2>
+      <select id="selRec"></select>
+      <div id="lapiz" class="suave" style="margin-top:6px;font-size:13px">Lápiz: aún no se detectó.</div>
+    </div>
+    <div class="panel">
+      <h2>Lo que escribí (opcional)</h2>
+      <textarea id="esperado" placeholder="Una línea por renglón, p. ej.&#10;오늘은 친구를 만났어요"></textarea>
+      <div class="suave" style="font-size:12px">Si lo llenas, se mide el acierto (sin contar espacios).</div>
+    </div>
+    <div class="panel">
+      <h2>Resultado</h2>
+      <div id="resultado" class="suave">Aún no hay resultado.</div>
+    </div>
+    <div class="panel">
+      <h2>Pruebas de esta sesión</h2>
+      <table><thead><tr><th>Hora</th><th>Modo</th><th>Líneas</th><th>ms</th><th>Acierto</th></tr></thead>
+        <tbody id="historial"></tbody></table>
+    </div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const hoja = $("hoja"), ctx = hoja.getContext("2d"), caja = $("hojaCaja");
+
+const st = {
+  trazos: [],          // [{puntos: [{x, y, t, p}], tipo}] con x, y normalizadas al ancho de la hoja
+  actual: null,
+  altoLinea: 64 / 412, // relativo al ancho, como en el celular
+  ancho: 0,
+  modo: "lineas",
+  borrador: false,
+  ocupado: false,
+};
+
+// ---------- Hoja ----------
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+function lineasNecesarias() {
+  let max = 0;
+  for (const t of st.trazos) for (const p of t.puntos) max = Math.max(max, p.y / st.altoLinea);
+  return Math.max(8, Math.floor(max) + 4);
+}
+
+function dimensionar() {
+  const ancho = Math.min(caja.clientWidth - 2, 1000);
+  st.ancho = Math.max(320, ancho);
+  const alto = Math.round(lineasNecesarias() * st.altoLinea * st.ancho);
+  const dpr = window.devicePixelRatio || 1;
+  hoja.style.width = st.ancho + "px";
+  hoja.style.height = alto + "px";
+  hoja.width = Math.round(st.ancho * dpr);
+  hoja.height = Math.round(alto * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dibujar();
+}
+
+function grosor(p) {
+  const base = st.altoLinea * st.ancho * 0.045;
+  return base * Math.min(1.6, Math.max(0.4, 0.4 + 1.2 * Math.min(1, Math.max(0, p))));
+}
+
+function dibujarTrazo(t) {
+  const w = st.ancho, pts = t.puntos;
+  ctx.strokeStyle = ctx.fillStyle = css("--tinta");
+  ctx.lineCap = ctx.lineJoin = "round";
+  if (pts.length === 1) {
+    ctx.beginPath(); ctx.arc(pts[0].x * w, pts[0].y * w, grosor(pts[0].p) / 2, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  for (let i = 1; i < pts.length; i++) {
+    ctx.lineWidth = grosor((pts[i - 1].p + pts[i].p) / 2);
+    ctx.beginPath();
+    ctx.moveTo(pts[i - 1].x * w, pts[i - 1].y * w);
+    ctx.lineTo(pts[i].x * w, pts[i].y * w);
+    ctx.stroke();
+  }
+}
+
+function dibujar() {
+  const w = st.ancho, h = hoja.height / (window.devicePixelRatio || 1), alto = st.altoLinea * w;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = css("--renglon"); ctx.lineWidth = 1;
+  ctx.fillStyle = css("--suave"); ctx.font = "11px system-ui";
+  for (let k = 0; k * alto < h; k++) {
+    if (k > 0) { ctx.beginPath(); ctx.moveTo(0, k * alto + .5); ctx.lineTo(w, k * alto + .5); ctx.stroke(); }
+    ctx.fillText(String(k + 1), 4, k * alto + 14);
+  }
+  for (const t of st.trazos) dibujarTrazo(t);
+  if (st.actual) dibujarTrazo(st.actual);
+}
+
+// ---------- Lápiz ----------
+function punto(ev) {
+  const r = hoja.getBoundingClientRect();
+  let p = ev.pressure;
+  if (ev.pointerType === "mouse" || !(p > 0)) p = 0.5; // el ratón no tiene presión
+  return {
+    x: (ev.clientX - r.left) / st.ancho,
+    y: (ev.clientY - r.top) / st.ancho,
+    t: Math.round(performance.timeOrigin + ev.timeStamp),
+    p,
+  };
+}
+
+function esGoma(ev) { return ev.pointerType === "pen" && (ev.button === 5 || (ev.buttons & 32)); }
+
+function borrarCerca(pt) {
+  const radio = st.altoLinea * 0.18;
+  const antes = st.trazos.length;
+  st.trazos = st.trazos.filter((t) => !t.puntos.some((q) => Math.hypot(q.x - pt.x, q.y - pt.y) < radio));
+  if (st.trazos.length !== antes) dibujar();
+}
+
+hoja.addEventListener("pointerdown", (ev) => {
+  if ($("soloLapiz").checked && ev.pointerType !== "pen") return;
+  // Si la captura falla (puntero que ya se soltó), el trazo sigue igual dentro de la hoja.
+  try { hoja.setPointerCapture(ev.pointerId); } catch (_) {}
+  ev.preventDefault();
+  const pt = punto(ev);
+  if (st.borrador || esGoma(ev)) { st.actual = { id: ev.pointerId, goma: true, puntos: [] }; borrarCerca(pt); return; }
+  st.actual = { id: ev.pointerId, tipo: ev.pointerType, puntos: [pt] };
+  dibujar();
+});
+
+hoja.addEventListener("pointermove", (ev) => {
+  const a = st.actual;
+  if (!a || ev.pointerId !== a.id) return;
+  const eventos = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [ev];
+  for (const e of (eventos.length ? eventos : [ev])) {
+    const pt = punto(e);
+    if (a.goma) { borrarCerca(pt); continue; }
+    const prev = a.puntos[a.puntos.length - 1];
+    a.puntos.push(pt);
+    const w = st.ancho;
+    ctx.strokeStyle = css("--tinta"); ctx.lineCap = "round";
+    ctx.lineWidth = grosor((prev.p + pt.p) / 2);
+    ctx.beginPath(); ctx.moveTo(prev.x * w, prev.y * w); ctx.lineTo(pt.x * w, pt.y * w); ctx.stroke();
+  }
+});
+
+function terminar(ev) {
+  const a = st.actual;
+  if (!a || ev.pointerId !== a.id) return;
+  st.actual = null;
+  if (a.goma || !a.puntos.length) return;
+  st.trazos.push(a);
+  const ps = a.puntos.map((q) => q.p);
+  const min = Math.min(...ps), max = Math.max(...ps);
+  const real = a.tipo === "pen" && max - min > 0.02;
+  $("lapiz").innerHTML = `Último trazo: <b>${a.tipo === "pen" ? "lápiz" : a.tipo === "mouse" ? "ratón" : a.tipo}</b> · ` +
+    `presión ${min.toFixed(2)}–${max.toFixed(2)} ` +
+    (a.tipo === "pen" ? (real ? '<span class="ok">✓ llega la presión</span>'
+      : '<span class="mal">sin presión real (¿“Usar Windows Ink” desactivado?)</span>') : "");
+  if (lineasNecesarias() * st.altoLinea * st.ancho > parseFloat(hoja.style.height) + 1) dimensionar(); else dibujar();
+}
+hoja.addEventListener("pointerup", terminar);
+hoja.addEventListener("pointercancel", terminar);
+
+// ---------- Botones ----------
+function aJson() {
+  const r = (v, n) => Math.round(v * n) / n;
+  return { v: 2, s: st.trazos.map((t) => t.puntos.flatMap((q) => [r(q.x, 1e4), r(q.y, 1e4), q.t, r(q.p, 100)])) };
+}
+
+function desdeJson(obj) {
+  let tinta = obj.tinta ?? obj;
+  if (typeof tinta === "string") tinta = JSON.parse(tinta);
+  const lista = Array.isArray(tinta) ? tinta : tinta.s;
+  const paso = Array.isArray(tinta) ? 3 : ((tinta.v ?? 2) >= 2 ? 4 : 3);
+  if (!Array.isArray(lista)) throw new Error("No encuentro los trazos (campo \"s\")");
+  st.trazos = lista.map((a) => {
+    const puntos = [];
+    for (let j = 0; j + paso - 1 < a.length; j += paso)
+      puntos.push({ x: a[j], y: a[j + 1], t: a[j + 2], p: paso === 4 ? a[j + 3] : 0.5 });
+    return { tipo: "muestra", puntos };
+  }).filter((t) => t.puntos.length);
+  if (obj.altoLinea > 0) st.altoLinea = obj.altoLinea;
+  if (typeof obj.esperado === "string") $("esperado").value = obj.esperado;
+}
+
+$("btnDeshacer").onclick = () => { st.trazos.pop(); dibujar(); };
+$("btnLimpiar").onclick = () => { if (!st.trazos.length || confirmarBorrado()) { st.trazos = []; dimensionar(); } };
+function confirmarBorrado() { return window.confirm("¿Borrar toda la hoja?"); }
+$("btnBorrador").onclick = () => { st.borrador = !st.borrador; $("btnBorrador").setAttribute("aria-pressed", st.borrador); };
+$("btnModo").onclick = () => {
+  st.modo = st.modo === "lineas" ? "pagina" : "lineas";
+  $("btnModo").textContent = "Modo: " + (st.modo === "lineas" ? "línea por línea" : "página entera");
+};
+$("btnGuardar").onclick = () => {
+  const datos = { ...aJson(), altoLinea: st.altoLinea, esperado: $("esperado").value, origen: "escritorio", creado: new Date().toISOString() };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(datos)], { type: "application/json" }));
+  a.download = "muestra-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("archivo").onchange = async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  try { desdeJson(JSON.parse(await f.text())); dimensionar(); }
+  catch (e) { alertar("No pude leer la muestra: " + e.message); }
+  ev.target.value = "";
+};
+$("btnReconocer").onclick = reconocer;
+document.addEventListener("keydown", (ev) => {
+  if (ev.ctrlKey && ev.key === "Enter") { ev.preventDefault(); reconocer(); }
+  else if (ev.ctrlKey && ev.key.toLowerCase() === "z" && document.activeElement.tagName !== "TEXTAREA") { ev.preventDefault(); $("btnDeshacer").click(); }
+});
+
+// ---------- Reconocer ----------
+function alertar(msg) { const a = $("aviso"); a.textContent = msg; a.style.display = msg ? "block" : "none"; }
+
+function levenshtein(a, b) {
+  a = [...a]; b = [...b];
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function acierto(obtenido, esperado) {
+  const a = obtenido.replace(/\s+/g, ""), b = esperado.replace(/\s+/g, "");
+  if (!b.length) return null;
+  return Math.max(0, 1 - levenshtein(a, b) / Math.max(a.length, b.length));
+}
+const pct = (v) => v == null ? "—" : Math.round(v * 100) + " %";
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function reconocer() {
+  if (st.ocupado) return;
+  if (!st.trazos.length) { alertar("La hoja está vacía."); return; }
+  st.ocupado = true; $("btnReconocer").disabled = true; alertar("");
+  $("resultado").textContent = "Reconociendo…";
+  try {
+    const r = await fetch("/api/reconocer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tinta: aJson(), altoLinea: st.altoLinea, reconocedor: $("selRec").value, modo: st.modo }),
+    });
+    const d = await r.json();
+    if (!d.ok) { $("resultado").textContent = ""; alertar(d.error || "Error desconocido"); return; }
+    mostrar(d);
+  } catch (e) {
+    $("resultado").textContent = "";
+    alertar("No hay conexión con el programa. ¿Cerraste la ventana negra? Ábrelo de nuevo. (" + e.message + ")");
+  } finally {
+    st.ocupado = false; $("btnReconocer").disabled = false;
+  }
+}
+
+function mostrar(d) {
+  const esperadas = $("esperado").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  const esPagina = d.modo === "pagina";
+  let html = "", aciertos = [];
+  d.lineas.forEach((l, i) => {
+    const esperado = esPagina ? esperadas.join(" ") : (esperadas[i] ?? "");
+    const ac = esperado ? acierto(l.texto, esperado) : null;
+    if (ac != null) aciertos.push(ac);
+    const chips = l.palabras.map((p) => `<span class="chip"><b>${esc(p.candidatas[0])}</b>` +
+      (p.candidatas.length > 1 ? " · " + p.candidatas.slice(1, 4).map(esc).join(" · ") : "") + "</span>").join("");
+    html += `<div class="linea"><div class="cab"><span>${esPagina ? "Página entera" : "Renglón " + (l.linea + 1)}</span>` +
+      `<span>${l.ms} ms${ac != null ? ` · <b class="${ac >= .9 ? "ok" : ac < .7 ? "mal" : ""}">${pct(ac)}</b>` : ""}</span></div>` +
+      `<div class="txt">${esc(l.texto)}</div><div class="chips">${chips}</div>` +
+      (ac != null && ac < 1 ? `<div class="suave" style="font-size:13px">Esperado: ${esc(esperado)}</div>` : "") + "</div>";
+  });
+  if (!d.lineas.length) html = '<span class="suave">Windows no reconoció texto.</span>';
+  const media = aciertos.length ? aciertos.reduce((a, b) => a + b, 0) / aciertos.length : null;
+  $("resultado").innerHTML = `<div class="suave" style="font-size:12px;margin-bottom:6px">${esc(d.reconocedor)} · ${d.trazos} trazos · ${d.msTotal} ms en total</div>` + html;
+  const fila = document.createElement("tr");
+  fila.innerHTML = `<td>${new Date().toLocaleTimeString()}</td><td>${esPagina ? "página" : "líneas"}</td>` +
+    `<td>${d.lineas.length}</td><td>${Math.round(d.msTotal)}</td><td>${pct(media)}</td>`;
+  $("historial").prepend(fila);
+}
+
+// ---------- Inicio ----------
+async function iniciar() {
+  try {
+    const d = await (await fetch("/api/estado")).json();
+    if (d.altoLinea > 0) st.altoLinea = d.altoLinea;
+    const sel = $("selRec");
+    sel.innerHTML = "";
+    for (const n of d.reconocedores) {
+      const o = document.createElement("option");
+      o.value = o.textContent = n;
+      if (n === d.coreano) o.selected = true;
+      sel.appendChild(o);
+    }
+    if (d.error) alertar(d.error);
+    else if (!d.coreano) alertar("Windows no tiene el reconocedor coreano. Instálalo en Configuración → Hora e idioma → " +
+      "Idioma y región → Coreano → Opciones de idioma → Escritura a mano, y vuelve a abrir el programa.");
+  } catch (e) {
+    alertar("No pude hablar con el programa: " + e.message);
+  }
+  dimensionar();
+}
+window.addEventListener("resize", dimensionar);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", dibujar);
+iniciar();
+</script>
+</body>
+</html>
