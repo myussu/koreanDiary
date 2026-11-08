@@ -60,6 +60,12 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 - **Tonos** (`Earcons`, generados): inicio, tu turno, sigue, cargando (cada 2,5 s mientras espera), error y fin.
 - **Pendiente (parte 2):** micrófono de los audífonos Bluetooth solo en las pausas y audio guardado para volver a escuchar (últimas 5 sesiones y las marcadas).
 
+## Escritorio (en prueba)
+
+- **Plan:** versión para Windows con Kotlin Multiplatform (lógica y pantallas compartidas con Android); escritura con tableta; sincronización P2P sin servidor central (por definir, candidato: iroh).
+- **Reconocimiento:** ML Kit no existe en escritorio. Candidato: el reconocedor de escritura de Windows (`Windows.UI.Input.Inking`, coreano como función opcional de Windows), que también trabaja con trazos. Se llama desde una pequeña biblioteca en Rust (crate `windows`), porque la JVM no accede a WinRT. Respaldo: Gemini con la imagen de la página.
+- **Prueba aislada:** `desktop/prueba-reconocedor` (Rust + página local) mide si funciona fuera de una app empaquetada, el acierto con tu letra y el tiempo por renglón. Release propio `prueba-reconocedor`; no toca el release `latest` del APK.
+
 ## Distribución y actualizaciones
 
 - GitHub Actions compila en cada push a `main`; el número de compilación es el `versionCode` (`0.1.N`).
