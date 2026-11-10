@@ -36,15 +36,35 @@ jobs:
           path: app/schemas
           if-no-files-found: warn
 
-      # Si la compilación cambió el esquema de la base y ese cambio no está en el repo, no se publica:
-      # o se cambió una entidad sin subir la versión (la app instalada no abriría su base),
-      # o falta agregar el JSON de la versión nueva.
+      # Si la compilación deja el esquema de la base distinto al del repo, no se publica.
+      # - Un JSON que ya existía cambió: se tocó una entidad sin subir la versión. La app instalada
+      #   no abriría su base. Siempre falla.
+      # - Hay un JSON nuevo (versión nueva): en un pull request se agrega solo a la rama, porque aquí
+      #   no se compila en local; en main falla, para que los cambios de esquema pasen por un PR.
       - name: Verificar el esquema de la base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          if [ -n "$(git status --porcelain -- app/schemas)" ]; then
-            git status --short -- app/schemas
+          [ -z "$(git status --porcelain -- app/schemas)" ] && exit 0
+          git status --short -- app/schemas
+          if ! git diff --quiet -- app/schemas; then
             git --no-pager diff -- app/schemas | head -100
-            echo "::error::El esquema de Room cambió y no está en el repo. Si cambiaste una entidad, sube la versión en AppDatabase.kt y agrega una AutoMigration; luego agrega app/schemas al commit (está en el artefacto room-schemas de esta compilación)."
+            echo "::error::Cambió el esquema de una versión ya publicada de la base. Sube la versión en AppDatabase.kt y agrega una AutoMigration en vez de modificar la versión actual."
+            exit 1
+          fi
+          if [ "$EVENT" = "pull_request" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+            git ls-files --others --exclude-standard -- app/schemas | while read -r f; do
+              gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$f" --silent \
+                -f branch="$HEAD_REF" \
+                -f message="Base de datos: esquema $(basename "$f") generado por la compilación" \
+                -f content="$(base64 -w0 "$f")"
+              echo "::notice::Se agregó $f a la rama $HEAD_REF."
+            done
+          else
+            echo "::error::La compilación generó un esquema nuevo que no está en el repo. Haz el cambio de entidad en un pull request (Actions agrega el JSON a la rama) o agrega app/schemas al commit desde el artefacto room-schemas."
             exit 1
           fi
 
