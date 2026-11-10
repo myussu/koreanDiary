@@ -36,3 +36,5 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 android-application = { id = "com.android.application", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+# Exporta el esquema de la base a app/schemas (historial para migraciones). Misma versión que la librería.
+room3 = { id = "androidx.room3", version.ref = "room3" }

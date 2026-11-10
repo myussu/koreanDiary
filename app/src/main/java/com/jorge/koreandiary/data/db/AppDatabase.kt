@@ -18,9 +18,12 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
         Sentence::class,
         PendingWord::class,
     ],
+    // Al cambiar una entidad (tabla, columna, índice): subir este número y agregar
+    // AutoMigration(from = N, to = N + 1) en autoMigrations. Sin eso, la app instalada no abre su base.
+    // Borrar o renombrar una columna o tabla necesita además un AutoMigrationSpec.
     version = 1,
-    // Sin esquema exportado en el MVP. Cuando haya migraciones, activar y configurar schemaDirectory.
-    exportSchema = false,
+    // El esquema de cada versión queda en app/schemas (ver room3 { } en app/build.gradle.kts) y va al repo.
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun studyDao(): StudyDao

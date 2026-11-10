@@ -2,6 +2,13 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.room3)
+}
+
+// Room escribe aquí el esquema de cada versión de la base (1.json, 2.json...). Va al repo:
+// es lo que permite las migraciones automáticas y lo que revisa GitHub Actions antes de publicar.
+room3 {
+    schemaDirectory("$projectDir/schemas")
 }
 
 // En GitHub Actions el número de compilación es el versionCode: así el actualizador sabe qué es más nuevo.

@@ -29,6 +29,25 @@ jobs:
       - name: Compilar APK y correr tests
         run: ./gradlew --stacktrace assembleDebug testDebugUnitTest
 
+      # El esquema que generó esta compilación, por si hay que agregarlo al repo.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: room-schemas-${{ github.run_number }}
+          path: app/schemas
+          if-no-files-found: warn
+
+      # Si la compilación cambió el esquema de la base y ese cambio no está en el repo, no se publica:
+      # o se cambió una entidad sin subir la versión (la app instalada no abriría su base),
+      # o falta agregar el JSON de la versión nueva.
+      - name: Verificar el esquema de la base
+        run: |
+          if [ -n "$(git status --porcelain -- app/schemas)" ]; then
+            git status --short -- app/schemas
+            git --no-pager diff -- app/schemas | head -100
+            echo "::error::El esquema de Room cambió y no está en el repo. Si cambiaste una entidad, sube la versión en AppDatabase.kt y agrega una AutoMigration; luego agrega app/schemas al commit (está en el artefacto room-schemas de esta compilación)."
+            exit 1
+          fi
+
       - name: Renombrar APK
         run: cp app/build/outputs/apk/debug/app-debug.apk koreandiary.apk
 
