@@ -80,6 +80,10 @@ interface MemoryDao {
 
     @Insert
     suspend fun insertEvent(event: ReviewEvent): Long
+
+    /** Repasos que ya dejó una página: si hay alguno, su uso ya se contó en FSRS. */
+    @Query("SELECT COUNT(*) FROM review_events WHERE pageId = :pageId")
+    suspend fun eventCountForPage(pageId: Long): Int
 }
 
 @Dao
@@ -95,6 +99,9 @@ interface DiaryDao {
 
     @Update
     suspend fun updatePage(page: DiaryPage)
+
+    @Query("UPDATE pages SET status = :status WHERE id = :id")
+    suspend fun setPageStatus(id: Long, status: String)
 
     @Query("SELECT * FROM pages WHERE id = :id LIMIT 1")
     suspend fun page(id: Long): DiaryPage?

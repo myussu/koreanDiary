@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.data
 
+import androidx.room3.withWriteTransaction
 import com.jorge.koreandiary.ai.CorrectionResponse
 import com.jorge.koreandiary.ai.ImportPayload
 import com.jorge.koreandiary.ai.PromptItem
@@ -111,7 +112,8 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         return result
     }
 
-    suspend fun import(payload: ImportPayload, source: String = ItemSource.IMPORT): ImportSummary {
+    /** En una sola transacción: una lista grande entra completa (y de una vez al disco) o no entra. */
+    suspend fun import(payload: ImportPayload, source: String = ItemSource.IMPORT): ImportSummary = db.withWriteTransaction {
         var words = 0
         var grammar = 0
         var dupes = 0
@@ -136,7 +138,7 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             )
             grammar++
         }
-        return ImportSummary(words, grammar, dupes)
+        ImportSummary(words, grammar, dupes)
     }
 
     /**
@@ -184,7 +186,7 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             grammar.map { PromptItem("g${it.id}", it.pattern, "gramática") } + std
     }
 
-    suspend fun approvePendingWord(p: PendingWord, now: Long) {
+    suspend fun approvePendingWord(p: PendingWord, now: Long): Unit = db.withWriteTransaction {
         if (study.findWord(p.baseForm) == null) {
             val id = study.insertWord(Word(baseForm = p.baseForm, type = p.type, meaning = p.meaning, source = ItemSource.DIARY))
             review(ItemRef(ItemType.WORD, id), Fsrs.Rating.GOOD, EventKind.DISCOVERED, now, p.pageId)
@@ -198,10 +200,15 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
      * Aplica la respuesta de la IA: guarda correcciones, mejoras y oraciones, y actualiza FSRS con
      * TODO lo usado. Lo que no está en tu base se busca en el catálogo estándar (para su nivel) y se agrega.
      * FSRS solo se actualiza en la primera revisión de la página, para no contar dos veces.
+     *
+     * Todo va en una transacción, junto con marcar la página como revisada: si la app se cierra a la
+     * mitad no queda nada aplicado, y al reintentar no se cuenta dos veces.
      */
-    suspend fun applyCorrection(page: DiaryPage, response: CorrectionResponse, now: Long): ApplySummary {
+    suspend fun applyCorrection(page: DiaryPage, response: CorrectionResponse, now: Long): ApplySummary = db.withWriteTransaction {
         val diary = db.diaryDao()
-        val firstReview = page.status != PageStatus.REVIEWED
+        // Además del estado se mira si la página ya dejó repasos: el estado viaja con cada guardado de
+        // la tinta, y uno atrasado podría devolverla a "pendiente" con su uso ya contado.
+        val firstReview = page.status != PageStatus.REVIEWED && memory.eventCountForPage(page.id) == 0
 
         diary.deleteCorrections(page.id)
         diary.deleteSentences(page.id)
@@ -230,9 +237,10 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         }
 
         val usage = if (firstReview) {
-            applyUsage(response.used, ItemRef.decodeList(page.suggestedItems).toSet(), now, page.id)
+            registerUsage(response.used, ItemRef.decodeList(page.suggestedItems).toSet(), now, page.id)
         } else UsageSummary()
-        return ApplySummary(response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending, response.improvements.size)
+        diary.setPageStatus(page.id, PageStatus.REVIEWED)
+        ApplySummary(response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending, response.improvements.size)
     }
 
     /**
@@ -269,7 +277,11 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
      * Actualiza FSRS con lo que el estudiante usó (diario o workbook). Lo que no está en su base se crea.
      * [suggested]: lo que vio sugerido (cuenta como "Hard" si lo usa); lo sugerido y no usado se registra sin calificación.
      */
-    suspend fun applyUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary {
+    suspend fun applyUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary =
+        db.withWriteTransaction { registerUsage(used, suggested, now, pageId) }
+
+    /** El trabajo de [applyUsage]. Quien llama ya abrió la transacción. */
+    private suspend fun registerUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary {
         var reviewed = 0
         var newWords = 0
         var newGrammar = 0
@@ -537,7 +549,7 @@ class DiaryRepository(private val db: AppDatabase) {
     suspend fun pendingPages() = diary.pagesWithStatus(PageStatus.PENDING)
 
     /** Borra la página con sus correcciones y oraciones. El historial de FSRS se conserva. */
-    suspend fun deletePage(id: Long) {
+    suspend fun deletePage(id: Long): Unit = db.withWriteTransaction {
         diary.deleteCorrections(id)
         diary.deleteSentences(id)
         diary.deletePage(id)

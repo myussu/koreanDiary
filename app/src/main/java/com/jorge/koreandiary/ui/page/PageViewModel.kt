@@ -44,6 +44,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlin.math.abs
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 sealed interface Phase {
@@ -286,16 +288,28 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         }
     }
 
-    private suspend fun persist(transform: (DiaryPage) -> DiaryPage = { it }): DiaryPage? {
-        val page = _state.value.page ?: return null
+    /**
+     * Un guardado a la vez: cada uno parte de la página que dejó el anterior. Sin esto, un guardado
+     * de la tinta que venía atrasado podía pisar un cambio de estado (p. ej. devolver "revisada" a "pendiente").
+     */
+    private val saveMutex = Mutex()
+
+    private suspend fun persist(transform: (DiaryPage) -> DiaryPage = { it }): DiaryPage? = saveMutex.withLock {
+        if (_state.value.page == null) return@withLock null
+        val strokes = _state.value.strokes
+        val w = width
+        // Serializar la página crece con todo lo escrito: va fuera del hilo principal para no trabar el lápiz.
+        val inkJson = withContext(Dispatchers.Default) { InkSerializer.toJson(strokes, w) }
+        // La página se lee después de serializar, para partir de lo último que haya en pantalla.
+        val page = _state.value.page ?: return@withLock null
         val updated = transform(page).copy(
-            inkJson = InkSerializer.toJson(_state.value.strokes, width),
-            canvasWidth = width.toInt(),
+            inkJson = inkJson,
+            canvasWidth = w.toInt(),
             updatedAt = System.currentTimeMillis(),
         )
         c.diary.save(updated)
         _state.update { it.copy(page = updated) }
-        return updated
+        updated
     }
 
     fun dismissMessage() = _state.update { it.copy(message = null) }
@@ -320,7 +334,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     return@launch
                 }
                 val text = lines.joinToString("\n") { it.text }
-                persist { it.copy(recognizedText = text, reviewedLineCount = lines.maxOf { l -> l.line } + 1) }
+                recognizedForReview = text
+                persist { it.copy(reviewedLineCount = lines.maxOf { l -> l.line } + 1) }
                 setPhase(Phase.Confirm(text))
             } catch (e: Exception) {
                 setPhase(Phase.Writing, "No se pudo reconocer la escritura: ${e.message ?: e.javaClass.simpleName}")
@@ -329,6 +344,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     fun cancelConfirm() = setPhase(Phase.Writing)
+
+    /**
+     * Lo que la app leyó en el "Revisar" en curso. Se guarda en la página recién al confirmar: es la
+     * base con la que "Verificar" distingue lo reescrito de lo que ya estaba, y si se guardara al
+     * pulsar "Revisar", cancelar el diálogo dejaría las reescrituras ya hechas como texto "de antes".
+     */
+    private var recognizedForReview: String? = null
 
     // ---------- Significado y ejemplos de las sugerencias ----------
 
@@ -488,6 +510,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         viewModelScope.launch {
             val page = persist {
                 it.copy(
+                    recognizedText = recognizedForReview ?: it.recognizedText,
                     confirmedText = text.trim(),
                     status = if (it.status == PageStatus.REVIEWED) PageStatus.REVIEWED else PageStatus.PENDING,
                 )
@@ -547,7 +570,9 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private suspend fun applyResponse(raw: String) {
         val response = CorrectionParser.parse(raw)
         val page = _state.value.page ?: return
+        // Una sola transacción: correcciones, FSRS y el estado "revisada" quedan todos o ninguno.
         val summary = c.study.applyCorrection(page, response, System.currentTimeMillis())
+        // El estado ya está en la base; esto lo refleja en pantalla y guarda la tinta más reciente.
         persist { it.copy(status = PageStatus.REVIEWED) }
         val parts = buildList {
             add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
@@ -569,9 +594,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         setPhase(Phase.Writing, parts.joinToString(" · ") + "." + hint)
     }
 
-    /** Compara lo escrito debajo de la parte revisada con las sugerencias pendientes. Sin IA. */
+    /**
+     * Busca en la página las sugerencias pendientes ya reescritas. Sin IA. Solo cuenta lo que no
+     * estaba cuando se revisó (ver [TextMatch.isRewritten]): ni el original ni repetir el mismo error.
+     */
     fun verifyRewrite() {
-        if (_state.value.page == null) return
+        val page = _state.value.page ?: return
         viewModelScope.launch {
             val pending = c.diary.correctionsNow(pageId).filter { it.status == CorrectionStatus.PENDING }
             if (pending.isEmpty()) {
@@ -587,16 +615,14 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     return@launch
                 }
                 // Se unen las líneas para encontrar también correcciones que quedaron partidas en dos renglones.
-                val written = normalize(lines.joinToString("") { it.text })
-                var ok = 0
-                for (corr in pending) {
-                    val target = normalize(corr.suggestion)
-                    // Tolerancia a un error puntual del reconocimiento (p. ej. una sílaba mal leída).
-                    if (target.isNotEmpty() && TextMatch.approxContains(written, target)) {
-                        c.diary.markRewritten(corr)
-                        ok++
-                    }
+                val written = lines.joinToString("") { it.text }
+                val recognizedBefore = page.recognizedText.orEmpty()
+                val confirmedBefore = page.confirmedText.orEmpty()
+                val done = withContext(Dispatchers.Default) {
+                    pending.filter { TextMatch.isRewritten(written, it.suggestion, recognizedBefore, confirmedBefore) }
                 }
+                done.forEach { c.diary.markRewritten(it) }
+                val ok = done.size
                 react(
                     when {
                         ok == pending.size -> MascotMood.HAPPY
@@ -612,8 +638,6 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             }
         }
     }
-
-    private fun normalize(s: String) = s.filter { it.isLetterOrDigit() }
 
     /** Para cuando el reconocimiento falla aunque lo hayas reescrito bien. */
     fun markRewritten(correction: Correction) {

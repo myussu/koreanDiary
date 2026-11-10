@@ -179,12 +179,21 @@ object InkOrdering {
 
 /** Búsqueda aproximada: tolera errores puntuales del reconocimiento de escritura. */
 object TextMatch {
+    /** Solo letras y dígitos: sin espacios, saltos de línea ni puntuación. */
+    fun normalize(s: String): String = s.filter { it.isLetterOrDigit() }
+
     /**
      * Mínimo de ediciones (insertar, borrar, cambiar un carácter) para que [needle]
      * aparezca como subcadena de [haystack] (algoritmo de Sellers).
      */
-    fun substringDistance(haystack: String, needle: String): Int {
-        if (needle.isEmpty()) return 0
+    fun substringDistance(haystack: String, needle: String): Int =
+        if (needle.isEmpty()) 0 else endDistances(haystack, needle).min()
+
+    /**
+     * Última fila de Sellers: para cada posición de [haystack], el mínimo de ediciones para que
+     * [needle] aparezca terminando justo ahí.
+     */
+    private fun endDistances(haystack: String, needle: String): IntArray {
         var prev = IntArray(haystack.length + 1) // fila 0: cero, la coincidencia puede empezar en cualquier parte
         for (i in 1..needle.length) {
             val cur = IntArray(haystack.length + 1)
@@ -195,13 +204,80 @@ object TextMatch {
             }
             prev = cur
         }
-        return prev.min()
+        return prev
+    }
+
+    /** Ediciones para convertir [a] entera en [b] entera (Levenshtein). */
+    private fun distance(a: String, b: String): Int {
+        var prev = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            val cur = IntArray(b.length + 1)
+            cur[0] = i
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                cur[j] = minOf(prev[j - 1] + cost, prev[j] + 1, cur[j - 1] + 1)
+            }
+            prev = cur
+        }
+        return prev[b.length]
     }
 
     /** 1 error tolerado cada 8 caracteres (al menos 1 si la frase tiene 4 o más). */
+    private fun allowedErrors(length: Int): Int = if (length < 4) 0 else maxOf(1, length / 8)
+
     fun approxContains(haystack: String, needle: String): Boolean {
         if (needle.isEmpty()) return false
-        val allowed = if (needle.length < 4) 0 else maxOf(1, needle.length / 8)
-        return substringDistance(haystack, needle) <= allowed
+        return substringDistance(haystack, needle) <= allowedErrors(needle.length)
+    }
+
+    /**
+     * ¿[written] (todo lo que se lee ahora en la página) trae la [suggestion] reescrita?
+     *
+     * No basta con que la sugerencia aparezca con la tolerancia de [approxContains]: casi todas las
+     * correcciones cambian un solo carácter, así que el original, todavía sin corregir, ya cae dentro
+     * de esa tolerancia. Se pide evidencia nueva: un fragmento que se parezca más a la sugerencia que
+     * a cualquier cosa que ya estaba en la página cuando se revisó, según lo que leyó la app
+     * ([recognizedBefore]) y lo que confirmó el estudiante ([confirmedBefore]).
+     *
+     * Así no cuentan ni el original ni una reescritura que repite el mismo error, y sí cuenta una
+     * reescritura correcta con una sílaba mal leída en otra parte. Si la sílaba mal leída es justo la
+     * corregida no se puede saber, y no cuenta (para eso está "Hecho").
+     *
+     * Si la sugerencia ya estaba tal cual en la página (p. ej. una partícula suelta), cuenta cuando
+     * aparece más veces que antes.
+     */
+    fun isRewritten(written: String, suggestion: String, recognizedBefore: String, confirmedBefore: String): Boolean {
+        val text = normalize(written)
+        val target = normalize(suggestion)
+        if (text.isEmpty() || target.isEmpty()) return false
+        val before = listOf(normalize(recognizedBefore), normalize(confirmedBefore)).filter { it.isNotEmpty() }
+        val allowed = allowedErrors(target.length)
+        val ends = endDistances(text, target)
+        for (end in 1..text.length) {
+            if (ends[end] > allowed) continue
+            // Un fragmento a [allowed] ediciones de la sugerencia mide lo mismo que ella, ± [allowed].
+            for (length in (target.length - allowed)..(target.length + allowed)) {
+                val start = end - length
+                if (length <= 0 || start < 0) continue
+                val window = text.substring(start, end)
+                val toSuggestion = distance(window, target)
+                if (toSuggestion > allowed) continue
+                // Sin texto guardado de la revisión no hay con qué comparar: vale la tolerancia de siempre.
+                val toBefore = before.minOfOrNull { substringDistance(it, window) } ?: Int.MAX_VALUE
+                if (toSuggestion < toBefore) return true
+            }
+        }
+        if (before.isEmpty()) return false
+        return occurrences(text, target) > before.maxOf { occurrences(it, target) }
+    }
+
+    private fun occurrences(text: String, target: String): Int {
+        var count = 0
+        var at = text.indexOf(target)
+        while (at >= 0) {
+            count++
+            at = text.indexOf(target, at + target.length)
+        }
+        return count
     }
 }
