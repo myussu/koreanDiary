@@ -119,6 +119,10 @@ interface DiaryDao {
     @Query("SELECT COUNT(pages.id) FROM pages JOIN entries ON pages.entryId = entries.id WHERE entries.date = :date")
     suspend fun pageCountForDate(date: String): Int
 
+    /** Total de páginas. También sirve para comprobar que la base abre (tras importar una copia). */
+    @Query("SELECT COUNT(*) FROM pages")
+    suspend fun pageCount(): Int
+
     /** Páginas por día (solo días con al menos una página): racha, calendario y recordatorio. */
     @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id GROUP BY entries.date")
     fun observePagesPerDay(): Flow<List<DayCount>>

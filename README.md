@@ -25,7 +25,11 @@ Desde la versión 0.1.4 la app se actualiza sola: al abrirla consulta `version.j
 5. **Progreso** (desde el inicio): racha, calendario, memoria FSRS y lo que más te cuesta.
 6. **Ajustes → Recordatorio:** aviso diario opcional, solo si ese día aún no escribiste.
 
-Tus datos (páginas, listas, workbooks y ajustes) entran en la copia de seguridad de Google del celular. Las claves de API no: en un celular nuevo hay que volver a pegarlas.
+## Copia de seguridad
+
+- **Tu copia (la principal): Ajustes → Copia de seguridad → Exportar copia.** Guarda todo en un `.zip` donde elijas (Drive, la computadora): páginas, listas, repaso, workbooks con sus fotos, conversaciones, mascota y ajustes. **Importar copia** lo trae de vuelta en este celular o en otro: reemplaza lo que hay, guarda antes lo que había (se puede deshacer) y reinicia la app.
+- **La de Google (la segunda):** la copia automática de Android sigue activa, pero guarda como mucho 25 MB por app; si tus datos pesan más, no guarda nada. La app avisa en el inicio cuando eso pasa. Las fotos del workbook no van a esa copia, para que el resto quepa.
+- Las claves de API no viajan en ninguna de las dos: en un celular nuevo hay que volver a pegarlas.
 
 ## Datos
 

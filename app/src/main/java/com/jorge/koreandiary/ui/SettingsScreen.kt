@@ -129,6 +129,10 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             UpdatePanel(container.updater, alwaysVisible = true)
         }
 
+        Section("Copia de seguridad") {
+            BackupSettings(container, beforeExport = ::save)
+        }
+
         Section("Apariencia") {
             Text("Tema", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

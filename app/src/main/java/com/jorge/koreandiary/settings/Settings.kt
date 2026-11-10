@@ -123,7 +123,7 @@ data class AppSettings(
 
 /** Preferencias simples en SharedPreferences, expuestas como StateFlow para Compose. */
 class SettingsStore(context: Context) {
-    private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(read())
     val state: StateFlow<AppSettings> = _state.asStateFlow()
 
@@ -227,6 +227,11 @@ class SettingsStore(context: Context) {
             .putString("usage_date_$provider", today)
             .putInt("usage_count_$provider", usageToday(provider) + 1)
             .apply()
+    }
+
+    companion object {
+        /** La copia de seguridad (`backup/`) exporta y restaura este archivo entero. */
+        const val PREFS_NAME = "settings"
     }
 }
 

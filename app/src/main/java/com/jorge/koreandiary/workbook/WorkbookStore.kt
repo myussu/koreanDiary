@@ -34,11 +34,17 @@ data class WorkbookSession(
 )
 
 /**
- * Sesiones en archivos dentro del almacenamiento privado (filesDir/workbook/<id>/), no en Room:
- * así esta función no necesita migrar la base de datos de los diarios.
+ * Sesiones en archivos dentro del almacenamiento privado (filesDir/workbook/<id>/session.json), no
+ * en Room: así esta función no necesita migrar la base de datos de los diarios.
+ *
+ * Las fotos van aparte, en filesDir/workbook_photos/<id>/: pesan mucho más que todo lo demás y la
+ * copia automática de Google solo guarda 25 MB por app. Con carpetas separadas las reglas de copia
+ * (res/xml) suben las sesiones sin las fotos; las fotos sí viajan al pasar de un celular a otro y
+ * en la copia que exportas a un archivo.
  */
 class WorkbookStore(private val context: Context) {
     private val root = File(context.filesDir, "workbook")
+    private val photoRoot = File(context.filesDir, "workbook_photos")
 
     private val _sessions = MutableStateFlow<List<WorkbookSession>>(emptyList())
     val sessions: StateFlow<List<WorkbookSession>> = _sessions.asStateFlow()
@@ -66,13 +72,38 @@ class WorkbookStore(private val context: Context) {
 
     suspend fun delete(id: Long) = withContext(Dispatchers.IO) {
         dir(id).deleteRecursively()
+        photoDir(id).deleteRecursively()
         refresh()
     }
 
     /** Archivo temporal donde la app de cámara guarda la foto (vía FileProvider). */
-    fun captureFile(id: Long): File = File(dir(id).apply { mkdirs() }, "captura.jpg")
+    fun captureFile(id: Long): File = File(photoDir(id).apply { mkdirs() }, "captura.jpg")
 
-    fun file(id: Long, name: String): File = File(dir(id), name)
+    /**
+     * Foto de una sesión. Puede no existir: tras restaurar la copia de Google las sesiones vuelven
+     * sin sus fotos. Las de versiones anteriores siguen junto a session.json hasta que se mudan.
+     */
+    fun file(id: Long, name: String): File {
+        val current = File(photoDir(id), name)
+        if (current.exists()) return current
+        return File(dir(id), name).takeIf { it.exists() } ?: current
+    }
+
+    /**
+     * Muda a su carpeta las fotos que versiones anteriores guardaron junto a session.json.
+     * Se llama al abrir la app; cuando no hay nada que mudar solo lista las carpetas.
+     */
+    suspend fun movePhotosOutOfSessions() {
+        withContext(Dispatchers.IO) {
+            root.listFiles()?.forEach { session ->
+                session.listFiles { f -> f.isFile && f.extension.equals("jpg", ignoreCase = true) }?.forEach { photo ->
+                    val target = File(File(photoRoot, session.name).apply { mkdirs() }, photo.name)
+                    // Si ya hay una foto nueva con ese nombre, la vieja sobra. Si no se pudo mover, queda para la próxima.
+                    if (target.exists() || photo.renameTo(target)) photo.delete()
+                }
+            }
+        }
+    }
 
     /**
      * Copia la foto (cámara o galería) a la sesión: la endereza según EXIF, la reduce a 1600 px
@@ -102,12 +133,16 @@ class WorkbookStore(private val context: Context) {
             postRotate(rotation)
         }
         val finalBitmap = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-        val out = File(dir(id).apply { mkdirs() }, name)
+        val out = File(photoDir(id).apply { mkdirs() }, name)
         out.outputStream().use { finalBitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        // Una foto con ese nombre de antes de separar las carpetas ya no hace falta.
+        File(dir(id), name).delete()
         out
     }
 
     private fun dir(id: Long) = File(root, id.toString())
+
+    private fun photoDir(id: Long) = File(photoRoot, id.toString())
 
     private fun read(id: Long): WorkbookSession? {
         val f = File(dir(id), "session.json")

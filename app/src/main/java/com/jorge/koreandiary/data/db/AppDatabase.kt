@@ -31,8 +31,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun diaryDao(): DiaryDao
 
     companion object {
+        /** Archivo de la base. La copia de seguridad (`backup/`) lo copia y lo reemplaza con este nombre. */
+        const val FILE_NAME = "korean_diary.db"
+
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder<AppDatabase>(context.applicationContext, "korean_diary.db")
+            Room.databaseBuilder<AppDatabase>(context.applicationContext, FILE_NAME)
                 // Room 3 exige un driver. El bundled trae su propio SQLite: mismo comportamiento en todo Android.
                 .setDriver(BundledSQLiteDriver())
                 .build()

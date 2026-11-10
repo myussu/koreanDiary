@@ -216,6 +216,10 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 }
             }
             val photo = c.workbook.file(session.id, photoName)
+            if (!withContext(Dispatchers.IO) { photo.exists() }) {
+                _state.update { it.copy(message = "Esa foto ya no está en este celular (las fotos no viajan en la copia de Google). Toma otra.") }
+                return@launch
+            }
 
             if (st.provider == ProviderId.SHARE) {
                 _shareIntents.send(ShareFlow.photoIntent(c.app, prompt, photo))
@@ -320,5 +324,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
         }
     }
 
-    fun photoFile(name: String?): File? = name?.let { n -> _state.value.session?.let { c.workbook.file(it.id, n) } }
+    /** Foto guardada de la sesión, o null si no hay o ya no está en este celular. */
+    fun photoFile(name: String?): File? =
+        name?.let { n -> _state.value.session?.let { c.workbook.file(it.id, n) } }?.takeIf { it.exists() }
 }

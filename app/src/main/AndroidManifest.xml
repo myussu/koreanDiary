@@ -25,9 +25,16 @@
         </intent>
     </queries>
 
+    <!--
+      Copia automática de Android: qué archivos entran lo dicen los dos XML de reglas. El agente no
+      cambia eso (fullBackupOnly = copia de archivos, no clave-valor); solo registra cuándo pasa la
+      copia y cuándo Google la rechaza por tamaño. Ver backup/DiaryBackupAgent.kt.
+    -->
     <application
         android:name=".KoreanDiaryApp"
         android:allowBackup="true"
+        android:backupAgent=".backup.DiaryBackupAgent"
+        android:fullBackupOnly="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

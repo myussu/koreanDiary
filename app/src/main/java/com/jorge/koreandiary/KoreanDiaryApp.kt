@@ -4,6 +4,8 @@ import android.app.Application
 import com.jorge.koreandiary.ai.AzureOpenAIProvider
 import com.jorge.koreandiary.ai.CorrectionProvider
 import com.jorge.koreandiary.ai.GeminiProvider
+import com.jorge.koreandiary.backup.BackupManager
+import com.jorge.koreandiary.backup.StartupRestore
 import com.jorge.koreandiary.conversation.ConversationStore
 import com.jorge.koreandiary.data.DiaryRepository
 import com.jorge.koreandiary.data.ExplanationStore
@@ -23,6 +25,7 @@ import com.jorge.koreandiary.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Inyección de dependencias manual: suficiente para una app de este tamaño. */
 class AppContainer(val app: Application) {
@@ -46,6 +49,9 @@ class AppContainer(val app: Application) {
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Exportar e importar todo a un archivo, y el estado de la copia automática de Google. */
+    val backup = BackupManager(app, database, appScope, updater.currentVersionCode, updater.currentVersionName)
 
     /** Proveedor por API listo para usar, o null si le falta configuración. */
     fun apiProvider(id: String): CorrectionProvider? {
@@ -90,8 +96,12 @@ class KoreanDiaryApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Antes de abrir la base o leer ajustes: si hay una copia importada esperando, se pone en su lugar.
+        StartupRestore.run(this)
         container = AppContainer(this)
         // Por si el sistema borró la alarma (p. ej. tras forzar el cierre): se vuelve a programar.
         ReminderScheduler.apply(this, container.settings.state.value)
+        // Las fotos del workbook viven aparte de las sesiones para no ir a la copia de Google.
+        container.appScope.launch { container.workbook.movePhotosOutOfSessions() }
     }
 }

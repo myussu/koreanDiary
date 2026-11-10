@@ -86,6 +86,7 @@ fun HomeScreen(
             AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
+        BackupBanner(container, onSettings = onSettings, modifier = Modifier.padding(top = 10.dp))
         val words by container.study.words.collectAsStateWithLifecycle(emptyList())
         val grammar by container.study.grammar.collectAsStateWithLifecycle(emptyList())
         val needsStudy = words.isEmpty() && grammar.isEmpty()

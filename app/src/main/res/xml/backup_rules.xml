@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copia de seguridad (Android 11 o anterior): mismas reglas que data_extraction_rules.xml. -->
+<!--
+  Copia de seguridad (Android 11 o anterior): las mismas reglas de la nube de data_extraction_rules.xml.
+  Este formato no separa la nube del paso entre celulares, así que aquí las fotos del workbook
+  (workbook_photos/) no viajan de ninguna de las dos formas; van en la copia exportada a un archivo.
+-->
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="file" path="workbook/" />
