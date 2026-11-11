@@ -12,8 +12,8 @@ import java.io.File
 
 class StandardCatalogTest {
 
-    // Los tests de JVM corren con el módulo app/ como directorio de trabajo.
-    private val catalog = StandardCatalog { name -> File("src/main/assets/standard/$name").readLines() }
+    // Los tests de JVM corren con shared/ como directorio de trabajo; el catálogo vive en los assets de la app.
+    private val catalog = StandardCatalog { name -> File("../app/src/main/assets/standard/$name").readLines() }
 
     @Test
     fun loadsFullCatalog() {

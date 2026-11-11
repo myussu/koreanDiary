@@ -1,7 +1,5 @@
 package com.jorge.koreandiary.data.standard
 
-import android.content.res.AssetManager
-
 /**
  * Catálogo estándar del 국립국어원 (어휘·문법 등급 목록, 2017/2020), niveles 1 a 6.
  * Va en assets y se consulta en memoria: el nivel de cada palabra o gramática se resuelve
@@ -43,11 +41,11 @@ data class StdGrammar(
     val relatedKeys: Set<String> by lazy { GrammarKeys.keys(related) }
 }
 
+/**
+ * [loadLines] lee un archivo de `standard/` (vocab.tsv, grammar.tsv). Android lo saca de assets
+ * (`androidStandardCatalog`), escritorio de los recursos y los tests del disco.
+ */
 class StandardCatalog(private val loadLines: (String) -> List<String>) {
-
-    constructor(assets: AssetManager) : this({ name ->
-        assets.open("standard/$name").bufferedReader(Charsets.UTF_8).use { it.readLines() }
-    })
 
     /** Se carga la primera vez que se usa. Llamar desde un hilo de fondo. */
     val words: List<StdWord> by lazy { parseVocab(loadLines("vocab.tsv")) }

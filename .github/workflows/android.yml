@@ -3,10 +3,13 @@ name: APK
 on:
   push:
     branches: [main]
-    # La prueba de escritorio no cambia el APK: no publica un "latest" nuevo para el celular.
+    # Lo que es solo de escritorio no cambia el APK: no publica un "latest" nuevo para el celular.
+    # (:shared sí cuenta: es código del APK.)
     paths-ignore:
       - "desktop/**"
+      - "desktopApp/**"
       - ".github/workflows/prueba-reconocedor.yml"
+      - ".github/workflows/escritorio.yml"
   pull_request:
   workflow_dispatch:
 
@@ -30,14 +33,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # :shared:jvmTest corre los tests de la lógica compartida (FSRS, parsers, tinta…).
       - name: Compilar APK y correr tests
-        run: ./gradlew --stacktrace assembleDebug testDebugUnitTest
+        run: ./gradlew --stacktrace assembleDebug testDebugUnitTest :shared:jvmTest
 
       # El esquema que generó esta compilación, por si hay que agregarlo al repo.
       - uses: actions/upload-artifact@v7
         with:
           name: room-schemas-${{ github.run_number }}
-          path: app/schemas
+          path: shared/schemas
           if-no-files-found: warn
 
       # Si la compilación deja el esquema de la base distinto al del repo, no se publica.
@@ -52,15 +56,15 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          [ -z "$(git status --porcelain -- app/schemas)" ] && exit 0
-          git status --short -- app/schemas
-          if ! git diff --quiet -- app/schemas; then
-            git --no-pager diff -- app/schemas | head -100
-            echo "::error::Cambió el esquema de una versión ya publicada de la base. Sube la versión en AppDatabase.kt y agrega una AutoMigration en vez de modificar la versión actual."
+          [ -z "$(git status --porcelain -- shared/schemas)" ] && exit 0
+          git status --short -- shared/schemas
+          if ! git diff --quiet -- shared/schemas; then
+            git --no-pager diff -- shared/schemas | head -100
+            echo "::error::Cambió el esquema de una versión ya publicada de la base. Sube VERSION en AppDatabase.kt y agrega una AutoMigration en vez de modificar la versión actual."
             exit 1
           fi
           if [ "$EVENT" = "pull_request" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
-            git ls-files --others --exclude-standard -- app/schemas | while read -r f; do
+            git ls-files --others --exclude-standard -- shared/schemas | while read -r f; do
               gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$f" --silent \
                 -f branch="$HEAD_REF" \
                 -f message="Base de datos: esquema $(basename "$f") generado por la compilación" \
@@ -68,7 +72,7 @@ jobs:
               echo "::notice::Se agregó $f a la rama $HEAD_REF."
             done
           else
-            echo "::error::La compilación generó un esquema nuevo que no está en el repo. Haz el cambio de entidad en un pull request (Actions agrega el JSON a la rama) o agrega app/schemas al commit desde el artefacto room-schemas."
+            echo "::error::La compilación generó un esquema nuevo que no está en el repo. Haz el cambio de entidad en un pull request (Actions agrega el JSON a la rama) o agrega shared/schemas al commit desde el artefacto room-schemas."
             exit 1
           fi
 

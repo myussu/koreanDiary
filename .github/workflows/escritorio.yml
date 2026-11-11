@@ -1,0 +1,64 @@
+name: Escritorio
+
+# Versión de escritorio para Windows. Corre los tests de :shared en Windows, arma la app con su
+# propia JRE (no hace falta instalar Java) y la publica en el release "escritorio", aparte del
+# release "latest" del APK. Se publica desde cualquier rama: es para probar.
+on:
+  push:
+    paths:
+      - "shared/**"
+      - "desktopApp/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/escritorio.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: escritorio-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Tests y app de escritorio
+        run: ./gradlew --stacktrace :shared:jvmTest :desktopApp:createDistributable
+
+      # Carpeta portable: KoreanDiary.exe + la JRE. Se descomprime y se abre, sin instalar.
+      - name: Comprimir
+        shell: pwsh
+        run: Compress-Archive -Path desktopApp/build/compose/binaries/main/app/KoreanDiary -DestinationPath KoreanDiary-windows.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: koreandiary-windows-${{ github.run_number }}
+          path: KoreanDiary-windows.zip
+
+      - name: Publicar release "escritorio"
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          gh release delete escritorio --yes --cleanup-tag || true
+          gh release create escritorio KoreanDiary-windows.zip \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Escritorio 1.0.${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
+            --notes "Versión de escritorio para Windows (portable: descomprimir y abrir KoreanDiary.exe). Rama ${GITHUB_REF_NAME}, commit ${GITHUB_SHA::7}: ${COMMIT_MSG}"

@@ -21,3 +21,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "KoreanDiary"
 include(":app")
+// Lógica, base de datos e IA comunes a Android y escritorio.
+include(":shared")
+// Versión de escritorio (Windows).
+include(":desktopApp")

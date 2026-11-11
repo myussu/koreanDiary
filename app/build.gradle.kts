@@ -1,15 +1,9 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.room3)
 }
 
-// Room escribe aquí el esquema de cada versión de la base (1.json, 2.json...). Va al repo:
-// es lo que permite las migraciones automáticas y lo que revisa GitHub Actions antes de publicar.
-room3 {
-    schemaDirectory("$projectDir/schemas")
-}
+// La base de datos (Room + KSP) y su esquema viven en :shared (shared/schemas).
 
 // En GitHub Actions el número de compilación es el versionCode: así el actualizador sabe qué es más nuevo.
 // En compilaciones locales vale 1.
@@ -68,9 +62,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
+    // Lógica, IA y base de datos compartidas con la versión de escritorio.
+    implementation(project(":shared"))
     implementation(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.bundled)
-    ksp(libs.androidx.room3.compiler)
 
     implementation(libs.mlkit.digital.ink)
 
