@@ -147,9 +147,10 @@ mod imp {
 
 pub use imp::Reconocedor;
 
-/// Elige el reconocedor coreano por su nombre (Windows lo nombra en el idioma de la interfaz).
+/// Elige el reconocedor coreano por su nombre. La API no expone el idioma, solo el nombre, y
+/// Windows no es consistente: en un Windows en inglés se llama «Microsoft 한글 필기 인식기».
 pub fn elegir_coreano(nombres: &[String]) -> Option<String> {
-    const PISTAS: [&str; 4] = ["한국어", "korean", "coreano", "korea"];
+    const PISTAS: [&str; 6] = ["한글", "한국어", "hangul", "korean", "coreano", "korea"];
     nombres
         .iter()
         .find(|n| {
@@ -171,6 +172,15 @@ mod tests {
             Some("Microsoft 한국어 필기 인식기".into())
         );
         assert!(elegir_coreano(&n(&["Reconocedor de escritura a mano de Microsoft para coreano"])).is_some());
+        // Nombre real en un Windows 11 en inglés (2026-11).
+        assert_eq!(
+            elegir_coreano(&n(&[
+                "Microsoft English (India) Handwriting Recognizer",
+                "Microsoft 한글 필기 인식기",
+                "Reconocedor de escritura en Español (México) de Microsoft",
+            ])),
+            Some("Microsoft 한글 필기 인식기".into())
+        );
         assert_eq!(elegir_coreano(&n(&["Microsoft English (US) Handwriting Recognizer"])), None);
     }
 }

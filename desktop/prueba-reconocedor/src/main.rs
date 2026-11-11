@@ -69,8 +69,9 @@ fn main() {
             match elegir_coreano(&lista) {
                 Some(k) => println!("Coreano: {k}"),
                 None => println!(
-                    "\n¡No hay reconocedor coreano! Instálalo en Configuración → Hora e idioma → \
-                     Idioma y región → Coreano → Opciones de idioma → Escritura a mano, y vuelve a abrir este programa."
+                    "\nNo identifiqué el coreano por su nombre. Si está en la lista, elígelo en la página; \
+                     si no, instálalo en Configuración → Hora e idioma → Idioma y región → Coreano → \
+                     Opciones de idioma → Escritura a mano."
                 ),
             }
         }

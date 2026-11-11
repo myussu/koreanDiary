@@ -371,8 +371,11 @@ async function iniciar() {
       sel.appendChild(o);
     }
     if (d.error) alertar(d.error);
-    else if (!d.coreano) alertar("Windows no tiene el reconocedor coreano. Instálalo en Configuración → Hora e idioma → " +
-      "Idioma y región → Coreano → Opciones de idioma → Escritura a mano, y vuelve a abrir el programa.");
+    else if (!d.coreano && d.reconocedores.length) alertar("No identifiqué el reconocedor coreano por su nombre. " +
+      "Si está en la lista de la derecha, elígelo ahí; si no, instálalo en Configuración → Hora e idioma → " +
+      "Idioma y región → Coreano → Opciones de idioma → Escritura a mano.");
+    else if (!d.coreano) alertar("Windows no tiene ningún reconocedor de escritura. Instala la escritura a mano del coreano en " +
+      "Configuración → Hora e idioma → Idioma y región → Coreano → Opciones de idioma, y vuelve a abrir el programa.");
   } catch (e) {
     alertar("No pude hablar con el programa: " + e.message);
   }
