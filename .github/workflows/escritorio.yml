@@ -69,7 +69,8 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           gh release delete escritorio --yes --cleanup-tag || true
-          gh release create escritorio KoreanDiary-windows.zip \
+          # Las capturas de la prueba de humo van junto a la app: se ve cómo quedó sin descargarla.
+          gh release create escritorio KoreanDiary-windows.zip desktopApp/build/screens/*.png \
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "Escritorio 1.0.${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \

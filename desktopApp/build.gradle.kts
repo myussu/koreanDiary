@@ -31,6 +31,7 @@ tasks.test {
     systemProperty("koreandiary.dataDir", data.absolutePath)
     systemProperty("koreandiary.screens", screens.absolutePath)
     doFirst { data.deleteRecursively() }
+    testLogging { events("passed", "skipped", "failed") }
 }
 
 compose.desktop {
