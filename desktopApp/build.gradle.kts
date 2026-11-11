@@ -19,6 +19,18 @@ dependencies {
     implementation(libs.jetbrains.compose.material3)
     // Dispatchers.Main en escritorio (hilo de Swing).
     implementation(libs.kotlinx.coroutines.swing)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.jetbrains.compose.ui.test)
+}
+
+// La prueba de humo usa su propia carpeta de datos y deja capturas de la ventana en build/screens.
+tasks.test {
+    val data = layout.buildDirectory.dir("test-data").get().asFile
+    val screens = layout.buildDirectory.dir("screens").get().asFile
+    systemProperty("koreandiary.dataDir", data.absolutePath)
+    systemProperty("koreandiary.screens", screens.absolutePath)
+    doFirst { data.deleteRecursively() }
 }
 
 compose.desktop {
