@@ -2,6 +2,7 @@ package com.jorge.koreandiary.backup
 
 import android.content.Context
 import com.jorge.koreandiary.data.db.AppDatabase
+import com.jorge.koreandiary.data.db.create
 import kotlinx.coroutines.runBlocking
 
 /**

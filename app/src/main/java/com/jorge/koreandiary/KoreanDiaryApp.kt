@@ -11,7 +11,8 @@ import com.jorge.koreandiary.data.DiaryRepository
 import com.jorge.koreandiary.data.ExplanationStore
 import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
-import com.jorge.koreandiary.data.standard.StandardCatalog
+import com.jorge.koreandiary.data.db.androidStandardCatalog
+import com.jorge.koreandiary.data.db.create
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.listen.ListenEngine
 import com.jorge.koreandiary.mascot.MascotPack
@@ -31,7 +32,7 @@ import kotlinx.coroutines.launch
 class AppContainer(val app: Application) {
     val database = AppDatabase.create(app)
     /** Catálogo estándar del 국립국어원 (en assets); se carga la primera vez que se usa. */
-    val catalog = StandardCatalog(app.assets)
+    val catalog = androidStandardCatalog(app.assets)
     val study = StudyRepository(database, catalog)
     val diary = DiaryRepository(database)
     val suggestions = SuggestionEngine(database.studyDao(), database.memoryDao(), catalog)
