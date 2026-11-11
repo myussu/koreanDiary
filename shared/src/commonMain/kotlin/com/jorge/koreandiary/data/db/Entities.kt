@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.data.db
 
+import androidx.room3.ColumnInfo
 import androidx.room3.Entity
 import androidx.room3.Index
 import androidx.room3.PrimaryKey
@@ -118,6 +119,17 @@ object PageStatus {
     const val REVIEWED = "revisada"
 }
 
+/** Qué es la página. Las dos usan el mismo lienzo, Revisar y Verificar. */
+object PageKind {
+    /** Tu día: cuenta para la racha en cuanto existe. */
+    const val DIARY = "diario"
+    /**
+     * Una escena vivida o imaginada, descrita con lo que se ve, oye y siente. Cuenta para la racha
+     * solo cuando está revisada y no le queda ninguna corrección por reescribir.
+     */
+    const val SCENE = "escena"
+}
+
 @Entity(tableName = "pages", indices = [Index(value = ["entryId"])])
 data class DiaryPage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -134,6 +146,9 @@ data class DiaryPage(
     val suggestedItems: String = "",
     val createdAt: Long,
     val updatedAt: Long,
+    /** [PageKind]. Llegó en la versión 2 del esquema: las páginas anteriores quedan como diario. */
+    @ColumnInfo(defaultValue = PageKind.DIARY)
+    val kind: String = PageKind.DIARY,
 )
 
 object CorrectionStatus {

@@ -49,6 +49,7 @@ import com.jorge.koreandiary.backup.BackupFormat
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.PageStatus
+import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageSummary
 import com.jorge.koreandiary.desktop.BackupImporter
 import com.jorge.koreandiary.desktop.DesktopPaths
@@ -250,7 +251,7 @@ private fun PageList(
                         .padding(horizontal = 20.dp, vertical = 10.dp),
                 ) {
                     Text(
-                        statusLabel(p.status),
+                        (if (p.kind == PageKind.SCENE) "Escena · " else "") + statusLabel(p.status),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (p.status == PageStatus.PENDING) scheme.secondary else scheme.onSurfaceVariant,
                     )

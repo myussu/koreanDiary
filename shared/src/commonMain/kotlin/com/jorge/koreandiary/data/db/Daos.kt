@@ -9,6 +9,14 @@ import kotlinx.coroutines.flow.Flow
 
 // Room 3: toda función de DAO es suspend o devuelve Flow.
 
+/**
+ * Qué páginas cuentan para la racha, el calendario y el recordatorio: las del diario siempre; una
+ * escena, solo si está revisada y no le queda ninguna corrección pendiente de reescribir.
+ */
+private const val COUNTS_FOR_STREAK =
+    "(pages.kind = '${PageKind.DIARY}' OR (pages.status = '${PageStatus.REVIEWED}' AND NOT EXISTS " +
+        "(SELECT 1 FROM corrections WHERE corrections.pageId = pages.id AND corrections.status = '${CorrectionStatus.PENDING}')))"
+
 @Dao
 interface StudyDao {
     @Insert
@@ -109,25 +117,29 @@ interface DiaryDao {
     @Query(
         """
         SELECT pages.id AS pageId, entries.date AS date, pages.status AS status,
-               pages.confirmedText AS preview, pages.updatedAt AS updatedAt
+               pages.confirmedText AS preview, pages.updatedAt AS updatedAt, pages.kind AS kind
         FROM pages JOIN entries ON pages.entryId = entries.id
         ORDER BY entries.date DESC, pages.createdAt DESC
         """
     )
     fun observePageSummaries(): Flow<List<PageSummary>>
 
-    @Query("SELECT COUNT(pages.id) FROM pages JOIN entries ON pages.entryId = entries.id WHERE entries.date = :date")
+    /** Páginas de ese día que cuentan para la racha (ver [COUNTS_FOR_STREAK]). */
+    @Query("SELECT COUNT(pages.id) FROM pages JOIN entries ON pages.entryId = entries.id WHERE entries.date = :date AND $COUNTS_FOR_STREAK")
     suspend fun pageCountForDate(date: String): Int
 
     /** Total de páginas. También sirve para comprobar que la base abre (tras importar una copia). */
     @Query("SELECT COUNT(*) FROM pages")
     suspend fun pageCount(): Int
 
-    /** Páginas por día (solo días con al menos una página): racha, calendario y recordatorio. */
-    @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id GROUP BY entries.date")
+    /**
+     * Páginas que cuentan por día (solo días con al menos una): racha, calendario y recordatorio.
+     * Mira también `corrections`, así que se actualiza al verificar la última corrección de una escena.
+     */
+    @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id WHERE $COUNTS_FOR_STREAK GROUP BY entries.date")
     fun observePagesPerDay(): Flow<List<DayCount>>
 
-    @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id GROUP BY entries.date")
+    @Query("SELECT entries.date AS date, COUNT(pages.id) AS total FROM pages JOIN entries ON pages.entryId = entries.id WHERE $COUNTS_FOR_STREAK GROUP BY entries.date")
     suspend fun pagesPerDay(): List<DayCount>
 
     @Query("DELETE FROM pages WHERE id = :id")
@@ -168,6 +180,8 @@ data class PageSummary(
     val status: String,
     val preview: String?,
     val updatedAt: Long,
+    /** [PageKind]. */
+    val kind: String,
 )
 
 data class TenseCount(val tense: String, val total: Int)

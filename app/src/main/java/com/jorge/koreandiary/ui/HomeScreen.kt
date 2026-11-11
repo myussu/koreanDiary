@@ -26,7 +26,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
+import com.jorge.koreandiary.data.db.PageSummary
 import kotlinx.coroutines.launch
 import com.jorge.koreandiary.mascot.MascotBrain
 import com.jorge.koreandiary.settings.ProviderId
@@ -72,8 +74,11 @@ fun HomeScreen(
     onWorkbook: () -> Unit,
     onProgress: () -> Unit,
     onConversation: () -> Unit,
+    onScenes: () -> Unit,
 ) {
     val pages by container.diary.pageSummaries.collectAsStateWithLifecycle(emptyList())
+    // Días que cuentan para la racha: el diario y las escenas ya verificadas.
+    val counted by container.diary.pagesPerDay.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -102,7 +107,7 @@ fun HomeScreen(
             )
         }
         if (settings.showMascot) {
-            MascotGreeting(container, pages.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
+            MascotGreeting(container, counted.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
         }
         if (pages.isNotEmpty()) {
             // Resumen corto; el detalle (calendario, memoria, lo que más cuesta) está en Progreso.
@@ -123,26 +128,27 @@ fun HomeScreen(
                 Text("Progreso ›", style = MaterialTheme.typography.labelLarge)
             }
         }
-        Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AppButton(
-                onClick = {
-                    creating = true
-                    scope.launch {
-                        val s = container.settings.state.value
-                        val suggestions = container.suggestions.suggest(System.currentTimeMillis(), s.grammarLevelList, s.standardLevel)
-                        val id = container.diary.newPage(System.currentTimeMillis(), suggestions.encode())
-                        creating = false
-                        onOpenPage(id)
-                    }
-                },
-                enabled = !creating,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 14.dp),
-            ) { Text("Nueva página") }
+        AppButton(
+            onClick = {
+                creating = true
+                scope.launch {
+                    val id = newPageWithSuggestions(container, PageKind.DIARY)
+                    creating = false
+                    onOpenPage(id)
+                }
+            },
+            enabled = !creating,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            contentPadding = PaddingValues(vertical = 14.dp),
+        ) { Text("Nueva página") }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val padding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+            // Describir un lugar o un momento, vivido o imaginado.
+            AppOutlinedButton(onClick = onScenes, modifier = Modifier.weight(1f), contentPadding = padding) { Text("Escenas") }
             // Pistas y revisión para ejercicios del workbook, con foto.
-            AppOutlinedButton(onClick = onWorkbook, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)) { Text("Workbook") }
+            AppOutlinedButton(onClick = onWorkbook, modifier = Modifier.weight(1f), contentPadding = padding) { Text("Workbook") }
             // Conversación por voz con Gemini (speaking).
-            AppOutlinedButton(onClick = onConversation, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)) { Text("Hablar") }
+            AppOutlinedButton(onClick = onConversation, modifier = Modifier.weight(1f), contentPadding = padding) { Text("Hablar") }
         }
 
         if (pages.isEmpty()) {
@@ -153,27 +159,39 @@ fun HomeScreen(
         }
         val today = LocalDate.now()
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-            items(pages, key = { it.pageId }) { p ->
-                Card(Modifier.fillMaxWidth().clickable { onOpenPage(p.pageId) }) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row {
-                            Text(relativeDay(p.date, today), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            Text(
-                                pageStatusLabel(p.status),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (p.status == PageStatus.PENDING) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Text(
-                            p.preview?.takeIf { it.isNotBlank() } ?: "(sin texto reconocido)",
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
-                }
+            items(pages, key = { it.pageId }) { p -> PageSummaryCard(p, today, onClick = { onOpenPage(p.pageId) }) }
+        }
+    }
+}
+
+/** Crea una página de hoy con sus sugerencias (FSRS y lagunas, sin IA) y devuelve su id. */
+suspend fun newPageWithSuggestions(container: AppContainer, kind: String): Long {
+    val s = container.settings.state.value
+    val now = System.currentTimeMillis()
+    val suggestions = container.suggestions.suggest(now, s.grammarLevelList, s.standardLevel)
+    return container.diary.newPage(now, suggestions.encode(), kind)
+}
+
+/** Tarjeta de una página en las listas del diario y de escenas. */
+@Composable
+fun PageSummaryCard(p: PageSummary, today: LocalDate, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Column(Modifier.padding(14.dp)) {
+            Row {
+                Text(relativeDay(p.date, today), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    pageStatusLabel(p.status),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (p.status == PageStatus.PENDING) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+            Text(
+                p.preview?.takeIf { it.isNotBlank() } ?: "(sin texto reconocido)",
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

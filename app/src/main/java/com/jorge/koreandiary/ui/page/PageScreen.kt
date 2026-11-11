@@ -69,6 +69,7 @@ import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.data.AnnotatedItem
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
+import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkTool
@@ -141,12 +142,13 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
     val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking || explain?.loading == true) MascotMood.THINKING else reaction
 
+    val isScene = page?.kind == PageKind.SCENE
     val header: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AppTextButton(onClick = onBack) { Text("‹ Diario") }
+            AppTextButton(onClick = onBack) { Text(if (isScene) "‹ Escenas" else "‹ Diario") }
             Text(
                 page?.let { formatDate(it.createdAt) } ?: "",
                 style = MaterialTheme.typography.titleMedium,
@@ -308,7 +310,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("¿Borrar esta página?") },
+            title = { Text(if (isScene) "¿Borrar esta escena?" else "¿Borrar esta página?") },
             text = { Text("Se borran la escritura, las correcciones y las oraciones. Lo que ya contó para tu repaso se conserva.") },
             confirmButton = { AppButton(onClick = { confirmDelete = false; vm.deletePage(onBack) }) { Text("Borrar") } },
             dismissButton = { AppTextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },

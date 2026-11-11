@@ -29,6 +29,7 @@ import com.jorge.koreandiary.ui.HomeScreen
 import com.jorge.koreandiary.ui.ImportScreen
 import com.jorge.koreandiary.ui.KoreanDiaryTheme
 import com.jorge.koreandiary.ui.ProgressScreen
+import com.jorge.koreandiary.ui.ScenesScreen
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
 import com.jorge.koreandiary.ui.conversation.ConversationScreen
@@ -104,6 +105,7 @@ private fun AppNavigation(container: AppContainer) {
             route == "settings" -> SettingsScreen(container, onBack = ::pop)
             route == "progress" -> ProgressScreen(container, onBack = ::pop)
             route == "conversation" -> ConversationScreen(container, onBack = ::pop)
+            route == "scenes" -> ScenesScreen(container, onBack = ::pop, onOpenPage = { push("page:$it") })
             route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
             route.startsWith("workbook:") -> WorkbookSessionScreen(container, route.removePrefix("workbook:").toLong(), onBack = ::pop)
             else -> HomeScreen(
@@ -114,6 +116,7 @@ private fun AppNavigation(container: AppContainer) {
                 onWorkbook = { push("workbook") },
                 onProgress = { push("progress") },
                 onConversation = { push("conversation") },
+                onScenes = { push("scenes") },
             )
         }
         // Escucha en curso (sigue con la pantalla apagada): una barra para volver a ella desde cualquier pantalla.

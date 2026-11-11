@@ -22,6 +22,7 @@ import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
 import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.ItemType
+import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkOps
 import com.jorge.koreandiary.ink.InkSerializer
@@ -517,6 +518,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             } ?: return@launch
             val settings = c.settings.state.value
             val items = c.study.promptItems(ItemRef.decodeList(page.suggestedItems))
+            val isScene = page.kind == PageKind.SCENE
 
             if (provider != ProviderId.SHARE) {
                 val name = providerName(provider)
@@ -532,7 +534,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 }
                 setPhase(Phase.Busy("$name está revisando tu página…"))
                 try {
-                    val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false)
+                    val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene)
                     val raw = api.complete(CorrectionRequest(prompt))
                     c.settings.registerUse(provider)
                     applyResponse(raw)
@@ -547,7 +549,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     setPhase(Phase.Writing, "Error inesperado con $name: ${e.message ?: e.javaClass.simpleName}")
                 }
             } else {
-                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true)
+                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene)
                 val bitmap = renderPage(_state.value.strokes, width.toInt(), height.toInt(), lineHeight)
                 _shareIntents.send(ShareFlow.buildIntent(c.app, prompt, bitmap))
                 setPhase(Phase.AwaitingPaste, "El prompt también quedó copiado. Pégalo en el chat si no aparece.")

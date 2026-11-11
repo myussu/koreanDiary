@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.data.db
 
+import androidx.room3.AutoMigration
 import androidx.room3.ConstructedBy
 import androidx.room3.Database
 import androidx.room3.RoomDatabase
@@ -26,6 +27,10 @@ import androidx.room3.RoomDatabaseConstructor
     // AutoMigration(from = N, to = N + 1) en autoMigrations. Sin eso, la app instalada no abre su base.
     // Borrar o renombrar una columna o tabla necesita además un AutoMigrationSpec.
     version = AppDatabase.VERSION,
+    autoMigrations = [
+        // 2: pages.kind (diario o escena).
+        AutoMigration(from = 1, to = 2),
+    ],
     // El esquema de cada versión queda en shared/schemas (ver room3 { } en shared/build.gradle.kts) y va al repo.
     exportSchema = true,
 )
@@ -38,7 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         /** Versión del esquema (`PRAGMA user_version`). Una copia más nueva no se puede importar. */
-        const val VERSION = 1
+        const val VERSION = 2
 
         /** Archivo de la base. La copia de seguridad (`backup/`) lo copia y lo reemplaza con este nombre. */
         const val FILE_NAME = "korean_diary.db"

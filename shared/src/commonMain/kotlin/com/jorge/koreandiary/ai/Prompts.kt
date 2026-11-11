@@ -18,11 +18,14 @@ object Prompts {
         items: List<PromptItem>,
         text: String,
         hasImage: Boolean,
+        /** Página de la sección Escenas: describe un lugar o un momento, no necesariamente su día. */
+        scene: Boolean = false,
     ): String = buildString {
         appendLine("Eres profesor de coreano y corriges el diario manuscrito de un estudiante hispanohablante. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
         appendLine("ESTUDIANTE: ${profile.ifBlank { "(sin perfil)" }}")
         appendLine("Nivel: $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정)")
+        if (scene) appendLine("Esta página describe una escena, vivida o imaginada: lo que ve, oye y siente. No tiene por qué hablar de su día.")
         appendLine()
         appendLine("SUGERIDOS EN ESTA PÁGINA (id | forma | tipo):")
         if (items.isEmpty()) appendLine("(ninguno)")

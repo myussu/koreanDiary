@@ -15,6 +15,7 @@ import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.EventKind
 import com.jorge.koreandiary.data.db.GrammarPoint
 import com.jorge.koreandiary.data.db.ItemType
+import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.MemoryState
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.data.db.PendingWord
@@ -27,6 +28,7 @@ import com.jorge.koreandiary.data.standard.StdGrammar
 import com.jorge.koreandiary.data.standard.StdWord
 import com.jorge.koreandiary.srs.Fsrs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
@@ -531,14 +533,18 @@ object CorrectionType {
 class DiaryRepository(private val db: AppDatabase) {
     private val diary = db.diaryDao()
 
-    val pageSummaries = diary.observePageSummaries()
+    private val allSummaries = diary.observePageSummaries()
+    /** Páginas del diario. Las escenas tienen su propia lista. */
+    val pageSummaries = allSummaries.map { list -> list.filter { it.kind != PageKind.SCENE } }
+    val sceneSummaries = allSummaries.map { list -> list.filter { it.kind == PageKind.SCENE } }
     val tenseCounts = diary.observeTenseCounts()
+    /** Días con páginas que cuentan para la racha (ver `COUNTS_FOR_STREAK` en Daos.kt). */
     val pagesPerDay = diary.observePagesPerDay()
 
-    suspend fun newPage(now: Long, suggestedItems: String): Long {
+    suspend fun newPage(now: Long, suggestedItems: String, kind: String = PageKind.DIARY): Long {
         val today = LocalDate.now().toString()
         val entryId = diary.entryForDate(today)?.id ?: diary.insertEntry(DiaryEntry(date = today, createdAt = now))
-        return diary.insertPage(DiaryPage(entryId = entryId, suggestedItems = suggestedItems, createdAt = now, updatedAt = now))
+        return diary.insertPage(DiaryPage(entryId = entryId, suggestedItems = suggestedItems, createdAt = now, updatedAt = now, kind = kind))
     }
 
     suspend fun page(id: Long) = diary.page(id)
