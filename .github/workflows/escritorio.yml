@@ -37,8 +37,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # :desktopApp:test abre la base con el SQLite de Windows, importa una copia y toma capturas.
       - name: Tests y app de escritorio
-        run: ./gradlew --stacktrace :shared:jvmTest :desktopApp:createDistributable
+        run: ./gradlew --stacktrace :shared:jvmTest :desktopApp:test :desktopApp:createDistributable
+
+      - name: Capturas y reportes de los tests
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: escritorio-tests-${{ github.run_number }}
+          path: |
+            desktopApp/build/screens
+            desktopApp/build/reports/tests
+            shared/build/reports/tests
+          if-no-files-found: warn
 
       # Carpeta portable: KoreanDiary.exe + la JRE. Se descomprime y se abre, sin instalar.
       - name: Comprimir

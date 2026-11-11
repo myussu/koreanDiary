@@ -12,8 +12,13 @@ import java.util.zip.ZipFile
 
 /** Dónde guarda sus datos la versión de escritorio. */
 object DesktopPaths {
-    /** %APPDATA%\KoreanDiary en Windows; ~/.local/share/KoreanDiary en otros sistemas. */
+    /**
+     * %APPDATA%\KoreanDiary en Windows; ~/.local/share/KoreanDiary en otros sistemas.
+     * Los tests la cambian con la propiedad `koreandiary.dataDir`.
+     */
     val dataDir: File by lazy {
+        val forced = System.getProperty("koreandiary.dataDir")?.takeIf { it.isNotBlank() }
+        if (forced != null) return@lazy File(forced).apply { mkdirs() }
         val base = System.getenv("APPDATA")?.takeIf { it.isNotBlank() }?.let(::File)
             ?: File(System.getProperty("user.home"), ".local/share")
         File(base, "KoreanDiary").apply { mkdirs() }
