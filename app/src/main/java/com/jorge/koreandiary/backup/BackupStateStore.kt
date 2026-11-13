@@ -23,6 +23,17 @@ class BackupStateStore(context: Context) {
         _state.value = read(prefs)
     }
 
+    /** Carpeta para las copias de antes de actualizar; vacío para guardarlas dentro de la app. */
+    fun setAutoFolder(uri: String, name: String) {
+        prefs.edit().putString(AUTO_FOLDER, uri).putString(AUTO_FOLDER_NAME, name).apply()
+        _state.value = read(prefs)
+    }
+
+    fun recordAuto(at: Long, bytes: Long, inApp: Boolean) {
+        prefs.edit().putLong(LAST_AUTO_AT, at).putLong(LAST_AUTO_BYTES, bytes).putBoolean(LAST_AUTO_IN_APP, inApp).apply()
+        _state.value = read(prefs)
+    }
+
     fun clearNotice() {
         prefs.edit().remove(NOTICE).apply()
         _state.value = read(prefs)
@@ -38,6 +49,11 @@ class BackupStateStore(context: Context) {
         private const val QUOTA_LIMIT_BYTES = "quotaLimitBytes"
         private const val NOTICE = "notice"
         private const val UNVERIFIED = "restoreUnverified"
+        private const val AUTO_FOLDER = "autoFolder"
+        private const val AUTO_FOLDER_NAME = "autoFolderName"
+        private const val LAST_AUTO_AT = "lastAutoAt"
+        private const val LAST_AUTO_BYTES = "lastAutoBytes"
+        private const val LAST_AUTO_IN_APP = "lastAutoInApp"
 
         private fun open(context: Context): SharedPreferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
@@ -49,6 +65,11 @@ class BackupStateStore(context: Context) {
             quotaDataBytes = prefs.getLong(QUOTA_DATA_BYTES, 0),
             quotaLimitBytes = prefs.getLong(QUOTA_LIMIT_BYTES, 0),
             notice = prefs.getString(NOTICE, "") ?: "",
+            autoFolder = prefs.getString(AUTO_FOLDER, "") ?: "",
+            autoFolderName = prefs.getString(AUTO_FOLDER_NAME, "") ?: "",
+            lastAutoAt = prefs.getLong(LAST_AUTO_AT, 0),
+            lastAutoBytes = prefs.getLong(LAST_AUTO_BYTES, 0),
+            lastAutoInApp = prefs.getBoolean(LAST_AUTO_IN_APP, false),
         )
 
         // commit() y no apply(): quien llama puede morir enseguida (el agente de copia, un reinicio).

@@ -36,7 +36,7 @@ fun UpdatePanel(updater: Updater, alwaysVisible: Boolean, modifier: Modifier = M
     val scheme = MaterialTheme.colorScheme
 
     val actionable = state is UpdateState.Available || state is UpdateState.NeedsPermission ||
-        state is UpdateState.Downloading || state is UpdateState.Installing ||
+        state is UpdateState.Downloading || state is UpdateState.BackingUp || state is UpdateState.Installing ||
         (state is UpdateState.Error && (state as UpdateState.Error).info != null)
     if (!alwaysVisible && !actionable) return
 
@@ -59,7 +59,7 @@ fun UpdatePanel(updater: Updater, alwaysVisible: Boolean, modifier: Modifier = M
             }
             is UpdateState.Available -> {
                 ReleaseSummary(s.info)
-                AppButton(onClick = { scope.launch { updater.downloadAndInstall(s.info) } }) { Text("Actualizar ahora") }
+                AppButton(onClick = { updater.startInstall(s.info) }) { Text("Actualizar ahora") }
             }
             is UpdateState.NeedsPermission -> {
                 Text(
@@ -68,7 +68,7 @@ fun UpdatePanel(updater: Updater, alwaysVisible: Boolean, modifier: Modifier = M
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     AppOutlinedButton(onClick = { context.startActivity(updater.permissionSettingsIntent()) }) { Text("Dar permiso") }
-                    AppButton(onClick = { scope.launch { updater.downloadAndInstall(s.info) } }) { Text("Ya lo di, actualizar") }
+                    AppButton(onClick = { updater.startInstall(s.info) }) { Text("Ya lo di, actualizar") }
                 }
             }
             is UpdateState.Downloading -> {
@@ -81,15 +81,25 @@ fun UpdatePanel(updater: Updater, alwaysVisible: Boolean, modifier: Modifier = M
                     strokeCap = StrokeCap.Butt,
                 )
             }
-            is UpdateState.Installing -> Text(
-                "Instalando ${s.info.versionName}… La app se cerrará sola al terminar; ábrela de nuevo.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            is UpdateState.BackingUp -> {
+                Text("Guardando una copia de todo antes de actualizar…", style = MaterialTheme.typography.bodyMedium)
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = scheme.primary, trackColor = scheme.surfaceContainerHighest, strokeCap = StrokeCap.Butt)
+            }
+            is UpdateState.Installing -> {
+                s.backupNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+                Text(
+                    "Instalando ${s.info.versionName}… La app se cerrará sola al terminar; ábrela de nuevo.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             is UpdateState.Error -> {
                 Text(s.message, color = scheme.error, style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (s.info != null) {
-                        AppButton(onClick = { scope.launch { updater.downloadAndInstall(s.info) } }) { Text("Reintentar") }
+                        AppButton(onClick = { updater.startInstall(s.info) }) { Text("Reintentar") }
+                        if (s.backupFailed) {
+                            AppOutlinedButton(onClick = { updater.startInstall(s.info, skipBackup = true) }) { Text("Actualizar sin copia") }
+                        }
                     } else {
                         AppOutlinedButton(onClick = { scope.launch { updater.check() } }) { Text("Reintentar") }
                     }

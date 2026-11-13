@@ -44,6 +44,11 @@ fun BackupSettings(container: AppContainer, beforeExport: () -> Unit) {
     val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) backup.importFrom(uri)
     }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) runCatching { backup.setAutoFolder(uri) }
+    }
+    // Las copias de dentro de la app cambian con cada actualización y cada restauración.
+    val inApp = remember(current, status.lastAutoAt) { backup.autoBackupsInApp() }
 
     Text(
         "Guarda todo en un archivo .zip: páginas, listas, repaso, workbooks con sus fotos, conversaciones, mascota y ajustes. " +
@@ -74,6 +79,44 @@ fun BackupSettings(container: AppContainer, beforeExport: () -> Unit) {
     }
     if (undoAvailable) {
         AppTextButton(onClick = backup::undoLastImport, enabled = idle) { Text("Deshacer la última importación") }
+    }
+
+    Text("Copia antes de actualizar", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+    Text(
+        "Antes de instalar cada versión nueva, la app guarda una copia de todo. Quedan las ${BackupFormat.AUTO_KEEP} últimas. " +
+            "En una carpeta tuya sobrevive aunque desinstales la app, y se recupera con «Importar copia».",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
+        if (status.autoFolder.isNotEmpty()) "Carpeta: ${status.autoFolderName}"
+        else "Sin carpeta: se guarda dentro de la app (se borra si desinstalas).",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    if (status.lastAutoAt > 0) {
+        Text(
+            "Última: ${BackupFormat.dateLabel(status.lastAutoAt)} · ${BackupFormat.sizeLabel(status.lastAutoBytes)} · " +
+                if (status.lastAutoInApp) "dentro de la app" else "en tu carpeta",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        AppOutlinedButton(onClick = { pickFolder.launch(null) }, enabled = idle) {
+            Text(if (status.autoFolder.isNotEmpty()) "Cambiar carpeta" else "Elegir carpeta")
+        }
+        if (status.autoFolder.isNotEmpty()) {
+            AppTextButton(onClick = { backup.setAutoFolder(null) }, enabled = idle) { Text("Quitar carpeta") }
+        }
+    }
+    inApp.forEach { (name, bytes) ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Dentro de la app: " + name.removePrefix(BackupFormat.AUTO_PREFIX).removeSuffix(".zip") + " · " + BackupFormat.sizeLabel(bytes),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            AppTextButton(onClick = { backup.restoreAuto(name) }, enabled = idle) { Text("Restaurar") }
+        }
     }
 
     when (current) {

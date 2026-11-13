@@ -128,6 +128,139 @@ class BackupManager(
         }
     }
 
+    // ---------- Copia antes de actualizar ----------
+
+    /** Copias de antes de actualizar guardadas dentro de la app (si no hay carpeta o no se pudo escribir en ella). */
+    private val autoDir = File(app.filesDir, "backups/auto")
+
+    /**
+     * Elige la carpeta para las copias de antes de actualizar (selector de carpetas del sistema) y
+     * guarda el permiso para escribir ahí sin preguntar otra vez. Null la quita.
+     */
+    fun setAutoFolder(tree: Uri?) {
+        val resolver = app.contentResolver
+        val previous = status.state.value.autoFolder.takeIf { it.isNotEmpty() }?.let(Uri::parse)
+        if (tree != null) {
+            resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            status.setAutoFolder(tree.toString(), folderName(tree))
+        } else {
+            status.setAutoFolder("", "")
+        }
+        if (previous != null && previous != tree) {
+            runCatching { resolver.releasePersistableUriPermission(previous, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        }
+    }
+
+    /**
+     * Antes de instalar una actualización: guarda una copia completa en la carpeta elegida o, si no
+     * hay (o no se pudo escribir ahí), dentro de la app. Quedan las [BackupFormat.AUTO_KEEP] últimas.
+     * Devuelve qué decir en pantalla. Lanza solo si no se pudo guardar en ningún lado.
+     */
+    suspend fun backupBeforeUpdate(toVersion: String): String = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            val name = BackupFormat.autoBackupName(toVersion, now)
+            val folder = status.state.value
+            var folderProblem: String? = null
+            if (folder.autoFolder.isNotEmpty()) {
+                try {
+                    val bytes = writeToFolder(Uri.parse(folder.autoFolder), name)
+                    status.recordAuto(now, bytes, inApp = false)
+                    // Es un archivo fuera de la app, como el que exportas a mano.
+                    status.recordExport(now, bytes)
+                    return@withContext "Copia guardada en ${folder.autoFolderName.ifBlank { "tu carpeta" }} (${BackupFormat.sizeLabel(bytes)})."
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    folderProblem = e.message ?: e.javaClass.simpleName
+                }
+            }
+            autoDir.mkdirs()
+            val tmp = File(autoDir, "$name.tmp")
+            val (_, bytes) = try {
+                archive(tmp.outputStream())
+            } catch (e: Exception) {
+                tmp.delete()
+                throw e
+            }
+            if (!tmp.renameTo(File(autoDir, name))) throw IOException("no se pudo guardar la copia")
+            BackupFormat.autoBackupsToDelete(autoDir.list().orEmpty().toList()).forEach { File(autoDir, it).delete() }
+            status.recordAuto(now, bytes, inApp = true)
+            if (folderProblem != null) "No pude escribir en tu carpeta ($folderProblem): la copia quedó dentro de la app."
+            else "Copia guardada dentro de la app (${BackupFormat.sizeLabel(bytes)})."
+        }
+    }
+
+    /** Copias de antes de actualizar que están dentro de la app, la más nueva primero: nombre y tamaño. */
+    fun autoBackupsInApp(): List<Pair<String, Long>> =
+        // Con keep = 0 devuelve todas las copias automáticas, de la más nueva a la más vieja.
+        BackupFormat.autoBackupsToDelete(autoDir.list().orEmpty().toList(), keep = 0)
+            .map { it to File(autoDir, it).length() }
+
+    /** Restaurar una copia de antes de actualizar que está dentro de la app (pide confirmar, como importar). */
+    fun restoreAuto(name: String) = start("Leyendo la copia…") {
+        try {
+            val currentPages = database.diaryDao().pageCount()
+            val file = File(autoDir, name)
+            if (!BackupFormat.isAutoBackup(name) || !file.exists()) throw BackupException("Esa copia ya no está.")
+            val copy = file.inputStream().use { files.extract(it) }
+            val live = files.liveDatabaseFacts()
+            BackupFormat.importProblem(copy, live.version, live.identityHash)?.let { throw BackupException(it) }
+            BackupActivity.Confirm(copy, currentPages, undo = false)
+        } catch (e: Exception) {
+            files.discardStaged()
+            throw e
+        }
+    }
+
+    private suspend fun writeToFolder(tree: Uri, name: String): Long {
+        val resolver = app.contentResolver
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        val doc = DocumentsContract.createDocument(resolver, parent, "application/zip", name)
+            ?: throw IOException("no se pudo crear el archivo")
+        try {
+            val output = resolver.openOutputStream(doc) ?: throw IOException("no se pudo abrir el archivo")
+            val (_, bytes) = archive(output)
+            pruneFolder(tree)
+            return bytes
+        } catch (e: Exception) {
+            // Una copia a medias parece una copia y no lo es.
+            runCatching { DocumentsContract.deleteDocument(resolver, doc) }
+            throw e
+        }
+    }
+
+    /** Deja en la carpeta solo las últimas copias automáticas; tus otros archivos no se tocan. */
+    private fun pruneFolder(tree: Uri) {
+        val resolver = app.contentResolver
+        val treeId = DocumentsContract.getTreeDocumentId(tree)
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeId)
+        val found = HashMap<String, String>()
+        resolver.query(
+            children,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null, null, null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0) ?: continue
+                val display = c.getString(1) ?: continue
+                found[display] = id
+            }
+        }
+        BackupFormat.autoBackupsToDelete(found.keys.toList()).forEach { display ->
+            val id = found[display] ?: return@forEach
+            runCatching { DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, id)) }
+        }
+    }
+
+    /** Nombre visible de la carpeta elegida (p. ej. «KoreanDiary»). */
+    private fun folderName(tree: Uri): String = runCatching {
+        val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        app.contentResolver.query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull().orEmpty().ifBlank { "tu carpeta" }
+
     /** Descarta la copia preparada sin tocar nada. */
     fun cancel() {
         if (_activity.value !is BackupActivity.Confirm) return

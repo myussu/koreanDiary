@@ -12,10 +12,15 @@ import android.provider.Settings
 import androidx.core.content.IntentCompat
 import androidx.core.content.pm.PackageInfoCompat
 import com.jorge.koreandiary.KoreanDiaryApp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -42,15 +47,20 @@ sealed interface UpdateState {
     /** Falta permitir "Instalar apps desconocidas" para esta app (una sola vez). */
     data class NeedsPermission(val info: ReleaseInfo) : UpdateState
     data class Downloading(val info: ReleaseInfo, val progress: Float) : UpdateState
-    data class Installing(val info: ReleaseInfo) : UpdateState
-    data class Error(val message: String, val info: ReleaseInfo? = null) : UpdateState
+    /** Guardando una copia de todo antes de instalar. */
+    data class BackingUp(val info: ReleaseInfo) : UpdateState
+    /** [backupNote]: dónde quedó la copia de antes de actualizar. */
+    data class Installing(val info: ReleaseInfo, val backupNote: String? = null) : UpdateState
+    /** [backupFailed]: no se instaló porque no se pudo guardar la copia; se puede actualizar sin ella. */
+    data class Error(val message: String, val info: ReleaseInfo? = null, val backupFailed: Boolean = false) : UpdateState
 }
 
 /**
  * Actualizaciones desde el release "latest" de GitHub, sin salir de la app:
  * 1. Lee version.json y compara su versionCode (número de compilación de Actions) con el instalado.
  * 2. Descarga el APK y verifica su SHA-256.
- * 3. Lo instala con PackageInstaller. Desde Android 12, al actualizarse a sí misma con
+ * 3. Guarda una copia de todo ([beforeInstall]): si la versión nueva fallara, tus datos están a salvo.
+ * 4. Lo instala con PackageInstaller. Desde Android 12, al actualizarse a sí misma con
  *    UPDATE_PACKAGES_WITHOUT_USER_ACTION, el sistema puede instalar sin pedir confirmación.
  * Android además exige que el APK esté firmado con la misma llave que la app instalada.
  */
@@ -67,10 +77,26 @@ class Updater(private val app: Application) {
         currentVersionName = info.versionName ?: "?"
     }
 
+    /**
+     * Copia de seguridad antes de instalar; devuelve qué mostrar. La conecta el `AppContainer`
+     * (el actualizador se crea antes que la copia, que necesita su número de versión).
+     */
+    var beforeInstall: (suspend (ReleaseInfo) -> String)? = null
+
+    /** Descargar, copiar e instalar no dependen de la pantalla: siguen aunque salgas de donde empezaste. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var installJob: Job? = null
+
+    /** Empieza a descargar e instalar [info], si no hay ya una instalación en curso. */
+    fun startInstall(info: ReleaseInfo, skipBackup: Boolean = false) {
+        if (installJob?.isActive == true) return
+        installJob = scope.launch { downloadAndInstall(info, skipBackup) }
+    }
+
     /** Con [silent], los errores de red no se muestran (chequeo automático al abrir la app). */
     suspend fun check(silent: Boolean = false) {
         val busy = _state.value
-        if (busy is UpdateState.Checking || busy is UpdateState.Downloading || busy is UpdateState.Installing) return
+        if (busy is UpdateState.Checking || busy is UpdateState.Downloading || busy is UpdateState.BackingUp || busy is UpdateState.Installing) return
         _state.value = UpdateState.Checking
         _state.value = try {
             val info = fetchReleaseInfo()
@@ -80,7 +106,8 @@ class Updater(private val app: Application) {
         }
     }
 
-    suspend fun downloadAndInstall(info: ReleaseInfo) {
+    /** Con [skipBackup] instala sin guardar la copia antes (si la copia falló y decides seguir). */
+    private suspend fun downloadAndInstall(info: ReleaseInfo, skipBackup: Boolean = false) {
         if (!app.packageManager.canRequestPackageInstalls()) {
             _state.value = UpdateState.NeedsPermission(info)
             return
@@ -88,8 +115,28 @@ class Updater(private val app: Application) {
         try {
             _state.value = UpdateState.Downloading(info, 0f)
             val apk = download(info)
-            _state.value = UpdateState.Installing(info)
+            var note: String? = null
+            val backup = beforeInstall
+            if (!skipBackup && backup != null) {
+                _state.value = UpdateState.BackingUp(info)
+                note = try {
+                    backup(info)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _state.value = UpdateState.Error(
+                        "No se pudo guardar la copia antes de actualizar (${e.message ?: e.javaClass.simpleName}). No se instaló nada.",
+                        info,
+                        backupFailed = true,
+                    )
+                    return
+                }
+            }
+            _state.value = UpdateState.Installing(info, note)
             install(apk)
+        } catch (e: CancellationException) {
+            _state.value = UpdateState.Available(info)
+            throw e
         } catch (e: Exception) {
             _state.value = UpdateState.Error("La actualización falló: ${e.message}", info)
         }

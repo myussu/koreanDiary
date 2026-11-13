@@ -193,4 +193,43 @@ class BackupFormatTest {
         assertEquals("1 página", BackupFormat.pagesLabel(1))
         assertEquals("37 páginas", BackupFormat.pagesLabel(37))
     }
+
+    // ---------- Copias de antes de actualizar ----------
+
+    @Test
+    fun autoBackupNameSaysTheVersionAndWhen() {
+        val at = java.time.ZonedDateTime.of(2026, 11, 13, 18, 33, 0, 0, ZoneId.of("America/Lima")).toInstant().toEpochMilli()
+        val name = BackupFormat.autoBackupName("0.1.65", at, ZoneId.of("America/Lima"))
+        assertEquals("koreandiary-antes-de-0.1.65-20261113-1833.zip", name)
+        assertTrue(BackupFormat.isAutoBackup(name))
+        // Caracteres raros de la versión no llegan al nombre del archivo.
+        assertEquals("koreandiary-antes-de-0.1.65beta-20261113-1833.zip", BackupFormat.autoBackupName("0.1.65 beta/", at, ZoneId.of("America/Lima")))
+        assertTrue(BackupFormat.isAutoBackup("koreandiary-antes-de-0.1.65-20261113-1833 (1).zip"))
+        assertFalse(BackupFormat.isAutoBackup("koreandiary-2026-11-13.zip"))
+        assertFalse(BackupFormat.isAutoBackup("koreandiary-antes-de-0.1.65-20261113-1833.zip.tmp"))
+    }
+
+    @Test
+    fun keepsTheThreeNewestAutoBackupsAndIgnoresOtherFiles() {
+        val names = listOf(
+            "koreandiary-antes-de-0.1.60-20261110-0900.zip",
+            "koreandiary-antes-de-0.1.62-20261111-1200.zip",
+            "mi-copia-manual.zip",
+            "koreandiary-antes-de-0.1.64-20261113-1800.zip",
+            "koreandiary-antes-de-0.1.61-20261110-2300.zip",
+            "koreandiary-antes-de-0.1.65-20261113-1833.zip",
+        )
+        assertEquals(
+            listOf("koreandiary-antes-de-0.1.61-20261110-2300.zip", "koreandiary-antes-de-0.1.60-20261110-0900.zip"),
+            BackupFormat.autoBackupsToDelete(names),
+        )
+        assertTrue(BackupFormat.autoBackupsToDelete(names.take(3)).isEmpty())
+    }
+
+    @Test
+    fun statusKeepsItsDefaultsForTheAutoFolder() {
+        val s = BackupStatus()
+        assertEquals("", s.autoFolder)
+        assertEquals(0L, s.lastAutoAt)
+    }
 }

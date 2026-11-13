@@ -57,6 +57,11 @@ class AppContainer(val app: Application) {
     /** Exportar e importar todo a un archivo, y el estado de la copia automática de Google. */
     val backup = BackupManager(app, database, appScope, updater.currentVersionCode, updater.currentVersionName)
 
+    init {
+        // Antes de instalar cada actualización, una copia de todo (carpeta elegida o dentro de la app).
+        updater.beforeInstall = { info -> backup.backupBeforeUpdate(info.versionName) }
+    }
+
     /** Proveedor por API listo para usar, o null si le falta configuración. */
     fun apiProvider(id: String): CorrectionProvider? {
         val s = settings.state.value

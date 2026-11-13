@@ -127,6 +127,8 @@ object Features {
                 phone("Tema claro u oscuro y papel en modo oscuro."),
                 phone("Mascota: mostrarla u ocultarla, o importar la tuya. En el inicio, toca su globo para traducir."),
                 phone("La app se actualiza sola cuando hay una versión nueva."),
+                phone("Copia antes de actualizar: guarda todo antes de instalar cada versión (quedan las 3 últimas). «Elegir carpeta» para que sobreviva aunque desinstales; sin carpeta queda dentro de la app, con «Restaurar»."),
+                phone("Si esa copia falla, no instala: «Reintentar» o «Actualizar sin copia»."),
                 desktop("«Importar copia del celular…»: trae el .zip exportado en el celular. Si la PC ya tenía páginas, pide confirmación y guarda lo anterior."),
                 desktop("Tema claro u oscuro según el de Windows."),
             ),

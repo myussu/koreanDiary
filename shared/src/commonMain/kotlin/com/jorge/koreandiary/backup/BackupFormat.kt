@@ -35,6 +35,14 @@ data class BackupStatus(
     val quotaLimitBytes: Long = 0,
     /** Mensaje pendiente de mostrar en el inicio (p. ej. tras importar una copia). */
     val notice: String = "",
+    /** Carpeta elegida para las copias de antes de actualizar (URI del selector), o vacío. */
+    val autoFolder: String = "",
+    /** Nombre de esa carpeta, para mostrarlo. */
+    val autoFolderName: String = "",
+    /** Última copia de antes de actualizar: cuándo, cuánto pesó y si quedó dentro de la app. */
+    val lastAutoAt: Long = 0,
+    val lastAutoBytes: Long = 0,
+    val lastAutoInApp: Boolean = false,
 ) {
     /**
      * Google rechazó la última copia por tamaño. En cada pasada Android llama primero a
@@ -90,6 +98,37 @@ object BackupFormat {
         else String.format(spanish, "%.1f MB", bytes / 1_048_576.0)
 
     fun pagesLabel(count: Int): String = if (count == 1) "1 página" else "$count páginas"
+
+    // ---------- Copias automáticas antes de actualizar ----------
+
+    /** Prefijo de las copias de antes de actualizar: solo estas se borran solas. */
+    const val AUTO_PREFIX = "koreandiary-antes-de-"
+
+    /** Copias de antes de actualizar que se conservan (en la carpeta elegida o dentro de la app). */
+    const val AUTO_KEEP = 3
+
+    private val autoStamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")
+
+    /** Acepta además el « (1)» que algunos selectores agregan si el nombre ya existe. */
+    private val autoPattern = Regex("^koreandiary-antes-de-([0-9A-Za-z.]+)-(\\d{8}-\\d{4})(?: \\(\\d+\\))?\\.zip$")
+
+    /** «koreandiary-antes-de-0.1.65-20261113-1833.zip»: a qué versión ibas y cuándo. */
+    fun autoBackupName(toVersion: String, at: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+        val version = toVersion.filter { it.isLetterOrDigit() || it == '.' }.ifEmpty { "nueva" }
+        return AUTO_PREFIX + version + "-" + autoStamp.format(Instant.ofEpochMilli(at).atZone(zone)) + ".zip"
+    }
+
+    fun isAutoBackup(name: String): Boolean = autoPattern.matches(name)
+
+    /**
+     * Qué copias automáticas borrar para quedarse con las [keep] más recientes. Ignora cualquier
+     * otro archivo de la carpeta (tus copias exportadas a mano, otras cosas).
+     */
+    fun autoBackupsToDelete(names: List<String>, keep: Int = AUTO_KEEP): List<String> =
+        names.mapNotNull { name -> autoPattern.matchEntire(name)?.let { name to it.groupValues[2] } }
+            .sortedWith(compareByDescending<Pair<String, String>> { it.second }.thenByDescending { it.first })
+            .drop(keep)
+            .map { it.first }
 
     fun manifestToJson(manifest: BackupManifest): String = JSONObject()
         .put("format", manifest.format)
