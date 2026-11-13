@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.settings.ThemeMode
+import com.jorge.koreandiary.ui.FeaturesScreen
 import com.jorge.koreandiary.ui.HomeScreen
 import com.jorge.koreandiary.ui.ImportScreen
 import com.jorge.koreandiary.ui.KoreanDiaryTheme
@@ -104,6 +105,7 @@ private fun AppNavigation(container: AppContainer) {
             route == "import" -> ImportScreen(container, onBack = ::pop)
             route == "settings" -> SettingsScreen(container, onBack = ::pop)
             route == "progress" -> ProgressScreen(container, onBack = ::pop)
+            route == "features" -> FeaturesScreen(onBack = ::pop)
             route == "conversation" -> ConversationScreen(container, onBack = ::pop)
             route == "scenes" -> ScenesScreen(container, onBack = ::pop, onOpenPage = { push("page:$it") })
             route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
@@ -117,6 +119,7 @@ private fun AppNavigation(container: AppContainer) {
                 onProgress = { push("progress") },
                 onConversation = { push("conversation") },
                 onScenes = { push("scenes") },
+                onFeatures = { push("features") },
             )
         }
         // Escucha en curso (sigue con la pantalla apagada): una barra para volver a ella desde cualquier pantalla.

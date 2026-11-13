@@ -22,6 +22,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,6 +77,7 @@ fun HomeScreen(
     onProgress: () -> Unit,
     onConversation: () -> Unit,
     onScenes: () -> Unit,
+    onFeatures: () -> Unit,
 ) {
     val pages by container.diary.pageSummaries.collectAsStateWithLifecycle(emptyList())
     // Días que cuentan para la racha: el diario y las escenas ya verificadas.
@@ -89,6 +92,12 @@ fun HomeScreen(
             Text("일기", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
             AppOutlinedButton(onClick = onStudy) { Text("Estudio") }
             AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
+            // Botón chico en la esquina: la lista de todo lo que la app ya sabe hacer.
+            AppOutlinedButton(
+                onClick = onFeatures,
+                modifier = Modifier.padding(start = 6.dp).semantics { contentDescription = "Qué puede hacer la app" },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+            ) { Text("?") }
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
         BackupBanner(container, onSettings = onSettings, modifier = Modifier.padding(top = 10.dp))

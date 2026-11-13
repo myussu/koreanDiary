@@ -11,5 +11,6 @@
 - Las versiones viven en `gradle/libs.versions.toml`. Verifícalas en las páginas oficiales antes de cambiarlas.
 - La compilación se verifica en GitHub Actions: `android.yml` publica el APK en el release `latest`; `escritorio.yml` publica la app de Windows en el release `escritorio`.
 - Lógica pura (FSRS, parsers) debe tener tests en `shared/src/jvmTest` (corren en la JVM con org.json real). `app/src/test` queda para lo que depende de clases de `:app`.
+- Al agregar, quitar o renombrar una función visible, actualizar la lista de «Qué puede hacer la app» (`FEATURES` en `app/.../ui/FeaturesScreen.kt`): una línea simple por función, con los nombres de los botones tal como aparecen.
 - Commits sin líneas de atribución: nada de `Co-Authored-By` ni `Claude-Session`.
 - Diseño: botones y superficies cuadrados y minimalistas (usar `AppButton`, `AppOutlinedButton`, `AppTextButton` de `ui/Components.kt`). Colores siempre desde `MaterialTheme.colorScheme` o `PaperStyle`, nunca fijos en las pantallas, para que funcione el modo oscuro. La raíz es un `Surface` que fija `contentColor`; no la reemplaces por un `Box`.
