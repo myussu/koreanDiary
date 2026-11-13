@@ -42,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jorge.koreandiary.backup.BackupException
@@ -86,6 +88,8 @@ fun DiaryApp(chooseZip: () -> File?) {
     var message by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf<ImportResult?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // «?»: la lista de lo que puede hacer la app, en lugar de las páginas.
+    var showFeatures by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun applyImport(result: ImportResult) {
@@ -148,6 +152,10 @@ fun DiaryApp(chooseZip: () -> File?) {
                 AppOutlinedButton(onClick = { startImport() }, enabled = !busy) {
                     Text(if (busy) "Importando…" else "Importar copia del celular…")
                 }
+                AppOutlinedButton(
+                    onClick = { showFeatures = !showFeatures },
+                    modifier = Modifier.semantics { contentDescription = "Qué puede hacer la app" },
+                ) { Text("?") }
             }
             message?.let {
                 Text(it, color = scheme.secondary, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 10.dp))
@@ -156,6 +164,7 @@ fun DiaryApp(chooseZip: () -> File?) {
 
             val db = database
             when {
+                showFeatures -> FeaturesView(onBack = { showFeatures = false }, Modifier.weight(1f).fillMaxWidth())
                 db == null -> Text(
                     "Importando la copia…",
                     color = scheme.onSurfaceVariant,

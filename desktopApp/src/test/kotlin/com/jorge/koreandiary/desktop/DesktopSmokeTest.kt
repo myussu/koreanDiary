@@ -3,9 +3,14 @@ package com.jorge.koreandiary.desktop
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.jorge.koreandiary.backup.BackupException
 import com.jorge.koreandiary.backup.BackupFormat
@@ -16,6 +21,8 @@ import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.desktop.ui.DiaryApp
 import com.jorge.koreandiary.desktop.ui.KoreanDiaryTheme
+import com.jorge.koreandiary.features.Features
+import com.jorge.koreandiary.features.Platform
 import com.jorge.koreandiary.ink.InkPoint
 import com.jorge.koreandiary.ink.InkSerializer
 import com.jorge.koreandiary.ink.InkStroke
@@ -99,6 +106,37 @@ class DesktopSmokeTest {
                 waitUntil(timeoutMillis = 15_000) { onAllNodesWithText(text).fetchSemanticsNodes().size >= 2 }
                 waitForIdle()
                 screenshot(if (dark) "diario-oscuro" else "diario-claro")
+            }
+        }
+    }
+
+    /** «?» abre la lista compartida con el celular; el buscador filtra y lo que es solo celular sale marcado. */
+    @Test
+    fun listaDeFunciones() {
+        for (dark in listOf(false, true)) {
+            runComposeUiTest {
+                setContent { KoreanDiaryTheme(dark = dark) { DiaryApp(chooseZip = { null }) } }
+                onNodeWithContentDescription("Qué puede hacer la app").performClick()
+                waitUntil(timeoutMillis = 15_000) { onAllNodesWithText("Qué puede hacer la app").fetchSemanticsNodes().isNotEmpty() }
+                onNodeWithText("En la PC funcionan ${Features.countOn(Platform.DESKTOP)} de ${Features.total}", substring = true).assertExists()
+                waitForIdle()
+                screenshot(if (dark) "funciones-oscuro" else "funciones-claro")
+                if (dark) return@runComposeUiTest
+
+                onNode(hasSetTextAction()).performTextInput("escenas racha")
+                waitUntil(timeoutMillis = 15_000) { onAllNodesWithText("ESCENAS").fetchSemanticsNodes().isNotEmpty() }
+                waitUntil(timeoutMillis = 15_000) { onAllNodesWithText("DIARIO").fetchSemanticsNodes().isEmpty() }
+                // El campo también contiene «racha»: se busca la línea por su texto propio.
+                onNodeWithText("Cuenta para la racha", substring = true).assertExists()
+                onAllNodesWithText("solo en celular").fetchSemanticsNodes().let { assertTrue(it.isNotEmpty()) }
+                waitForIdle()
+                screenshot("funciones-busqueda")
+
+                onNode(hasSetTextAction()).performTextClearance()
+                onNode(hasSetTextAction()).performTextInput("teletransportar")
+                waitUntil(timeoutMillis = 15_000) {
+                    onAllNodesWithText("todavía no existe", substring = true).fetchSemanticsNodes().isNotEmpty()
+                }
             }
         }
     }
