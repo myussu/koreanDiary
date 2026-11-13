@@ -19,7 +19,18 @@ data class SceneData(
     val newGrammar: List<Int> = emptyList(),
     /** Lo que quisiste decir: lo usa la revisión para avisar si lo escrito dice otra cosa. */
     val ideas: List<SceneIdea> = emptyList(),
+    /**
+     * Elementos de la escena viva que vio la IA (ids de [SceneDictionary]), en orden: completan lo
+     * que el diccionario no reconoce. Los del diccionario no se guardan: salen de la tinta.
+     */
+    val elements: List<String> = emptyList(),
 ) {
+    /** Suma elementos sin repetir, manteniendo el orden en que aparecieron. */
+    fun withElements(ids: List<String>): SceneData {
+        val merged = (elements + ids.filter { SceneDictionary.element(it) != null }).distinct().takeLast(MAX_ELEMENTS)
+        return if (merged == elements) this else copy(elements = merged)
+    }
+
     fun withIdea(idea: SceneIdea): SceneData {
         // La misma idea preguntada otra vez: se queda la pista más alta que viste.
         val existing = ideas.indexOfFirst { it.text.equals(idea.text, ignoreCase = true) }
@@ -32,11 +43,14 @@ data class SceneData(
         .put("v", 1)
         .put("ng", JSONArray(newGrammar))
         .put("ideas", JSONArray().apply { ideas.forEach { put(JSONObject().put("t", it.text).put("p", it.hints)) } })
+        .put("els", JSONArray(elements))
         .toString()
 
     companion object {
         /** Ideas que se guardan por escena; las más viejas se descartan. */
         const val MAX_IDEAS = 30
+        /** Elementos que puede tener una escena viva: más ya no se distinguen en los bordes. */
+        const val MAX_ELEMENTS = 12
 
         /** Tolerante: JSON vacío, nulo o roto da una escena vacía en vez de fallar. */
         fun parse(json: String?): SceneData {
@@ -45,6 +59,7 @@ data class SceneData(
                 val o = JSONObject(json)
                 val ng = o.optJSONArray("ng")
                 val ideas = o.optJSONArray("ideas")
+                val els = o.optJSONArray("els")
                 SceneData(
                     newGrammar = if (ng == null) emptyList() else (0 until ng.length()).map { ng.optInt(it, -1) }.filter { it >= 0 },
                     ideas = if (ideas == null) emptyList() else (0 until ideas.length()).mapNotNull { i ->
@@ -52,6 +67,8 @@ data class SceneData(
                         val text = idea.optString("t").trim()
                         if (text.isEmpty()) null else SceneIdea(text, idea.optInt("p", 1).coerceIn(1, 3))
                     },
+                    elements = if (els == null) emptyList() else (0 until els.length()).map { els.optString(it) }
+                        .filter { SceneDictionary.element(it) != null }.distinct(),
                 )
             } catch (e: org.json.JSONException) {
                 SceneData()

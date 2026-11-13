@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -213,6 +214,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 
     val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
         Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper)) {
+            // Escena viva: detrás del lienzo, así la tinta queda siempre encima con su contraste.
+            if (isScene && settings.liveScene && state.sceneElements.isNotEmpty()) {
+                SceneVignette(state.sceneElements, dark = paper.background.luminance() < 0.5f, modifier = Modifier.fillMaxSize())
+            }
             InkCanvas(
                 strokes = state.strokes,
                 tool = tool,

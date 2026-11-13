@@ -10,6 +10,8 @@ data class CorrectionResponse(
     val improvements: List<ImprovementDto> = emptyList(),
     /** Escenas: donde lo escrito no dice lo que quiso decir (no son errores). */
     val notes: List<MeaningNoteDto> = emptyList(),
+    /** Escenas: elementos de la escena viva en la página (ids de `SceneDictionary`). */
+    val sceneElements: List<String> = emptyList(),
 )
 
 /** Nota de sentido: [original] dice otra cosa que la idea; [suggestion] es cómo se diría lo que quería. */
@@ -92,6 +94,8 @@ data class HowToSayResponse(
     val words: List<Pair<String, String>>,
     /** Escenas: cómo unir las palabras sin dar la frase (la pista intermedia). */
     val hint: String? = null,
+    /** Escenas: elementos de la escena viva en esta idea (ids de `SceneDictionary`). */
+    val sceneElements: List<String> = emptyList(),
 ) {
     data class Phrase(val text: String, val grammar: List<String>)
 }

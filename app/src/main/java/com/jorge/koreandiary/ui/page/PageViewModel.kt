@@ -32,6 +32,8 @@ import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
 import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.scene.SceneData
+import com.jorge.koreandiary.scene.SceneDictionary
+import com.jorge.koreandiary.scene.SceneElement
 import com.jorge.koreandiary.scene.SceneIdea
 import com.jorge.koreandiary.voice.KoreanSpeech
 import com.jorge.koreandiary.ink.strokesNear
@@ -120,6 +122,8 @@ data class PageUiState(
     val newGrammar: List<SuggestionChip> = emptyList(),
     /** Escenas: «Actualizar sugerencias» en curso. */
     val refreshing: Boolean = false,
+    /** Escenas: lo que se dibuja en los bordes, en el orden en que apareció. */
+    val sceneElements: List<SceneElement> = emptyList(),
     val phase: Phase = Phase.Writing,
     val message: String? = null,
     val canUndo: Boolean = false,
@@ -221,6 +225,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val fitted = InkOps.fitToWidth(loaded, width)
         _state.update { it.copy(strokes = fitted ?: loaded) }
         if (fitted != null) scheduleSave()
+        scheduleLiveScene()
     }
 
     /** Pone la página en pantalla con sus sugerencias, separando las gramáticas nuevas de la escena. */
@@ -228,6 +233,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         // Lo que sumó «Actualizar sugerencias» va primero, para que se vea.
         val chips = loadSuggestions(page).sortedBy { if (it.ref in refreshed) 0 else 1 }
         _state.update { it.copy(page = page, suggestions = chips.filterNot { c -> c.isNew }, newGrammar = chips.filter { c -> c.isNew }) }
+        if (page.kind == PageKind.SCENE) {
+            // Hasta que se lea la tinta, la escena parte del texto ya confirmado.
+            if (lineTexts.isEmpty()) detected = SceneDictionary.detect(page.confirmedText.orEmpty())
+            publishScene()
+        }
     }
 
     /** Lo sumado por «Actualizar sugerencias» en esta visita. */
@@ -300,6 +310,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             )
         }
         scheduleSave()
+        scheduleLiveScene()
     }
 
     /**
@@ -336,6 +347,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             )
         }
         scheduleSave()
+        scheduleLiveScene()
     }
 
     private fun scheduleSave() {
@@ -592,8 +604,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (isScene && idea != null) {
             val page = _state.value.page ?: return
             val scene = SceneData.parse(page.sceneJson)
-            val updated = scene.withIdea(SceneIdea(idea, r.shown))
-            if (updated != scene) persist { it.copy(sceneJson = updated.toJson()) }
+            // La idea dicha y lo que la IA vio en ella para la escena viva.
+            val updated = scene.withIdea(SceneIdea(idea, r.shown)).withElements(r.response.sceneElements)
+            if (updated != scene) {
+                persist { it.copy(sceneJson = updated.toJson()) }
+                publishScene()
+            }
         }
     }
 
@@ -666,6 +682,63 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             }
             _state.update { it.copy(refreshing = false, message = message) }
         }
+    }
+
+    // ---------- Escena viva ----------
+
+    /** Texto leído por línea y una huella de sus trazos: solo se vuelve a leer la línea que cambió. */
+    private val lineTexts = HashMap<Int, String>()
+    private val lineKeys = HashMap<Int, Int>()
+    /** Lo que el diccionario encuentra en la tinta (en vivo). */
+    private var detected: List<SceneElement> = emptyList()
+    private var liveJob: Job? = null
+
+    /** Los bordes: lo del diccionario y lo que vio la IA, sin repetir, en el orden en que aparecieron. */
+    private fun publishScene() {
+        val ai = SceneData.parse(_state.value.page?.sceneJson).elements.mapNotNull { SceneDictionary.element(it) }
+        val all = (detected + ai).distinctBy { it.id }.take(SceneData.MAX_ELEMENTS)
+        if (all != _state.value.sceneElements) _state.update { it.copy(sceneElements = all) }
+    }
+
+    /** Un rato después del último trazo (no en cada uno), se lee lo que cambió. */
+    private fun scheduleLiveScene() {
+        if (!isScene || !c.settings.state.value.liveScene) return
+        liveJob?.cancel()
+        liveJob = viewModelScope.launch {
+            delay(LIVE_SCENE_DELAY_MS)
+            updateLiveScene()
+        }
+    }
+
+    /**
+     * Lee con ML Kit solo las líneas cuyos trazos cambiaron y busca en todo lo leído las palabras del
+     * diccionario. Sin IA ni cuota. No descarga el modelo por su cuenta: eso lo hace Revisar o la
+     * precarga por Wi-Fi al abrir la app.
+     */
+    private suspend fun updateLiveScene() {
+        val lh = lineHeight
+        val w = width
+        if (lh <= 0f || w <= 0f) return
+        if (!runCatching { c.recognizer.isModelDownloaded() }.getOrDefault(false)) return
+        val byLine = _state.value.strokes.groupBy { it.lineIndex(lh) }
+        lineTexts.keys.retainAll(byLine.keys)
+        lineKeys.keys.retainAll(byLine.keys)
+        for ((line, strokes) in byLine) {
+            val key = strokes.fold(strokes.size) { acc, s -> 31 * acc + System.identityHashCode(s) }
+            if (lineKeys[line] == key) continue
+            val text = try {
+                c.recognizer.recognizeLines(strokes, lh, w).joinToString(" ") { it.text }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                continue
+            }
+            lineTexts[line] = text
+            lineKeys[line] = key
+        }
+        val text = lineTexts.toSortedMap().values.joinToString(" ")
+        detected = withContext(Dispatchers.Default) { SceneDictionary.detect(text) }
+        publishScene()
     }
 
     // ---------- Dictar la idea ----------
@@ -788,7 +861,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         // Una sola transacción: correcciones, FSRS y el estado "revisada" quedan todos o ninguno.
         val summary = c.study.applyCorrection(page, response, System.currentTimeMillis())
         // El estado ya está en la base; esto lo refleja en pantalla y guarda la tinta más reciente.
-        persist { it.copy(status = PageStatus.REVIEWED) }
+        // En una escena, suma lo que la IA vio en la página a la escena viva.
+        persist {
+            val scene = if (it.kind == PageKind.SCENE) SceneData.parse(it.sceneJson).withElements(response.sceneElements).toJson() else it.sceneJson
+            it.copy(status = PageStatus.REVIEWED, sceneJson = scene)
+        }
+        if (isScene) publishScene()
         val parts = buildList {
             add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
             if (summary.reviewed > 0) add("${summary.reviewed} ítems repasados")
@@ -919,6 +997,9 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     companion object {
         /** Páginas con una revisión de la IA en curso; sigue aunque salgas de la página. */
         private val reviewing = MutableStateFlow<Set<Long>>(emptySet())
+
+        /** Pausa después del último trazo antes de leer la línea para la escena viva. */
+        private const val LIVE_SCENE_DELAY_MS = 800L
 
         /** Radio mínimo del borrador (px); el normal es ~18 % del alto de línea. */
         private const val MIN_ERASE_RADIUS = 24f

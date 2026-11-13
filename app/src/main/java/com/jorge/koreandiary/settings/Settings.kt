@@ -57,6 +57,8 @@ data class AppSettings(
     val penWidth: String = "medio",
     /** El trazo cambia de grosor según la presión del S Pen, como un pincel. */
     val penPressure: Boolean = true,
+    /** Escenas: los bordes de la página reaccionan a lo que escribes (mar, pasto, viento…). */
+    val liveScene: Boolean = true,
     /** Ocultar la tarjeta "Primeros pasos" del inicio. */
     val hideOnboarding: Boolean = false,
     /** Recordatorio diario para escribir, solo si ese día aún no hay página. */
@@ -144,6 +146,7 @@ class SettingsStore(context: Context) {
         showMascot = prefs.getBoolean("showMascot", true),
         penWidth = prefs.getString("penWidth", "medio") ?: "medio",
         penPressure = prefs.getBoolean("penPressure", true),
+        liveScene = prefs.getBoolean("liveScene", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
         reminderEnabled = prefs.getBoolean("reminderEnabled", false),
         reminderHour = prefs.getInt("reminderHour", 20),
@@ -188,6 +191,7 @@ class SettingsStore(context: Context) {
             .putBoolean("showMascot", s.showMascot)
             .putString("penWidth", s.penWidth)
             .putBoolean("penPressure", s.penPressure)
+            .putBoolean("liveScene", s.liveScene)
             .putBoolean("hideOnboarding", s.hideOnboarding)
             .putBoolean("reminderEnabled", s.reminderEnabled)
             .putInt("reminderHour", s.reminderHour)

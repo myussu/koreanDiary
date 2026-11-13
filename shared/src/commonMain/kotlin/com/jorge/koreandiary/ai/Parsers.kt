@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.ai
 
+import com.jorge.koreandiary.scene.SceneDictionary
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -89,7 +90,7 @@ object CorrectionParser {
         if (sentences.isEmpty() && corrections.isEmpty() && allUsed.isEmpty()) {
             throw ParseException("La respuesta no tiene oraciones, correcciones ni ítems usados.")
         }
-        return CorrectionResponse(sentences, corrections, allUsed, improvements, notes)
+        return CorrectionResponse(sentences, corrections, allUsed, improvements, notes, sceneElements(json.optJSONArray("escena")))
     }
 
     /** Lista "usados" (formato compacto f/t/ok o el anterior forma_base/resultado). La comparte el workbook. */
@@ -156,6 +157,14 @@ object ExplainParser {
         })
 }
 
+/** Ids de la escena viva que devolvió la IA: solo los que la app sabe dibujar, sin repetir. */
+internal fun sceneElements(arr: JSONArray?): List<String> {
+    if (arr == null) return emptyList()
+    return (0 until arr.length()).map { arr.optString(it).trim().lowercase() }
+        .filter { SceneDictionary.element(it) != null }
+        .distinct()
+}
+
 object HowToSayParser {
     fun parse(raw: String): HowToSayResponse {
         val json = try {
@@ -170,7 +179,7 @@ object HowToSayParser {
             val f = o.str("f") ?: return@mapObjects null
             f to (o.str("s") ?: "")
         }
-        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words, hint = json.str("pista"))
+        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words, hint = json.str("pista"), sceneElements = sceneElements(json.optJSONArray("esc")))
     }
 
     private fun phrase(o: JSONObject?): HowToSayResponse.Phrase? {

@@ -184,6 +184,16 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
+                    Text("Escena viva en los bordes")
+                    Text(
+                        "En las escenas, los bordes de la página se llenan con lo que escribes: mar, pasto, viento, sol… Lee tu letra mientras escribes, sin gastar cuota de la IA.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = s.liveScene, onCheckedChange = { v -> container.settings.update { it.copy(liveScene = v) } })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
                     Text("Solo el S Pen dibuja")
                     Text("El dedo y la palma se ignoran.", style = MaterialTheme.typography.bodySmall)
                 }
