@@ -41,6 +41,8 @@ data class ApplySummary(
     val newGrammar: Int,
     val pendingWords: Int,
     val improvements: Int,
+    /** Escenas: notas de sentido (lo escrito dice otra cosa que la idea). */
+    val notes: Int = 0,
 )
 
 /** Fuentes de un ítem en la base. */
@@ -238,11 +240,24 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             )
         }
 
+        response.notes.forEach { n ->
+            diary.insertCorrection(
+                Correction(
+                    pageId = page.id, sentence = n.sentence, original = n.original, suggestion = n.suggestion,
+                    type = CorrectionType.MEANING, explanation = n.explanation, tense = tenseBySentence[n.sentence],
+                    itemType = null, itemId = null, status = CorrectionStatus.NOTE,
+                )
+            )
+        }
+
         val usage = if (firstReview) {
             registerUsage(response.used, ItemRef.decodeList(page.suggestedItems).toSet(), now, page.id)
         } else UsageSummary()
         diary.setPageStatus(page.id, PageStatus.REVIEWED)
-        ApplySummary(response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending, response.improvements.size)
+        ApplySummary(
+            response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending,
+            response.improvements.size, response.notes.size,
+        )
     }
 
     /**
@@ -528,6 +543,8 @@ data class AnnotatedItem(
 object CorrectionType {
     /** Sugerencia de estructura de su nivel; no exige reescritura. */
     const val IMPROVEMENT = "mejora"
+    /** Escenas: lo escrito dice otra cosa que lo que dijiste que querías decir. */
+    const val MEANING = "sentido"
 }
 
 class DiaryRepository(private val db: AppDatabase) {
@@ -541,14 +558,18 @@ class DiaryRepository(private val db: AppDatabase) {
     /** Días con páginas que cuentan para la racha (ver `COUNTS_FOR_STREAK` en Daos.kt). */
     val pagesPerDay = diary.observePagesPerDay()
 
-    suspend fun newPage(now: Long, suggestedItems: String, kind: String = PageKind.DIARY): Long {
+    suspend fun newPage(now: Long, suggestedItems: String, kind: String = PageKind.DIARY, sceneJson: String? = null): Long {
         val today = LocalDate.now().toString()
         val entryId = diary.entryForDate(today)?.id ?: diary.insertEntry(DiaryEntry(date = today, createdAt = now))
-        return diary.insertPage(DiaryPage(entryId = entryId, suggestedItems = suggestedItems, createdAt = now, updatedAt = now, kind = kind))
+        return diary.insertPage(
+            DiaryPage(entryId = entryId, suggestedItems = suggestedItems, createdAt = now, updatedAt = now, kind = kind, sceneJson = sceneJson)
+        )
     }
 
     suspend fun page(id: Long) = diary.page(id)
     suspend fun save(page: DiaryPage) = diary.updatePage(page)
+    /** Descartar una nota de sentido (cambiaste de idea): se borra, no cuenta para nada. */
+    suspend fun dismissNote(correction: Correction) = diary.deleteCorrection(correction.id)
     suspend fun saveInk(id: Long, inkJson: String, canvasWidth: Int, updatedAt: Long) =
         diary.updateInk(id, inkJson, canvasWidth, updatedAt)
     fun corrections(pageId: Long) = diary.observeCorrections(pageId)

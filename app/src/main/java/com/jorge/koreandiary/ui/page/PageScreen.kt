@@ -1,6 +1,11 @@
 package com.jorge.koreandiary.ui.page
 
+import android.Manifest
 import android.content.ClipboardManager
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.content.Context
 import android.os.Build
 import android.util.DisplayMetrics
@@ -94,6 +99,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val corrections by vm.corrections.collectAsStateWithLifecycle()
     val howTo by vm.howTo.collectAsStateWithLifecycle()
     val explain by vm.explain.collectAsStateWithLifecycle()
+    val voice by vm.voice.collectAsStateWithLifecycle()
     val reaction by vm.mascotMood.collectAsStateWithLifecycle()
     var howToOpen by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -163,6 +169,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val panels: @Composable () -> Unit = {
         SuggestionsBar(
             state.suggestions,
+            newGrammar = state.newGrammar,
+            // Escenas sin revisar: sugerencias que siguen a lo que llevas escrito.
+            onRefresh = if (isScene && page?.status != PageStatus.REVIEWED) vm::refreshSuggestions else null,
+            refreshing = state.refreshing,
             explain = explain,
             onChip = vm::toggleExplain,
             onCloseExplain = vm::closeExplain,
@@ -176,6 +186,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         if (howToOpen || howTo != HowTo.Idle) {
             HowToSayPanel(
                 state = howTo,
+                tiered = isScene,
+                voice = voice,
+                onDictate = vm::dictateHowTo,
+                onMore = vm::moreHowTo,
                 onAsk = vm::askHowTo,
                 onPaste = vm::submitHowToPaste,
                 onClose = {
@@ -185,7 +199,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             )
         }
 
-        if (corrections.isNotEmpty()) CorrectionsPanel(corrections, onMarkDone = vm::markRewritten)
+        if (corrections.isNotEmpty()) CorrectionsPanel(corrections, onMarkDone = vm::markRewritten, onDismissNote = vm::dismissNote)
 
         state.message?.let { msg ->
             Surface(
@@ -361,6 +375,9 @@ private fun rememberPaperWidth(): Dp {
 @Composable
 private fun SuggestionsBar(
     chips: List<SuggestionChip>,
+    newGrammar: List<SuggestionChip>,
+    onRefresh: (() -> Unit)?,
+    refreshing: Boolean,
     explain: ExplainCard?,
     onChip: (SuggestionChip) -> Unit,
     onCloseExplain: () -> Unit,
@@ -374,10 +391,27 @@ private fun SuggestionsBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             mascot?.invoke()
             Text("SUGERENCIAS", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+            onRefresh?.let { refresh ->
+                AppTextButton(onClick = refresh, enabled = !refreshing) { Text(if (refreshing) "Buscando…" else "Actualizar") }
+            }
             AppTextButton(onClick = onHowTo) { Text("¿Cómo digo?") }
             AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }
         }
         if (!expanded) return@Column
+        // Escenas: las gramáticas nuevas, un paso por encima de tu nivel, en su propio grupo.
+        if (newGrammar.isNotEmpty()) {
+            Text(
+                "NUEVAS PARA ESTA ESCENA",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                items(newGrammar) { chip ->
+                    AppTag(text = "★ ${chip.label}", selected = chip == selected, accent = true, fontSize = 17.sp, onClick = { onChip(chip) })
+                }
+            }
+        }
         if (chips.isEmpty()) {
             Text(
                 "Todavía no hay vocabulario ni gramática. Impórtalos en Estudio.",
@@ -475,6 +509,11 @@ private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -
 @Composable
 private fun HowToSayPanel(
     state: HowTo,
+    /** Escenas: ayuda por partes y dictado. */
+    tiered: Boolean,
+    voice: HowToVoice,
+    onDictate: () -> Unit,
+    onMore: () -> Unit,
     onAsk: (String) -> Unit,
     onPaste: (String) -> Unit,
     onClose: () -> Unit,
@@ -492,9 +531,21 @@ private fun HowToSayPanel(
             focus.clearFocus()
         }
     }
+    // Lo que vas dictando aparece en el campo; al terminar de hablar se pregunta solo.
+    LaunchedEffect(voice.text) {
+        if (voice.text.isNotEmpty()) idea = voice.text
+    }
     fun ask() {
         focus.clearFocus()
         onAsk(idea)
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) onDictate()
+    }
+    fun dictate() {
+        focus.clearFocus()
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (granted || voice.listening) onDictate() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     Surface(color = scheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
@@ -515,14 +566,22 @@ private fun HowToSayPanel(
                     OutlinedTextField(
                         value = idea,
                         onValueChange = { idea = it },
-                        placeholder = { Text("Lo que quieres decir, en español") },
+                        placeholder = { Text(if (tiered) "Dila o escríbela, en español" else "Lo que quieres decir, en español") },
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { ask() }),
                         modifier = Modifier.weight(1f),
                     )
-                    AppButton(onClick = ::ask, enabled = idea.isNotBlank() && state != HowTo.Asking) { Text("Preguntar") }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (tiered) {
+                            AppOutlinedButton(onClick = ::dictate, enabled = state != HowTo.Asking) {
+                                Text(if (voice.listening) "Escuchando… (parar)" else "Dictar")
+                            }
+                        }
+                        AppButton(onClick = ::ask, enabled = idea.isNotBlank() && state != HowTo.Asking && !voice.listening) { Text("Preguntar") }
+                    }
                 }
+                voice.error?.let { Text(it, color = scheme.error, style = MaterialTheme.typography.bodySmall) }
             }
             when (state) {
                 HowTo.Asking -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = scheme.primary, trackColor = scheme.surfaceContainerHighest)
@@ -538,7 +597,9 @@ private fun HowToSayPanel(
                     }) { Text("Pegar") }
                 }
                 is HowTo.Error -> Text(state.message, color = scheme.error, style = MaterialTheme.typography.bodySmall)
-                is HowTo.Result -> if (expanded) HowToResult(state)
+                is HowTo.Result -> if (expanded) {
+                    if (tiered) TieredHowToResult(state, onMore) else HowToResult(state)
+                }
                 HowTo.Idle -> Unit
             }
         }
@@ -572,6 +633,57 @@ private fun HowToResult(result: HowTo.Result) {
     }
 }
 
+/**
+ * Escenas: la ayuda por partes, para que intentes armar la frase antes de verla.
+ * 1) las palabras; 2) cómo unirlas (partículas y terminación, sin la frase); 3) la frase.
+ */
+@Composable
+private fun TieredHowToResult(result: HowTo.Result, onMore: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val r = result.response
+    Text("1 · PALABRAS", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+    if (result.wordTags.isEmpty()) {
+        Text("La IA no separó las palabras; pide la siguiente pista.", style = MaterialTheme.typography.bodySmall)
+    } else {
+        result.wordTags.forEach { w ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text((if (w.known) "" else "+ ") + w.label, fontSize = 20.sp, color = if (w.known) scheme.onSurface else scheme.secondary)
+                w.meaning?.takeIf { it.isNotBlank() }?.let {
+                    Text("  $it", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+    if (result.shown >= 2) {
+        Text("2 · CÓMO UNIRLAS", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        Text(r.hint?.takeIf { it.isNotBlank() } ?: "La IA no dio la pista; mira la gramática que usa.", style = MaterialTheme.typography.bodyMedium)
+        AnnotatedTags(result.mineTags)
+    }
+    if (result.shown >= 3) {
+        Text("3 · LA FRASE", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        Text(r.mine.text, fontSize = 22.sp)
+        r.natural?.let { nat ->
+            Text("COMO LO DIRÍA UN COREANO", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            Text(nat.text, fontSize = 22.sp)
+            AnnotatedTags(result.naturalTags)
+        }
+        if (r.note.isNotBlank()) Text(r.note, style = MaterialTheme.typography.bodySmall)
+        Text("Escríbela a mano en la página.", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (result.shown == 1) "Intenta armar la frase con estas palabras." else "Intenta escribirla antes de verla.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            AppOutlinedButton(onClick = onMore) { Text(if (result.shown == 1) "Más ayuda" else "Ver la frase") }
+        }
+    }
+    if ((result.wordTags + result.mineTags).any { !it.known }) {
+        Text("“+” = no está en tus listas.", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+    }
+}
+
 @Composable
 private fun AnnotatedTags(tags: List<AnnotatedItem>) {
     if (tags.isEmpty()) return
@@ -584,7 +696,7 @@ private fun AnnotatedTags(tags: List<AnnotatedItem>) {
 }
 
 @Composable
-private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correction) -> Unit) {
+private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correction) -> Unit, onDismissNote: (Correction) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(true) }
     val pending = corrections.count { it.status == CorrectionStatus.PENDING }
@@ -612,6 +724,22 @@ private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correct
                                 Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
                                 Text("Mejora de tu nivel · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                             }
+                        }
+                        return@items
+                    }
+                    // Escenas: lo escrito dice otra cosa que tu idea. Solo un aviso: no se reescribe.
+                    if (c.status == CorrectionStatus.NOTE) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("≈", color = scheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
+                            Column(Modifier.weight(1f)) {
+                                Row {
+                                    Text(c.original, color = scheme.onSurface)
+                                    Text("  ·  si querías: ", color = scheme.onSurfaceVariant)
+                                    Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
+                                }
+                                Text("Sentido · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                            }
+                            AppTextButton(onClick = { onDismissNote(c) }) { Text("Descartar") }
                         }
                         return@items
                     }

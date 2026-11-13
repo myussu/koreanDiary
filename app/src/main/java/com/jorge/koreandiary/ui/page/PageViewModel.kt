@@ -14,6 +14,7 @@ import com.jorge.koreandiary.ai.ItemExplanation
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.Prompts
 import com.jorge.koreandiary.ai.ProviderException
+import com.jorge.koreandiary.ai.SceneSuggestionsParser
 import com.jorge.koreandiary.ai.ShareFlow
 import com.jorge.koreandiary.data.AnnotatedItem
 import com.jorge.koreandiary.data.ExplanationStore
@@ -30,6 +31,9 @@ import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
 import com.jorge.koreandiary.mascot.MascotMood
+import com.jorge.koreandiary.scene.SceneData
+import com.jorge.koreandiary.scene.SceneIdea
+import com.jorge.koreandiary.voice.KoreanSpeech
 import com.jorge.koreandiary.ink.strokesNear
 import com.jorge.koreandiary.settings.ProviderId
 import kotlinx.coroutines.Dispatchers
@@ -68,14 +72,30 @@ sealed interface HowTo {
         val mineTags: List<AnnotatedItem>,
         val naturalTags: List<AnnotatedItem>,
         val wordTags: List<AnnotatedItem>,
+        /**
+         * Cuánto se muestra: 1 = palabras, 2 = cómo unirlas, 3 = la frase. En el diario se ve todo
+         * de una vez (3); en las escenas se avanza con «Más ayuda».
+         */
+        val shown: Int = 3,
     ) : HowTo
     data class Error(val message: String) : HowTo
 }
 
+/** Dictado de la idea en español para «¿Cómo digo?». */
+data class HowToVoice(val listening: Boolean = false, val text: String = "", val error: String? = null)
+
 /** Vibración breve para los momentos clave (como el clic de un botón físico). */
 enum class Feedback { SUCCESS, FAIL, TICK }
 
-data class SuggestionChip(val label: String, val detail: String, val isGrammar: Boolean, val isGap: Boolean = false) {
+data class SuggestionChip(
+    val label: String,
+    val detail: String,
+    val isGrammar: Boolean,
+    val isGap: Boolean = false,
+    /** Escenas: una de las gramáticas nuevas de esta página (va en su propio grupo). */
+    val isNew: Boolean = false,
+    val ref: ItemRef? = null,
+) {
     /** Clave de su explicación guardada. */
     val key: String get() = ExplanationStore.key(label, isGrammar)
 }
@@ -96,6 +116,10 @@ data class PageUiState(
     val page: DiaryPage? = null,
     val strokes: List<InkStroke> = emptyList(),
     val suggestions: List<SuggestionChip> = emptyList(),
+    /** Escenas: las gramáticas nuevas, aparte de las sugerencias. */
+    val newGrammar: List<SuggestionChip> = emptyList(),
+    /** Escenas: «Actualizar sugerencias» en curso. */
+    val refreshing: Boolean = false,
     val phase: Phase = Phase.Writing,
     val message: String? = null,
     val canUndo: Boolean = false,
@@ -151,7 +175,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     init {
         viewModelScope.launch {
             val page = c.diary.page(pageId) ?: return@launch
-            _state.update { it.copy(page = page, suggestions = loadSuggestions(page)) }
+            showPage(page)
             tryLoadStrokes()
             // Saliste mientras la IA revisaba y volviste: se espera a que termine y se relee la página,
             // para no pisar con el estado viejo lo que la revisión guarde.
@@ -159,7 +183,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 setPhase(Phase.Busy("La IA sigue revisando esta página…"))
                 reviewing.first { pageId !in it }
                 val fresh = c.diary.page(pageId) ?: return@launch
-                _state.update { it.copy(page = fresh, suggestions = loadSuggestions(fresh)) }
+                showPage(fresh)
                 setPhase(
                     Phase.Writing,
                     if (fresh.status == PageStatus.REVIEWED) "La revisión terminó mientras no estabas. Reescribe las correcciones y pulsa “Verificar”." else null,
@@ -199,22 +223,42 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (fitted != null) scheduleSave()
     }
 
+    /** Pone la página en pantalla con sus sugerencias, separando las gramáticas nuevas de la escena. */
+    private suspend fun showPage(page: DiaryPage) {
+        // Lo que sumó «Actualizar sugerencias» va primero, para que se vea.
+        val chips = loadSuggestions(page).sortedBy { if (it.ref in refreshed) 0 else 1 }
+        _state.update { it.copy(page = page, suggestions = chips.filterNot { c -> c.isNew }, newGrammar = chips.filter { c -> c.isNew }) }
+    }
+
+    /** Lo sumado por «Actualizar sugerencias» en esta visita. */
+    private val refreshed = mutableSetOf<ItemRef>()
+
     private suspend fun loadSuggestions(page: DiaryPage): List<SuggestionChip> {
         val refs = ItemRef.decodeList(page.suggestedItems)
+        val newIds = SceneData.parse(page.sceneJson).newGrammar.toSet()
         val dao = c.database.studyDao()
         val words = dao.wordsByIds(refs.filter { it.type == ItemType.WORD }.map { it.id })
-            .map { SuggestionChip(it.baseForm, listOfNotNull(it.type, it.meaning).joinToString(" · "), false) }
+            .map { SuggestionChip(it.baseForm, listOfNotNull(it.type, it.meaning).joinToString(" · "), false, ref = ItemRef(ItemType.WORD, it.id)) }
         val grammar = dao.grammarByIds(refs.filter { it.type == ItemType.GRAMMAR }.map { it.id })
-            .map { g -> SuggestionChip(g.pattern, listOfNotNull(g.meaning, g.example).joinToString(" — ").ifEmpty { "Gramática ${g.level}" }, true) }
+            .map { g ->
+                SuggestionChip(
+                    g.pattern, listOfNotNull(g.meaning, g.example).joinToString(" — ").ifEmpty { "Gramática ${g.level}" }, true,
+                    ref = ItemRef(ItemType.GRAMMAR, g.id),
+                )
+            }
         val gaps = withContext(Dispatchers.Default) {
             refs.mapNotNull { ref ->
                 when (ref.type) {
                     ItemType.STD_WORD -> c.catalog.wordById(ref.id.toInt())?.let {
-                        SuggestionChip(it.word, "Posible laguna · nivel ${it.level} del estándar · ${it.type} · ej.: ${it.guide}", false, isGap = true)
+                        SuggestionChip(it.word, "Posible laguna · nivel ${it.level} del estándar · ${it.type} · ej.: ${it.guide}", false, isGap = true, ref = ref)
                     }
                     ItemType.STD_GRAMMAR -> c.catalog.grammarById(ref.id.toInt())?.let {
                         val extra = listOf(it.category, it.meaning).filter { s -> s.isNotBlank() }.joinToString(" · ")
-                        SuggestionChip(it.form, "Posible laguna · nivel ${it.level} del estándar · $extra", true, isGap = true)
+                        if (it.id in newIds) {
+                            SuggestionChip(it.form, "Nueva para esta escena · nivel ${it.level} del estándar · $extra", true, isGap = true, isNew = true, ref = ref)
+                        } else {
+                            SuggestionChip(it.form, "Posible laguna · nivel ${it.level} del estándar · $extra", true, isGap = true, ref = ref)
+                        }
                     }
                     else -> null
                 }
@@ -413,7 +457,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 return@launch
             }
             val open = _explain.value?.chip
-            val missing = (listOfNotNull(open) + _state.value.suggestions)
+            val missing = (listOfNotNull(open) + _state.value.newGrammar + _state.value.suggestions)
                 .distinctBy { it.key }
                 .filter { c.explanations.get(it.key) == null }
                 .take(MAX_EXPLAIN)
@@ -449,11 +493,22 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     // ---------- ¿Cómo digo esto? ----------
 
+    private val isScene get() = _state.value.page?.kind == PageKind.SCENE
+
+    /** La última idea preguntada: se guarda en la escena con la pista a la que llegaste. */
+    private var lastIdea: String? = null
+
     fun askHowTo(idea: String) {
         if (idea.isBlank()) return
+        lastIdea = idea.trim()
         viewModelScope.launch {
             val settings = c.settings.state.value
-            val prompt = Prompts.howToSay(idea, settings.level, settings.standardLevel)
+            // Escenas: ayuda por partes y las gramáticas nuevas como objetivo si encajan.
+            val prompt = Prompts.howToSay(
+                idea, settings.level, settings.standardLevel,
+                tiered = isScene,
+                targets = if (isScene) _state.value.newGrammar.map { it.label } else emptyList(),
+            )
             // El proveedor por defecto si es una API; si no, la primera API configurada; si no hay, un chat.
             val providerId = listOf(settings.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
                 .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
@@ -496,6 +551,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     fun closeHowTo() {
         _howTo.value = HowTo.Idle
+        if (_voice.value.listening) speech.stopListening()
+        _voice.value = HowToVoice()
     }
 
     private suspend fun handleHowTo(raw: String) {
@@ -503,11 +560,145 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val mineTags = c.study.annotate(r.mine.grammar, emptyList())
         val naturalTags = r.natural?.let { c.study.annotate(it.grammar, emptyList()) } ?: emptyList()
         val wordTags = c.study.annotate(emptyList(), r.words)
-        _howTo.value = HowTo.Result(r, mineTags, naturalTags, wordTags)
+        val result = HowTo.Result(r, mineTags, naturalTags, wordTags, shown = if (isScene) 1 else 3)
+        _howTo.value = result
         react(MascotMood.SURPRISED, holdMs = 4_000)
-        // Lo que viste aquí pasa a "sugerido" en esta página: si luego lo usas, FSRS lo cuenta como
-        // reconocimiento ("Hard"), no como recuerdo libre.
-        addSuggested((mineTags + naturalTags + wordTags).mapNotNull { it.ref })
+        revealed(result)
+    }
+
+    /** Escenas: la siguiente pista (palabras → cómo unirlas → la frase). */
+    fun moreHowTo() {
+        val r = _howTo.value as? HowTo.Result ?: return
+        if (r.shown >= 3) return
+        val next = r.copy(shown = r.shown + 1)
+        _howTo.value = next
+        viewModelScope.launch { revealed(next) }
+    }
+
+    /**
+     * Lo que ya viste pasa a "sugerido" en esta página: si luego lo usas, FSRS lo cuenta como
+     * reconocimiento ("Hard"), no como recuerdo libre. Por eso en las escenas se suma por partes:
+     * la gramática de la frase recién cuando ves cómo unir, la versión natural recién con la frase.
+     * En la escena se guarda además la idea y hasta qué pista llegaste.
+     */
+    private suspend fun revealed(r: HowTo.Result) {
+        val refs = buildList {
+            addAll(r.wordTags)
+            if (r.shown >= 2) addAll(r.mineTags)
+            if (r.shown >= 3) addAll(r.naturalTags)
+        }.mapNotNull { it.ref }
+        addSuggested(refs)
+        val idea = lastIdea
+        if (isScene && idea != null) {
+            val page = _state.value.page ?: return
+            val scene = SceneData.parse(page.sceneJson)
+            val updated = scene.withIdea(SceneIdea(idea, r.shown))
+            if (updated != scene) persist { it.copy(sceneJson = updated.toJson()) }
+        }
+    }
+
+    // ---------- Actualizar sugerencias (escenas) ----------
+
+    /**
+     * Sugerencias que siguen a la escena: lee lo que llevas escrito (ML Kit, gratis), arma candidatos
+     * (lo que FSRS dice que te toca repasar y un poco del catálogo que no está en tu lista) y una
+     * llamada a la IA elige lo que encaja. Se suman a las anteriores: lo que ya viste sugerido sigue
+     * contando como reconocido si lo usas.
+     */
+    fun refreshSuggestions() {
+        val current = _state.value
+        if (current.refreshing) return
+        if (current.page?.status == PageStatus.REVIEWED) {
+            _state.update { it.copy(message = "La escena ya está revisada.") }
+            return
+        }
+        if (current.strokes.isEmpty()) {
+            _state.update { it.copy(message = "Escribe algo de la escena primero: las sugerencias se eligen según lo que llevas.") }
+            return
+        }
+        viewModelScope.launch {
+            val settings = c.settings.state.value
+            val providerId = listOf(settings.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
+                .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
+            val api = providerId?.let { c.apiProvider(it) }
+            if (providerId == null || api == null) {
+                _state.update { it.copy(message = "Para actualizar las sugerencias según tu escena, configura Gemini (es gratis) en Ajustes.") }
+                return@launch
+            }
+            if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
+                _state.update { it.copy(message = "Llegaste al límite diario de ${providerName(providerId)}.") }
+                return@launch
+            }
+            _state.update { it.copy(refreshing = true) }
+            val message = try {
+                if (!c.recognizer.isModelDownloaded()) c.recognizer.downloadModel()
+                val text = c.recognizer.recognizeLines(_state.value.strokes, lineHeight, width).joinToString("\n") { it.text }
+                val page = _state.value.page
+                if (text.isBlank() || page == null) {
+                    "No pude leer lo escrito todavía."
+                } else {
+                    val already = ItemRef.decodeList(page.suggestedItems).toSet()
+                    val pool = c.suggestions.suggest(
+                        System.currentTimeMillis(), settings.grammarLevelList, settings.standardLevel,
+                        wordCount = 30, grammarCount = 6, newWordsPerPage = 8, gapWordCount = 15, gapGrammarCount = 3,
+                    )
+                    val candidates = c.study.promptItems(ItemRef.decodeList(pool.encode()).filterNot { it in already })
+                    if (candidates.isEmpty()) {
+                        "No hay más candidatos en tus listas por ahora."
+                    } else {
+                        val raw = api.complete(CorrectionRequest(Prompts.sceneSuggestions(settings.level, settings.standardLevel, text, candidates)))
+                        c.settings.registerUse(providerId)
+                        val picked = SceneSuggestionsParser.parse(raw, candidates.map { it.ref }.toSet()).mapNotNull { ItemRef.parse(it) }
+                        refreshed += picked
+                        addSuggested(picked)
+                        if (picked.isEmpty()) "La IA no encontró nada nuevo que encaje con tu escena."
+                        else "Sumé ${picked.size} sugerencias para tu escena (van primero). Las anteriores siguen."
+                    }
+                }
+            } catch (e: ProviderException) {
+                if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor."
+            } catch (e: ParseException) {
+                "No se pudo leer la respuesta: ${e.message}"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "No se pudieron actualizar: ${e.message ?: e.javaClass.simpleName}"
+            }
+            _state.update { it.copy(refreshing = false, message = message) }
+        }
+    }
+
+    // ---------- Dictar la idea ----------
+
+    private val _voice = MutableStateFlow(HowToVoice())
+    val voice: StateFlow<HowToVoice> = _voice.asStateFlow()
+    private var speechUsed = false
+    private val speech by lazy { speechUsed = true; KoreanSpeech(c.app) }
+
+    /**
+     * Dictar en español lo que quieres decir (permiso de micrófono ya concedido). Al terminar de
+     * hablar se pregunta solo; tocar otra vez para de escuchar.
+     */
+    fun dictateHowTo() {
+        if (_voice.value.listening) {
+            speech.stopListening()
+            return
+        }
+        if (!speech.recognitionAvailable()) {
+            _voice.value = HowToVoice(error = "Tu celular no tiene reconocimiento de voz: escríbelo.")
+            return
+        }
+        _voice.value = HowToVoice(listening = true)
+        speech.listen(
+            onPartial = { text -> _voice.update { it.copy(text = text) } },
+            onResult = { results ->
+                val text = results.first()
+                _voice.value = HowToVoice(text = text)
+                askHowTo(text)
+            },
+            onError = { message -> _voice.value = HowToVoice(text = _voice.value.text, error = message) },
+            language = "es-PE",
+        )
     }
 
     private suspend fun addSuggested(refs: List<ItemRef>) {
@@ -517,7 +708,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val merged = (existing + refs).distinct()
         if (merged.size == existing.size) return
         val updated = persist { it.copy(suggestedItems = merged.joinToString(",") { r -> "${r.type}:${r.id}" }) } ?: return
-        _state.update { it.copy(suggestions = loadSuggestions(updated)) }
+        showPage(updated)
     }
 
     fun confirm(text: String, provider: String) {
@@ -532,6 +723,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             val settings = c.settings.state.value
             val items = c.study.promptItems(ItemRef.decodeList(page.suggestedItems))
             val isScene = page.kind == PageKind.SCENE
+            // Escenas: lo que dijiste en «¿Cómo digo?», para avisar si lo escrito dice otra cosa.
+            val ideas = if (isScene) SceneData.parse(page.sceneJson).ideas.map { it.text } else emptyList()
 
             if (provider != ProviderId.SHARE) {
                 val name = providerName(provider)
@@ -551,7 +744,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 reviewing.update { it + pageId }
                 c.appScope.launch {
                     try {
-                        val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene)
+                        val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene, ideas = ideas)
                         val raw = api.complete(CorrectionRequest(prompt))
                         c.settings.registerUse(provider)
                         applyResponse(raw)
@@ -569,7 +762,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     }
                 }
             } else {
-                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene)
+                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene, ideas = ideas)
                 val bitmap = renderPage(_state.value.strokes, width.toInt(), height.toInt(), lineHeight)
                 _shareIntents.send(ShareFlow.buildIntent(c.app, prompt, bitmap))
                 setPhase(Phase.AwaitingPaste, "El prompt también quedó copiado. Pégalo en el chat si no aparece.")
@@ -602,6 +795,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             if (summary.newWords > 0) add("${summary.newWords} palabras nuevas")
             if (summary.newGrammar > 0) add("${summary.newGrammar} gramáticas nuevas")
             if (summary.improvements > 0) add("${summary.improvements} mejoras sugeridas")
+            if (summary.notes > 0) add(if (summary.notes == 1) "1 nota de sentido" else "${summary.notes} notas de sentido")
             if (summary.pendingWords > 0) add("${summary.pendingWords} por revisar en Estudio")
         }
         react(
@@ -661,6 +855,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         }
     }
 
+    /** Nota de sentido que no aplica (cambiaste de idea): se quita de la lista. */
+    fun dismissNote(correction: Correction) {
+        viewModelScope.launch { c.diary.dismissNote(correction) }
+    }
+
     /** Para cuando el reconocimiento falla aunque lo hayas reescrito bien. */
     fun markRewritten(correction: Correction) {
         viewModelScope.launch {
@@ -695,6 +894,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     override fun onCleared() {
+        if (speechUsed) speech.release()
         // Guardado final: el scope del ViewModel ya se canceló, así que se usa el de la app.
         if (deleted) return
         val page = _state.value.page ?: return

@@ -80,11 +80,16 @@ object CorrectionParser {
             val structure = o.str("estructura") ?: return@mapObjects null
             ImprovementDto(o.optInt("oracion", 0), structure, o.str("ejemplo") ?: "", o.str("explicacion") ?: "")
         }.take(2)
+        val notes = json.optJSONArray("notas").mapObjects { o ->
+            val original = o.str("original") ?: return@mapObjects null
+            val suggestion = o.str("sugerencia") ?: return@mapObjects null
+            MeaningNoteDto(o.optInt("oracion", 0), original, suggestion, o.str("explicacion") ?: "")
+        }.take(3)
         val allUsed = (used + legacyNew).distinctBy { it.itemRef ?: "${it.kind}:${it.form}" }
         if (sentences.isEmpty() && corrections.isEmpty() && allUsed.isEmpty()) {
             throw ParseException("La respuesta no tiene oraciones, correcciones ni ítems usados.")
         }
-        return CorrectionResponse(sentences, corrections, allUsed, improvements)
+        return CorrectionResponse(sentences, corrections, allUsed, improvements, notes)
     }
 
     /** Lista "usados" (formato compacto f/t/ok o el anterior forma_base/resultado). La comparte el workbook. */
@@ -165,7 +170,7 @@ object HowToSayParser {
             val f = o.str("f") ?: return@mapObjects null
             f to (o.str("s") ?: "")
         }
-        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words)
+        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words, hint = json.str("pista"))
     }
 
     private fun phrase(o: JSONObject?): HowToSayResponse.Phrase? {
@@ -177,6 +182,23 @@ object HowToSayParser {
 
     private fun same(a: String, b: String) =
         a.filter { it.isLetterOrDigit() } == b.filter { it.isLetterOrDigit() }
+}
+
+/** Respuesta de «Actualizar sugerencias»: solo códigos que estaban entre los candidatos, sin repetir. */
+object SceneSuggestionsParser {
+    fun parse(raw: String, allowed: Set<String>, max: Int = 8): List<String> {
+        val json = try {
+            JSONObject(extractJsonObject(raw))
+        } catch (e: org.json.JSONException) {
+            throw ParseException("JSON inválido: ${e.message}")
+        }
+        val arr = json.optJSONArray("items") ?: return emptyList()
+        return (0 until arr.length())
+            .map { arr.optString(it).trim() }
+            .filter { it in allowed }
+            .distinct()
+            .take(max)
+    }
 }
 
 object WorkbookParser {

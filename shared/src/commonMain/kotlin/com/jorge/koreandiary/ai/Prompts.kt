@@ -20,6 +20,8 @@ object Prompts {
         hasImage: Boolean,
         /** Página de la sección Escenas: describe un lugar o un momento, no necesariamente su día. */
         scene: Boolean = false,
+        /** Escenas: lo que dijo que quería decir en «¿Cómo digo?», para las notas de sentido. */
+        ideas: List<String> = emptyList(),
     ): String = buildString {
         appendLine("Eres profesor de coreano y corriges el diario manuscrito de un estudiante hispanohablante. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
@@ -31,6 +33,11 @@ object Prompts {
         if (items.isEmpty()) appendLine("(ninguno)")
         items.forEach { appendLine("${it.ref} | ${it.label} | ${it.kind}") }
         appendLine()
+        if (ideas.isNotEmpty()) {
+            appendLine("LO QUE QUISO DECIR (lo dijo en español mientras escribía; puede haber cambiado de idea después):")
+            ideas.forEach { appendLine("- ${it.trim().replace('\n', ' ')}") }
+            appendLine()
+        }
         appendLine("TEXTO:")
         appendLine(text)
         if (hasImage) appendLine("(Hay una imagen de la página manuscrita: es la fuente principal; el texto es referencia.)")
@@ -46,14 +53,14 @@ object Prompts {
                - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
                - "id": el de la lista de sugeridos si coincide; si no, null.
                - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
-            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].
+            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].${if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""}${if (ideas.isNotEmpty()) "\n            5. \"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, []." else ""}
 
             FORMATO:
             {
               "oraciones": [{"n": 1, "texto": "...", "tiempo": "pasado"}],
               "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "ortografia|particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": null}],
               "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}, {"f": "-어서", "t": "g", "ok": true, "id": null}],
-              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]
+              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]${if (ideas.isNotEmpty()) ",\n              \"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]" else ""}
             }
             """.trimIndent()
         )
@@ -63,20 +70,68 @@ object Prompts {
      * "¿Cómo digo esto?": la frase con lo que el estudiante sabe y, si difiere, la versión natural.
      * No se manda su lista (ahorra tokens): basta el nivel; la app marca después lo que no está en sus listas.
      */
-    fun howToSay(idea: String, level: String, standardLevel: Int): String = """
-        Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe su diario y quiere decir:
-        «${idea.trim().replace('\n', ' ')}»
-        Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+    /**
+     * «¿Cómo digo esto?». Con [tiered] (escenas) pide además "pista": cómo unir las palabras sin dar
+     * la frase, para mostrar la ayuda por partes (palabras → pista → frase). [targets]: gramáticas
+     * nuevas que el estudiante está practicando en esta página; se usan solo si encajan.
+     */
+    fun howToSay(
+        idea: String,
+        level: String,
+        standardLevel: Int,
+        tiered: Boolean = false,
+        targets: List<String> = emptyList(),
+    ): String = buildString {
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe ${if (tiered) "una escena (un lugar o un momento, con lo que ve, oye y siente)" else "su diario"} y quiere decir:")
+        appendLine("«${idea.trim().replace('\n', ' ')}»")
+        appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine()
+        appendLine("1. \"tu\": la frase en coreano usando solo vocabulario y gramática de nivel $standardLevel o menor; la forma más simple que siga siendo correcta. Registro -어요 salvo que la idea pida otro.")
+        if (targets.isNotEmpty()) {
+            appendLine("   Está practicando estas gramáticas nuevas: ${targets.joinToString(", ")}. Si alguna encaja de forma natural en esta idea, úsala en \"tu\" aunque esté sobre su nivel; si ninguna encaja, no la fuerces.")
+        }
+        appendLine("2. \"nat\": cómo lo diría normalmente un coreano. Si sería igual a \"tu\", pon null.")
+        appendLine("3. En \"g\" de cada frase, las estructuras gramaticales usadas en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -을 것 같다); modificadores de sustantivo como -은, -는, -던; partículas sin guion (처럼). Omite 이/가, 은/는, 을/를, 에, 도, -어요.")
+        appendLine("4. \"nota\": 1 o 2 frases en español sobre la diferencia, o por qué la frase ya es natural.")
+        appendLine("5. \"w\": las palabras de contenido en forma de diccionario con su significado en español.")
+        if (tiered) {
+            appendLine("6. \"pista\": cómo unir esas palabras SIN escribir la frase ni partes de ella en coreano: qué partícula lleva cada palabra (바람 + 이) y qué terminación lleva el verbo y por qué (쓰다듬다 en presente -어요). 1 o 2 frases en español. Es la ayuda intermedia antes de ver la frase.")
+        }
+        appendLine()
+        appendLine("FORMATO:")
+        append("{\"tu\": {\"k\": \"...\", \"g\": [\"-은\"]}, \"nat\": {\"k\": \"...\", \"g\": [\"-었던\"]}, \"nota\": \"...\", \"w\": [{\"f\": \"다니다\", \"s\": \"asistir\"}]")
+        appendLine(if (tiered) ", \"pista\": \"...\"}" else "}")
+    }
 
-        1. "tu": la frase en coreano usando solo vocabulario y gramática de nivel $standardLevel o menor; la forma más simple que siga siendo correcta. Registro -어요 salvo que la idea pida otro.
-        2. "nat": cómo lo diría normalmente un coreano. Si sería igual a "tu", pon null.
-        3. En "g" de cada frase, las estructuras gramaticales usadas en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -을 것 같다); modificadores de sustantivo como -은, -는, -던; partículas sin guion (처럼). Omite 이/가, 은/는, 을/를, 에, 도, -어요.
-        4. "nota": 1 o 2 frases en español sobre la diferencia, o por qué la frase ya es natural.
-        5. "w": las palabras de contenido en forma de diccionario con su significado en español.
-
-        FORMATO:
-        {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": ["-었던"]}, "nota": "...", "w": [{"f": "다니다", "s": "asistir"}]}
-    """.trimIndent()
+    /**
+     * «Actualizar sugerencias» en una escena: de [candidates] (lo que te toca repasar según FSRS y un
+     * poco del catálogo que aún no está en tu lista), la IA elige lo que encaja con lo que llevas
+     * escrito. [text] es lo que leyó ML Kit de tu letra y puede traer errores de lectura.
+     */
+    fun sceneSuggestions(
+        level: String,
+        standardLevel: Int,
+        text: String,
+        candidates: List<PromptItem>,
+        known: Int = 4,
+        extra: Int = 2,
+    ): String = buildString {
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) está describiendo a mano una escena (un lugar o un momento, con lo que ve, oye y siente). Esto es lo que lleva escrito, leído de su letra (puede tener errores de lectura):")
+        appendLine("«${text.trim().replace('\n', ' ')}»")
+        appendLine()
+        appendLine("Elige de esta lista lo que le ayudaría a seguir describiendo ESA escena de forma coherente. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine()
+        appendLine("CANDIDATOS (código: forma, tipo):")
+        candidates.forEach { appendLine("- ${it.ref}: ${it.label} (${it.kind})") }
+        appendLine()
+        appendLine("- Hasta $known de su lista (códigos que empiezan con w o g) y hasta $extra que aún no conoce (códigos sv o sg).")
+        appendLine("- Prefiere sustantivos y adjetivos de lo que se ve, se oye o se siente en esa escena, y una gramática que sirva para describirla.")
+        appendLine("- No elijas lo que ya usó en el texto ni lo que no tenga relación con la escena. Si nada encaja, devuelve la lista vacía.")
+        appendLine("- Solo códigos de la lista, tal cual.")
+        appendLine()
+        appendLine("FORMATO:")
+        appendLine("{\"items\": [\"w12\", \"sv465\"]}")
+    }
 
     /**
      * Significado y ejemplos naturales de las sugerencias del diario, todas en una llamada:

@@ -149,6 +149,8 @@ data class DiaryPage(
     /** [PageKind]. Llegó en la versión 2 del esquema: las páginas anteriores quedan como diario. */
     @ColumnInfo(defaultValue = PageKind.DIARY)
     val kind: String = PageKind.DIARY,
+    /** Solo escenas: `scene.SceneData` en JSON (gramáticas nuevas, ideas dichas). Versión 3 del esquema. */
+    val sceneJson: String? = null,
 )
 
 object CorrectionStatus {
@@ -156,6 +158,11 @@ object CorrectionStatus {
     const val REWRITTEN = "reescrita"
     /** Mejora sugerida: informativa, no hay que reescribirla. */
     const val SUGGESTION = "sugerencia"
+    /**
+     * Nota de sentido (escenas): lo escrito no dice lo que dijiste en «¿Cómo digo?». No es un error,
+     * no se reescribe ni frena la racha; se puede descartar si cambiaste de idea.
+     */
+    const val NOTE = "nota"
 }
 
 @Entity(tableName = "corrections", indices = [Index(value = ["pageId"])])

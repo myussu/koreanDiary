@@ -30,6 +30,8 @@ import androidx.room3.RoomDatabaseConstructor
     autoMigrations = [
         // 2: pages.kind (diario o escena).
         AutoMigration(from = 1, to = 2),
+        // 3: pages.sceneJson (lo propio de cada escena).
+        AutoMigration(from = 2, to = 3),
     ],
     // El esquema de cada versión queda en shared/schemas (ver room3 { } en shared/build.gradle.kts) y va al repo.
     exportSchema = true,
@@ -43,7 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         /** Versión del esquema (`PRAGMA user_version`). Una copia más nueva no se puede importar. */
-        const val VERSION = 2
+        const val VERSION = 3
 
         /** Archivo de la base. La copia de seguridad (`backup/`) lo copia y lo reemplaza con este nombre. */
         const val FILE_NAME = "korean_diary.db"

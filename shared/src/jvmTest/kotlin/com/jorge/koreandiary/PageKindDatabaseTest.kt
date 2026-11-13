@@ -57,8 +57,9 @@ class PageKindDatabaseTest {
             dao.insertCorrection(correction(withPending, CorrectionStatus.PENDING))
             dao.insertCorrection(correction(withPending, CorrectionStatus.REWRITTEN))
             dao.insertCorrection(correction(allRewritten, CorrectionStatus.REWRITTEN))
-            // Una mejora no exige reescribir: no frena la escena.
+            // Una mejora o una nota de sentido no exigen reescribir: no frenan la escena.
             dao.insertCorrection(correction(allRewritten, CorrectionStatus.SUGGESTION))
+            dao.insertCorrection(correction(allRewritten, CorrectionStatus.NOTE))
 
             val perDay = dao.pagesPerDay().associate { it.date to it.total }
             assertEquals(mapOf("2026-11-11" to 2, "2026-11-10" to 2), perDay)

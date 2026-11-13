@@ -28,9 +28,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.data.db.PageSummary
+import com.jorge.koreandiary.scene.SceneData
 import kotlinx.coroutines.launch
 import com.jorge.koreandiary.mascot.MascotBrain
 import com.jorge.koreandiary.settings.ProviderId
@@ -173,12 +175,21 @@ fun HomeScreen(
     }
 }
 
-/** Crea una página de hoy con sus sugerencias (FSRS y lagunas, sin IA) y devuelve su id. */
+/**
+ * Crea una página de hoy con sus sugerencias (FSRS y lagunas, sin IA) y devuelve su id. Una escena
+ * suma además 2 gramáticas nuevas un paso por encima de tu nivel, en su propio grupo: van también
+ * en las sugeridas (si las usas cuentan como reconocidas) y en `sceneJson` para mostrarlas aparte.
+ */
 suspend fun newPageWithSuggestions(container: AppContainer, kind: String): Long {
     val s = container.settings.state.value
     val now = System.currentTimeMillis()
     val suggestions = container.suggestions.suggest(now, s.grammarLevelList, s.standardLevel)
-    return container.diary.newPage(now, suggestions.encode(), kind)
+    if (kind != PageKind.SCENE) return container.diary.newPage(now, suggestions.encode(), kind)
+    val fresh = container.suggestions.newGrammarForScene(s.standardLevel, exclude = suggestions.gapGrammar.map { it.id }.toSet())
+    val items = (listOf(suggestions.encode()) + fresh.map { "${ItemType.STD_GRAMMAR}:${it.id}" })
+        .filter { it.isNotEmpty() }
+        .joinToString(",")
+    return container.diary.newPage(now, items, kind, SceneData(newGrammar = fresh.map { it.id }).toJson())
 }
 
 /** Tarjeta de una página en las listas del diario y de escenas. */

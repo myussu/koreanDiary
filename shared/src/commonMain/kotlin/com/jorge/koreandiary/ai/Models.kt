@@ -8,7 +8,12 @@ data class CorrectionResponse(
     val used: List<UsedItemDto>,
     /** Estructuras de su nivel que encajarían mejor donde escribió algo demasiado básico. */
     val improvements: List<ImprovementDto> = emptyList(),
+    /** Escenas: donde lo escrito no dice lo que quiso decir (no son errores). */
+    val notes: List<MeaningNoteDto> = emptyList(),
 )
+
+/** Nota de sentido: [original] dice otra cosa que la idea; [suggestion] es cómo se diría lo que quería. */
+data class MeaningNoteDto(val sentence: Int, val original: String, val suggestion: String, val explanation: String)
 
 data class SentenceDto(val number: Int, val text: String, val tense: String)
 
@@ -85,6 +90,8 @@ data class HowToSayResponse(
     val note: String,
     /** Palabras de contenido usadas (forma de diccionario → significado). */
     val words: List<Pair<String, String>>,
+    /** Escenas: cómo unir las palabras sin dar la frase (la pista intermedia). */
+    val hint: String? = null,
 ) {
     data class Phrase(val text: String, val grammar: List<String>)
 }

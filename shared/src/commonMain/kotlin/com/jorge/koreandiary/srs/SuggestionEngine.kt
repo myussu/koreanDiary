@@ -72,6 +72,18 @@ class SuggestionEngine(
     }
 
     /**
+     * Gramáticas nuevas para una escena: un paso por encima de lo que ya sabes (ver [pickNewGrammar]).
+     * [exclude]: ids del catálogo que ya salen como sugerencia en la misma página.
+     */
+    suspend fun newGrammarForScene(standardLevel: Int, count: Int = SCENE_NEW_GRAMMAR, exclude: Set<Int> = emptySet()): List<StdGrammar> {
+        val myGrammar = studyDao.allGrammar()
+        return withContext(Dispatchers.Default) {
+            val myKeys = myGrammar.flatMap { GrammarKeys.keys(listOf(it.pattern) + it.variants.split(" | ")) }.toSet()
+            pickNewGrammar(catalog.grammar, myKeys, standardLevel, count, exclude)
+        }
+    }
+
+    /**
      * Lagunas: ítems del estándar de tu nivel o del anterior que no están en tu base ni has usado.
      * Es el "punto medio": ni tan básicos como para sabértelos de memoria, ni por encima de tu nivel.
      */
@@ -95,6 +107,34 @@ class SuggestionEngine(
             .shuffled()
             .take(grammarCount)
         return words to grammar
+    }
+
+    companion object {
+        /** Gramáticas nuevas por escena, aparte de las sugerencias normales (decidido con Jorge). */
+        const val SCENE_NEW_GRAMMAR = 2
+
+        /**
+         * Lo siguiente para aprender: gramáticas del estándar de tu nivel o del siguiente que no están en
+         * tu base (ni la forma ni sus variantes). Primero las de tu nivel; al azar dentro de cada nivel.
+         * Es "i+1": las lagunas ([findGaps]) repasan tu nivel y el anterior; esto empuja hacia adelante.
+         */
+        fun pickNewGrammar(
+            catalog: List<StdGrammar>,
+            myKeys: Set<String>,
+            level: Int,
+            count: Int,
+            exclude: Set<Int> = emptySet(),
+            random: kotlin.random.Random = kotlin.random.Random.Default,
+        ): List<StdGrammar> {
+            val from = level.coerceIn(1, 6)
+            val levels = from..(from + 1).coerceAtMost(6)
+            return catalog
+                .filter { g -> g.level in levels && g.id !in exclude && (g.primaryKeys + g.relatedKeys).none { it in myKeys } }
+                .distinctBy { it.form }
+                .shuffled(random)
+                .sortedBy { it.level }
+                .take(count)
+        }
     }
 
     private fun pick(

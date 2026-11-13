@@ -172,6 +172,9 @@ interface DiaryDao {
     @Query("SELECT * FROM corrections WHERE pageId = :pageId ORDER BY sentence, id")
     suspend fun corrections(pageId: Long): List<Correction>
 
+    @Query("DELETE FROM corrections WHERE id = :id")
+    suspend fun deleteCorrection(id: Long)
+
     @Query("DELETE FROM corrections WHERE pageId = :pageId")
     suspend fun deleteCorrections(pageId: Long)
 
