@@ -549,6 +549,8 @@ class DiaryRepository(private val db: AppDatabase) {
 
     suspend fun page(id: Long) = diary.page(id)
     suspend fun save(page: DiaryPage) = diary.updatePage(page)
+    suspend fun saveInk(id: Long, inkJson: String, canvasWidth: Int, updatedAt: Long) =
+        diary.updateInk(id, inkJson, canvasWidth, updatedAt)
     fun corrections(pageId: Long) = diary.observeCorrections(pageId)
     suspend fun correctionsNow(pageId: Long) = diary.corrections(pageId)
     suspend fun markRewritten(c: Correction) = diary.updateCorrection(c.copy(status = CorrectionStatus.REWRITTEN))

@@ -22,8 +22,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.ui.FeaturesScreen
 import com.jorge.koreandiary.ui.HomeScreen
@@ -75,12 +82,40 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Un ViewModelStore por página abierta, guardado en un ViewModel de la Activity para sobrevivir a
+ * girar el celular. Al volver atrás se limpia el de la página que se fue: así corre su `onCleared`
+ * (guardado final y borrar la página si quedó vacía) y su tinta y su historial de deshacer salen de
+ * la memoria. Sin esto, todos los ViewModels vivían en la Activity hasta cerrar la app.
+ * El workbook y la conversación siguen en la Activity: sus pedidos a la IA no deben cortarse al salir.
+ */
+class RouteViewModelStores : ViewModel() {
+    private val stores = HashMap<String, ViewModelStore>()
+
+    fun storeFor(key: String): ViewModelStore = stores.getOrPut(key) { ViewModelStore() }
+
+    /** Limpia los de las pantallas que ya no están en la pila. */
+    fun keepOnly(keys: Set<String>) {
+        (stores.keys - keys).forEach { stores.remove(it)?.clear() }
+    }
+
+    override fun onCleared() {
+        stores.values.forEach { it.clear() }
+        stores.clear()
+    }
+}
+
 /** Navegación mínima con una pila de rutas en texto ("home", "page:12", ...), sobrevive a rotaciones. */
 @Composable
 private fun AppNavigation(container: AppContainer) {
     val stack = rememberSaveable(
         saver = listSaver<SnapshotStateList<String>, String>(save = { it.toList() }, restore = { it.toMutableStateList() })
     ) { mutableStateListOf("home") }
+    val routeStores: RouteViewModelStores = viewModel()
+    // Clave de cada pantalla: posición + ruta, para que reabrir la misma página sea un ViewModel nuevo.
+    val keys = stack.mapIndexed { i, r -> "$i:$r" }
+    // Después de componer: la pantalla que se fue ya salió de la composición cuando se limpia su store.
+    LaunchedEffect(keys) { routeStores.keepOnly(keys.toSet()) }
 
     fun push(route: String) { stack.add(route) }
     fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
@@ -100,7 +135,13 @@ private fun AppNavigation(container: AppContainer) {
     val listen by container.listen.state.collectAsStateWithLifecycle()
     Box(Modifier.fillMaxSize()) {
         when {
-            route.startsWith("page:") -> PageScreen(container, route.removePrefix("page:").toLong(), onBack = ::pop)
+            route.startsWith("page:") -> {
+                val store = routeStores.storeFor(keys.last())
+                val owner = remember(store) { object : ViewModelStoreOwner { override val viewModelStore = store } }
+                CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+                    PageScreen(container, route.removePrefix("page:").toLong(), onBack = ::pop)
+                }
+            }
             route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
             route == "import" -> ImportScreen(container, onBack = ::pop)
             route == "settings" -> SettingsScreen(container, onBack = ::pop)

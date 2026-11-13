@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -152,6 +153,18 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             val page = c.diary.page(pageId) ?: return@launch
             _state.update { it.copy(page = page, suggestions = loadSuggestions(page)) }
             tryLoadStrokes()
+            // Saliste mientras la IA revisaba y volviste: se espera a que termine y se relee la página,
+            // para no pisar con el estado viejo lo que la revisión guarde.
+            if (pageId in reviewing.value) {
+                setPhase(Phase.Busy("La IA sigue revisando esta página…"))
+                reviewing.first { pageId !in it }
+                val fresh = c.diary.page(pageId) ?: return@launch
+                _state.update { it.copy(page = fresh, suggestions = loadSuggestions(fresh)) }
+                setPhase(
+                    Phase.Writing,
+                    if (fresh.status == PageStatus.REVIEWED) "La revisión terminó mientras no estabas. Reescribe las correcciones y pulsa “Verificar”." else null,
+                )
+            }
         }
     }
 
@@ -533,20 +546,27 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     return@launch
                 }
                 setPhase(Phase.Busy("$name está revisando tu página…"))
-                try {
-                    val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene)
-                    val raw = api.complete(CorrectionRequest(prompt))
-                    c.settings.registerUse(provider)
-                    applyResponse(raw)
-                } catch (e: ProviderException) {
-                    val msg = if (e.offline) "Sin conexión. La página quedó pendiente de revisión." else e.message
-                    setPhase(Phase.Writing, msg)
-                } catch (e: ParseException) {
-                    setPhase(Phase.Writing, "La respuesta de $name no se pudo leer: ${e.message}")
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    setPhase(Phase.Writing, "Error inesperado con $name: ${e.message ?: e.javaClass.simpleName}")
+                // En el scope de la app: si sales de la página mientras la IA responde, la corrección
+                // igual se guarda (el ViewModel se limpia al volver atrás).
+                reviewing.update { it + pageId }
+                c.appScope.launch {
+                    try {
+                        val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene)
+                        val raw = api.complete(CorrectionRequest(prompt))
+                        c.settings.registerUse(provider)
+                        applyResponse(raw)
+                    } catch (e: ProviderException) {
+                        val msg = if (e.offline) "Sin conexión. La página quedó pendiente de revisión." else e.message
+                        setPhase(Phase.Writing, msg)
+                    } catch (e: ParseException) {
+                        setPhase(Phase.Writing, "La respuesta de $name no se pudo leer: ${e.message}")
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        setPhase(Phase.Writing, "Error inesperado con $name: ${e.message ?: e.javaClass.simpleName}")
+                    } finally {
+                        reviewing.update { it - pageId }
+                    }
                 }
             } else {
                 val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene)
@@ -688,14 +708,18 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             return
         }
         val w = width
-        if (w > 0f) {
+        // Solo la tinta: una revisión que sigue en curso puede cambiar el estado después de esto.
+        if (w > 0f && strokesLoaded) {
             c.appScope.launch {
-                c.diary.save(page.copy(inkJson = InkSerializer.toJson(strokes, w), canvasWidth = w.toInt(), updatedAt = System.currentTimeMillis()))
+                c.diary.saveInk(page.id, InkSerializer.toJson(strokes, w), w.toInt(), System.currentTimeMillis())
             }
         }
     }
 
     companion object {
+        /** Páginas con una revisión de la IA en curso; sigue aunque salgas de la página. */
+        private val reviewing = MutableStateFlow<Set<Long>>(emptySet())
+
         /** Radio mínimo del borrador (px); el normal es ~18 % del alto de línea. */
         private const val MIN_ERASE_RADIUS = 24f
         /** Máximo de sugerencias por llamada de explicaciones (una página trae menos). */

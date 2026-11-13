@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.ink
 
+import java.util.IdentityHashMap
 import android.graphics.Bitmap
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
@@ -104,8 +105,10 @@ fun InkCanvas(
     val currentOnStroke by rememberUpdatedState(onStrokeFinished)
     val currentOnErase by rememberUpdatedState(onErase)
     val currentOnInsertLine by rememberUpdatedState(onInsertLine)
+    // La forma de cada trazo se calcula una sola vez: al agregar o borrar uno, solo se arma el nuevo.
+    val shapeCache = remember { ShapeCache() }
     val shapes = remember(strokes, strokeWidthPx, pressureEnabled) {
-        strokes.map { it.toShape(strokeWidthPx, pressureEnabled) }
+        shapeCache.shapesFor(strokes, strokeWidthPx, pressureEnabled)
     }
     var viewport by remember { mutableFloatStateOf(0f) }
     val contentHeight = inkContentHeight(strokes, lineHeightPx, reviewedLines, viewport)
@@ -211,7 +214,10 @@ fun InkCanvas(
                 drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.5f)
                 y += lineHeightPx
             }
-            shapes.forEach { drawShape(it, inkColor, strokeWidthPx) }
+            // Solo los trazos que tocan la parte visible.
+            val top = offset
+            val bottom = offset + size.height
+            shapes.forEach { if (it.bottom >= top && it.top <= bottom) drawShape(it, inkColor, strokeWidthPx) }
             if (live.size >= 2) drawShape(InkStroke(live.toList()).toShape(strokeWidthPx, pressureEnabled), inkColor, strokeWidthPx)
         }
         // Barra de desplazamiento fina a la derecha, solo si la página no cabe.
@@ -231,10 +237,43 @@ private fun pressureOf(raw: Float, isPen: Boolean): Float = if (isPen) raw.coerc
  * relleno del trazo (bordes desplazados según el grosor de cada punto) más dos círculos en los
  * extremos. Se calcula una vez por trazo, no en cada cuadro.
  */
-private class StrokeShape(val path: Path, val filled: Boolean, val caps: List<Pair<Offset, Float>> = emptyList())
+private class StrokeShape(
+    val path: Path,
+    val filled: Boolean,
+    val caps: List<Pair<Offset, Float>> = emptyList(),
+    /** Alto que ocupa en la página (con margen para el grosor), para no dibujarlo si no se ve. */
+    val top: Float = Float.NEGATIVE_INFINITY,
+    val bottom: Float = Float.POSITIVE_INFINITY,
+)
+
+/**
+ * Formas ya calculadas por trazo (por identidad, no por igualdad: comparar puntos costaría lo mismo
+ * que rehacerlas). Se descartan las de trazos que ya no están y todas si cambia el grosor o la presión.
+ */
+private class ShapeCache {
+    private var base = -1f
+    private var pressure = false
+    private var cache = IdentityHashMap<InkStroke, StrokeShape>()
+
+    fun shapesFor(strokes: List<InkStroke>, base: Float, pressure: Boolean): List<StrokeShape> {
+        if (base != this.base || pressure != this.pressure) {
+            cache = IdentityHashMap()
+            this.base = base
+            this.pressure = pressure
+        }
+        val next = IdentityHashMap<InkStroke, StrokeShape>(strokes.size)
+        val result = strokes.map { s -> (cache[s] ?: s.toShape(base, pressure)).also { next[s] = it } }
+        cache = next
+        return result
+    }
+}
 
 private fun InkStroke.toShape(base: Float, pressure: Boolean): StrokeShape {
-    if (!pressure || points.size < 3) return StrokeShape(toPath(), filled = false)
+    // Margen vertical: medio grosor máximo, con holgura para la presión.
+    val margin = base * 2f
+    val top = (points.minOfOrNull { it.y } ?: 0f) - margin
+    val bottom = (points.maxOfOrNull { it.y } ?: 0f) + margin
+    if (!pressure || points.size < 3) return StrokeShape(toPath(), filled = false, top = top, bottom = bottom)
     val n = points.size
     // Grosor suavizado (media de 3) para que el borde no tiemble con el ruido del sensor.
     val raw = points.map { pressureWidth(base, it.p) / 2f }
@@ -268,7 +307,7 @@ private fun InkStroke.toShape(base: Float, pressure: Boolean): StrokeShape {
         Offset(points.first().x, points.first().y) to half.first(),
         Offset(points.last().x, points.last().y) to half.last(),
     )
-    return StrokeShape(path, filled = true, caps = caps)
+    return StrokeShape(path, filled = true, caps = caps, top = top, bottom = bottom)
 }
 
 private fun DrawScope.drawShape(shape: StrokeShape, color: Color, width: Float) {

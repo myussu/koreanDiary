@@ -38,14 +38,17 @@ class PageKindDatabaseTest {
             fun page(entry: Long, kind: String, status: String) =
                 DiaryPage(entryId = entry, status = status, createdAt = 0, updatedAt = 0, kind = kind)
 
-            // Día 11: un borrador del diario (cuenta, como siempre) y cuatro escenas.
+            // Día 11: un borrador del diario con tinta (cuenta), uno abierto por error (no cuenta) y cuatro escenas.
+            dao.insertPage(page(day, PageKind.DIARY, PageStatus.DRAFT).copy(inkJson = "{\"v\":2,\"s\":[[0.1,0.1,0,0.5]]}"))
+            dao.insertPage(page(day, PageKind.DIARY, PageStatus.DRAFT).copy(inkJson = "{\"v\":2,\"s\":[]}"))
             dao.insertPage(page(day, PageKind.DIARY, PageStatus.DRAFT))
             dao.insertPage(page(day, PageKind.SCENE, PageStatus.DRAFT))
             dao.insertPage(page(day, PageKind.SCENE, PageStatus.PENDING))
             val withPending = dao.insertPage(page(day, PageKind.SCENE, PageStatus.REVIEWED))
             val allRewritten = dao.insertPage(page(day, PageKind.SCENE, PageStatus.REVIEWED))
-            // Día 10: solo una escena revisada sin correcciones.
+            // Día 10: una escena revisada sin correcciones y una página del diario con solo texto confirmado.
             dao.insertPage(page(otherDay, PageKind.SCENE, PageStatus.REVIEWED))
+            dao.insertPage(page(otherDay, PageKind.DIARY, PageStatus.PENDING).copy(confirmedText = "오늘은 바다에 갔어요."))
 
             fun correction(pageId: Long, status: String) = Correction(
                 pageId = pageId, sentence = 1, original = "학교를", suggestion = "학교에", type = "particula",
@@ -58,13 +61,30 @@ class PageKindDatabaseTest {
             dao.insertCorrection(correction(allRewritten, CorrectionStatus.SUGGESTION))
 
             val perDay = dao.pagesPerDay().associate { it.date to it.total }
-            assertEquals(mapOf("2026-11-11" to 2, "2026-11-10" to 1), perDay)
+            assertEquals(mapOf("2026-11-11" to 2, "2026-11-10" to 2), perDay)
             assertEquals(2, dao.pageCountForDate("2026-11-11"))
 
             // Al reescribir la última corrección pendiente, la escena pasa a contar.
             val pending = dao.corrections(withPending).first { it.status == CorrectionStatus.PENDING }
             dao.updateCorrection(pending.copy(status = CorrectionStatus.REWRITTEN))
             assertEquals(3, dao.pageCountForDate("2026-11-11"))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun inkOnlyUpdateKeepsTheStatus() = runBlocking {
+        val db = inMemory()
+        try {
+            val dao = db.diaryDao()
+            val day = dao.insertEntry(DiaryEntry(date = "2026-11-13", createdAt = 0))
+            val id = dao.insertPage(DiaryPage(entryId = day, status = PageStatus.REVIEWED, createdAt = 0, updatedAt = 0))
+            dao.updateInk(id, "{\"v\":2,\"s\":[[0.2,0.2,0,0.5]]}", 1080, 5)
+            val page = dao.page(id)!!
+            assertEquals(PageStatus.REVIEWED, page.status)
+            assertEquals(1080, page.canvasWidth)
+            assertEquals(5L, page.updatedAt)
         } finally {
             db.close()
         }

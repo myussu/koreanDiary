@@ -10,11 +10,19 @@ import kotlinx.coroutines.flow.Flow
 // Room 3: toda función de DAO es suspend o devuelve Flow.
 
 /**
- * Qué páginas cuentan para la racha, el calendario y el recordatorio: las del diario siempre; una
- * escena, solo si está revisada y no le queda ninguna corrección pendiente de reescribir.
+ * La página tiene algo escrito: al menos un trazo (en el JSON de la tinta, un trazo es un arreglo
+ * dentro del arreglo: `[[`; vacía es `[]` o `{"v":2,"s":[]}`) o texto confirmado.
+ */
+private const val HAS_CONTENT =
+    "(pages.inkJson LIKE '%[[%' OR TRIM(COALESCE(pages.confirmedText, '')) != '')"
+
+/**
+ * Qué páginas cuentan para la racha, el calendario y el recordatorio: las del diario con algo escrito
+ * (una página abierta por error no cuenta); una escena, solo si está revisada y no le queda ninguna
+ * corrección pendiente de reescribir.
  */
 private const val COUNTS_FOR_STREAK =
-    "(pages.kind = '${PageKind.DIARY}' OR (pages.status = '${PageStatus.REVIEWED}' AND NOT EXISTS " +
+    "((pages.kind = '${PageKind.DIARY}' AND $HAS_CONTENT) OR (pages.status = '${PageStatus.REVIEWED}' AND NOT EXISTS " +
         "(SELECT 1 FROM corrections WHERE corrections.pageId = pages.id AND corrections.status = '${CorrectionStatus.PENDING}')))"
 
 @Dao
@@ -107,6 +115,10 @@ interface DiaryDao {
 
     @Update
     suspend fun updatePage(page: DiaryPage)
+
+    /** Solo la tinta: el guardado al salir de la página no debe pisar un estado que cambió mientras tanto. */
+    @Query("UPDATE pages SET inkJson = :inkJson, canvasWidth = :canvasWidth, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateInk(id: Long, inkJson: String, canvasWidth: Int, updatedAt: Long)
 
     @Query("UPDATE pages SET status = :status WHERE id = :id")
     suspend fun setPageStatus(id: Long, status: String)
