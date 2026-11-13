@@ -620,7 +620,7 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
         r.notes.forEach {
             Text("⚠ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         }
-        if (r.isListen) ListenReviewSection(r)
+        if (r.isListen) ListenReviewSection(r, vm.listenAudio)
 
         val review = st.review
         if (review == null) {

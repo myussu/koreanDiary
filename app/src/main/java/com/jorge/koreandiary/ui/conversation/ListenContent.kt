@@ -1,5 +1,7 @@
 package com.jorge.koreandiary.ui.conversation
 
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Build
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -32,10 +34,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,17 +58,22 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.jorge.koreandiary.conversation.ConversationRecord
 import com.jorge.koreandiary.conversation.Speaker
+import com.jorge.koreandiary.listen.ListenAudioStore
 import com.jorge.koreandiary.listen.ListenEngine
 import com.jorge.koreandiary.listen.ListenPhase
 import com.jorge.koreandiary.listen.ListenScript
 import com.jorge.koreandiary.listen.ListenScriptParser
 import com.jorge.koreandiary.listen.ListenState
+import com.jorge.koreandiary.listen.NarrationAudio
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.voice.TurnMode
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 // ---------------------------------------------------------------- Preparación
@@ -334,7 +345,7 @@ private fun SegmentCard(ko: String, es: String, blur: Boolean, key: Int, onWord:
 
 /** Parte de la revisión propia del modo Escuchar: comprensión, objetivos escuchados y el guion. */
 @Composable
-internal fun ListenReviewSection(r: ConversationRecord) {
+internal fun ListenReviewSection(r: ConversationRecord, audio: ListenAudioStore) {
     val script: ListenScript? = remember(r.scriptRaw) {
         r.scriptRaw?.let { runCatching { ListenScriptParser.decode(JSONObject(it)) }.getOrNull() }
     }
@@ -372,6 +383,7 @@ internal fun ListenReviewSection(r: ConversationRecord) {
             }
         }
     }
+    ListenReplay(audio, r.id, script)
     if (script != null) {
         var open by rememberSaveable(r.id) { mutableStateOf(false) }
         Label("Guion")
@@ -385,6 +397,101 @@ internal fun ListenReviewSection(r: ConversationRecord) {
                     seg.question?.let { q -> Text("Pregunta: ${q.ko}${if (q.es.isNotBlank()) " (${q.es})" else ""}", style = MaterialTheme.typography.bodySmall) }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Volver a escuchar la narración guardada, sin IA ni cuota: reproducir, ir al segmento anterior o
+ * siguiente, cambiar la velocidad y marcar con ★ para conservarla más allá de las últimas escuchas.
+ */
+@Composable
+private fun ListenReplay(store: ListenAudioStore, recordId: Long, script: ListenScript?) {
+    val scheme = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    val version by store.version.collectAsStateWithLifecycle()
+    val saved = remember(recordId, version) { store.get(recordId) }
+    Label("Volver a escuchar")
+    if (saved == null) {
+        Text(
+            "El audio de esta escucha no está guardado: quedan las últimas ${NarrationAudio.KEEP_RECENT} y las marcadas con ★.",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+        return
+    }
+    val player = remember(saved.file) {
+        MediaPlayer().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+            )
+        }
+    }
+    var prepared by remember(saved.file) { mutableStateOf(false) }
+    var playing by remember(saved.file) { mutableStateOf(false) }
+    var speed by rememberSaveable(recordId) { mutableFloatStateOf(1f) }
+    var segment by remember(saved.file) { mutableIntStateOf(saved.starts.firstOrNull()?.index ?: 0) }
+    DisposableEffect(player) {
+        onDispose { runCatching { player.release() } }
+    }
+    fun ready(): Boolean {
+        if (prepared) return true
+        prepared = runCatching {
+            player.setDataSource(saved.file.path)
+            player.prepare()
+            player.setOnCompletionListener { playing = false }
+        }.isSuccess
+        return prepared
+    }
+    fun play() {
+        if (!ready()) return
+        runCatching {
+            player.start()
+            // La velocidad se aplica sonando: en pausa, cambiarla la haría arrancar sola.
+            player.playbackParams = player.playbackParams.setSpeed(speed)
+        }
+        playing = true
+    }
+    fun pause() {
+        runCatching { player.pause() }
+        playing = false
+    }
+    fun goTo(index: Int) {
+        val start = saved.starts.firstOrNull { it.index == index } ?: return
+        if (!ready()) return
+        runCatching { player.seekTo(start.ms.toInt()) }
+        segment = index
+    }
+    fun setSpeed(value: Float) {
+        speed = value.coerceIn(0.6f, 1.4f)
+        if (playing) runCatching { player.playbackParams = player.playbackParams.setSpeed(speed) }
+    }
+    // Sigue en qué segmento va, para mostrar su texto.
+    LaunchedEffect(playing) {
+        while (playing) {
+            segment = NarrationAudio.segmentAt(saved.starts, runCatching { player.currentPosition.toLong() }.getOrDefault(0L))
+            delay(300)
+        }
+    }
+    val order = saved.starts.map { it.index }
+    val position = order.indexOf(segment)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        AppButton(onClick = { if (playing) pause() else play() }) { Text(if (playing) "Pausa" else "Escuchar") }
+        AppTextButton(onClick = { order.getOrNull(position - 1)?.let(::goTo) }, enabled = position > 0) { Text("‹ Anterior") }
+        AppTextButton(onClick = { order.getOrNull(position + 1)?.let(::goTo) }, enabled = position in 0 until order.lastIndex) { Text("Siguiente ›") }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        AppTextButton(onClick = { setSpeed(speed - 0.1f) }, enabled = speed > 0.65f) { Text("− Lento") }
+        Text("${"%.1f".format(speed)}×", style = MaterialTheme.typography.bodyMedium)
+        AppTextButton(onClick = { setSpeed(speed + 0.1f) }, enabled = speed < 1.35f) { Text("+ Rápido") }
+        AppToggle(if (saved.starred) "★ Guardada" else "☆ Guardar", saved.starred) {
+            scope.launch { store.setStarred(recordId, !saved.starred) }
+        }
+    }
+    script?.segments?.getOrNull(segment)?.let { seg ->
+        Column(Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(10.dp)) {
+            Text("${segment + 1}. ${seg.ko}")
+            if (seg.es.isNotBlank()) Text(seg.es, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
         }
     }
 }

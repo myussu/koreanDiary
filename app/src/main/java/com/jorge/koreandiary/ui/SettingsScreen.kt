@@ -383,6 +383,20 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 }
             }
             Text("Después de las preguntas de la IA siempre espera a que digas «sigue».", style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Micrófono de los audífonos")
+                    Text(
+                        "Con audífonos Bluetooth, en las pausas preguntas desde su micrófono. Solo mientras hablas: la narración vuelve a sonar con la calidad normal (Android 12 o más nuevo).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = s.listenHeadsetMic, onCheckedChange = { v -> container.settings.update { it.copy(listenHeadsetMic = v) } })
+            }
+            Text(
+                "Las últimas ${com.jorge.koreandiary.listen.NarrationAudio.KEEP_RECENT} escuchas quedan guardadas para volver a oírlas (en su revisión); marca con ★ las que quieras conservar.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             OutlinedTextField(value = listenScriptModel, onValueChange = { listenScriptModel = it }, label = { Text("Modelo del guion") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Text("Si se acaba su cuota diaria se usa tu modelo de Gemini del diario.", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(value = listenTtsModel, onValueChange = { listenTtsModel = it }, label = { Text("Modelo de voz del narrador") }, singleLine = true, modifier = Modifier.fillMaxWidth())

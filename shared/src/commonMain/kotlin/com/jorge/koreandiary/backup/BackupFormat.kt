@@ -62,7 +62,7 @@ object BackupFormat {
     const val FILES = "files/"
 
     /** Carpetas de `filesDir` que viajan en la copia. Las claves de API nunca. */
-    val MANAGED_DIRS = listOf("workbook", "workbook_photos", "conversation", "explanations", "mascot")
+    val MANAGED_DIRS = listOf("workbook", "workbook_photos", "conversation", "explanations", "mascot", "listen_audio")
 
     /** Tope de lo que se extrae de un .zip: evita llenar el celular con un archivo malicioso. */
     const val MAX_BYTES = 2L * 1024 * 1024 * 1024

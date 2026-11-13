@@ -17,6 +17,7 @@ import com.jorge.koreandiary.voice.LiveConfig
 import com.jorge.koreandiary.voice.LiveEvent
 import com.jorge.koreandiary.voice.LiveProtocol
 import com.jorge.koreandiary.voice.LiveSession
+import com.jorge.koreandiary.voice.HeadsetMic
 import com.jorge.koreandiary.voice.Microphone
 import com.jorge.koreandiary.voice.SessionSignal
 import com.jorge.koreandiary.voice.TurnMode
@@ -123,6 +124,8 @@ class ListenEngine(private val c: AppContainer) {
     private var liveDead = false
     private var closing = false
     private var mic: Microphone? = null
+    /** Micrófono de los audífonos Bluetooth, solo en las pausas (Ajustes → Escuchar). */
+    private val headsetMic by lazy { HeadsetMic(c.app) }
     private var voice: VoiceOut? = null
     private var player: NarrationPlayer? = null
     private var systemVoice: SystemVoice? = null
@@ -751,6 +754,10 @@ class ListenEngine(private val c: AppContainer) {
 
     private fun openMic() {
         if (mic != null || !liveUsable()) return
+        // Con audífonos Bluetooth, preguntas desde sus micrófonos: el celular puede quedar en el bolsillo.
+        if (c.settings.state.value.listenHeadsetMic && headsetMic.route()) {
+            if ("Micrófono de los audífonos" !in notes) notes += "Micrófono de los audífonos"
+        }
         val m = Microphone { buffer, n ->
             val st = _state.value
             val send = st.phase.interactive && st.connected && (st.turnMode == TurnMode.AUTO || st.talking)
@@ -760,6 +767,7 @@ class ListenEngine(private val c: AppContainer) {
             m.start(scope)
             mic = m
         } catch (e: Exception) {
+            headsetMic.release()
             notes += "Micrófono: ${e.message}"
             showMessage(e.message ?: "No se pudo abrir el micrófono.")
         }
@@ -769,6 +777,8 @@ class ListenEngine(private val c: AppContainer) {
         val m = mic ?: return
         m.stop()
         mic = null
+        // La narración vuelve a sonar con la calidad normal de los audífonos.
+        headsetMic.release()
         val st = _state.value
         if (st.turnMode == TurnMode.AUTO && st.connected) session?.send(LiveProtocol.audioStreamEnd())
     }
@@ -834,8 +844,11 @@ class ListenEngine(private val c: AppContainer) {
         player?.stop()
         mic?.stop()
         mic = null
+        headsetMic.release()
         session?.close()
         session = null
+        // El audio de la narración, para volver a escucharla sin gastar cuota.
+        val narration = audio.toList()
         scope.launch {
             voice?.flush()
             earcon(if (error) Earcon.ERROR else Earcon.END)
@@ -847,6 +860,7 @@ class ListenEngine(private val c: AppContainer) {
             } else {
                 // Se guarda antes de avisar: la revisión lo abre desde el archivo.
                 c.appScope.launch { c.conversations.save(record) }.join()
+                c.appScope.launch { runCatching { c.listenAudio.save(record.id, narration) } }
                 _state.value = ListenState(phase = ListenPhase.DONE, finishedId = record.id)
             }
         }

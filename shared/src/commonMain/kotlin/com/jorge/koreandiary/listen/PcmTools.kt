@@ -226,3 +226,70 @@ object Earcons {
         return out
     }
 }
+
+/** Audio guardado de una escucha: la narración entera y dónde empieza cada segmento. */
+class JoinedNarration(val audio: PcmAudio, val starts: List<SegmentStart>)
+
+/** El segmento [index] del guion empieza en [ms] del audio guardado. */
+data class SegmentStart(val index: Int, val ms: Long)
+
+/** Arma la narración para volver a escucharla y decide qué audios se conservan. Sin Android. */
+object NarrationAudio {
+    /** Silencio entre segmentos al unirlos, como la pausa natural del narrador. */
+    const val GAP_MS = 600L
+
+    /** Escuchas cuyo audio se conserva sin marcarlas; las marcadas se conservan siempre. */
+    const val KEEP_RECENT = 5
+
+    /**
+     * Une los segmentos que tienen audio (los que no se sintetizaron se saltan) a la frecuencia del
+     * primero: si la voz de Gemini falló a mitad de sesión, los de la voz del celular se convierten.
+     */
+    fun join(segments: List<PcmAudio?>): JoinedNarration? {
+        val rate = segments.firstOrNull { it != null }?.rate ?: return null
+        val gap = ByteArray((rate * GAP_MS / 1000).toInt() * 2)
+        val out = java.io.ByteArrayOutputStream()
+        val starts = mutableListOf<SegmentStart>()
+        segments.forEachIndexed { i, seg ->
+            if (seg == null || seg.data.size < 2) return@forEachIndexed
+            if (starts.isNotEmpty()) out.write(gap)
+            starts += SegmentStart(i, out.size() / 2 * 1000L / rate)
+            out.write(resample(seg, rate).data)
+        }
+        if (starts.isEmpty()) return null
+        return JoinedNarration(PcmAudio(out.toByteArray(), rate), starts)
+    }
+
+    /** PCM de 16 bits mono a otra frecuencia, por interpolación lineal (suficiente para voz). */
+    fun resample(pcm: PcmAudio, to: Int): PcmAudio {
+        if (pcm.rate == to || to <= 0 || pcm.rate <= 0) return pcm
+        val n = pcm.data.size / 2
+        if (n < 2) return PcmAudio(pcm.data, to)
+        val outN = (n.toLong() * to / pcm.rate).toInt()
+        val out = ByteArray(outN * 2)
+        fun sample(k: Int): Int {
+            val lo = pcm.data[2 * k].toInt() and 0xFF
+            val hi = pcm.data[2 * k + 1].toInt()
+            return (hi shl 8) or lo
+        }
+        for (i in 0 until outN) {
+            val src = i.toDouble() * pcm.rate / to
+            val j = src.toInt().coerceAtMost(n - 1)
+            val f = src - j
+            val a = sample(j)
+            val b = sample((j + 1).coerceAtMost(n - 1))
+            val v = Math.round(a + (b - a) * f).toInt().coerceIn(-32768, 32767)
+            out[2 * i] = (v and 0xFF).toByte()
+            out[2 * i + 1] = ((v shr 8) and 0xFF).toByte()
+        }
+        return PcmAudio(out, to)
+    }
+
+    /** Qué audios borrar: quedan los [keep] más recientes sin marcar y todos los marcados. */
+    fun toDelete(entries: List<Pair<Long, Boolean>>, keep: Int = KEEP_RECENT): List<Long> =
+        entries.filterNot { it.second }.sortedByDescending { it.first }.drop(keep).map { it.first }
+
+    /** Segmento que suena en [positionMs]: el último que empezó antes. */
+    fun segmentAt(starts: List<SegmentStart>, positionMs: Long): Int =
+        starts.lastOrNull { it.ms <= positionMs }?.index ?: starts.firstOrNull()?.index ?: 0
+}

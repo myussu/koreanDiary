@@ -951,9 +951,13 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private fun updateDrill(transform: (DrillState) -> DrillState) =
         _state.update { st -> st.drill?.let { st.copy(drill = transform(it)) } ?: st }
 
+    /** Audio guardado de las escuchas, para volver a oírlas desde la revisión. */
+    val listenAudio get() = c.listenAudio
+
     fun deleteSession(id: Long) {
         viewModelScope.launch {
             c.conversations.delete(id)
+            c.listenAudio.delete(id)
             backToSetup()
         }
     }

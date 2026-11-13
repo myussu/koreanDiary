@@ -4,9 +4,9 @@
   Se excluyen las claves de API: están cifradas con una llave del Keystore que no viaja a otro
   dispositivo, así que no servirían; se vuelven a escribir en Ajustes.
 
-  Las fotos del workbook (workbook_photos/) no van a la nube: Google guarda como mucho 25 MB por app y,
-  si se pasa, no guarda nada. Sí viajan al pasar de un celular a otro, que no tiene ese límite, y en
-  la copia que se exporta a un archivo desde Ajustes.
+  Las fotos del workbook (workbook_photos/) y el audio de las escuchas (listen_audio/) no van a la
+  nube: Google guarda como mucho 25 MB por app y, si se pasa, no guarda nada. Sí viajan al pasar de
+  un celular a otro, que no tiene ese límite, y en la copia que se exporta a un archivo desde Ajustes.
 
   Las rutas no admiten comodines: por eso las fotos tienen su propia carpeta. Lo que no está
   incluido aquí no se copia (restore/, backups/ y backup_state.xml son de este celular).
@@ -24,6 +24,7 @@
         <include domain="database" path="." />
         <include domain="file" path="workbook/" />
         <include domain="file" path="workbook_photos/" />
+        <include domain="file" path="listen_audio/" />
         <include domain="file" path="explanations/" />
         <include domain="file" path="conversation/" />
         <include domain="file" path="mascot/" />

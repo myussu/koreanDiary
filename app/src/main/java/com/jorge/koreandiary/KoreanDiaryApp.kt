@@ -14,6 +14,7 @@ import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.androidStandardCatalog
 import com.jorge.koreandiary.data.db.create
 import com.jorge.koreandiary.ink.HandwritingRecognizer
+import com.jorge.koreandiary.listen.ListenAudioStore
 import com.jorge.koreandiary.listen.ListenEngine
 import com.jorge.koreandiary.mascot.MascotPack
 import com.jorge.koreandiary.reminder.ReminderScheduler
@@ -47,6 +48,8 @@ class AppContainer(val app: Application) {
     val explanations = ExplanationStore(app)
     /** Modo Escuchar: vive aquí (no en la pantalla) para seguir con la pantalla apagada. */
     val listen by lazy { ListenEngine(this) }
+    /** Audio de las últimas escuchas y las marcadas, para volver a oírlas. */
+    val listenAudio by lazy { ListenAudioStore(app) }
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

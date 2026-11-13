@@ -96,6 +96,8 @@ data class AppSettings(
     val listenSpeed: Float = 0.9f,
     /** Escuchar: segundos de pausa entre segmentos sin pregunta (0 = seguido). */
     val listenGapSec: Int = 2,
+    /** En las pausas de Escuchar, usar el micrófono de los audífonos Bluetooth si están conectados. */
+    val listenHeadsetMic: Boolean = true,
     /** Escuchar: buscar en Google para temas actuales (último valor elegido). */
     val listenSearch: Boolean = false,
     val listenMinutes: Int = 10,
@@ -167,6 +169,7 @@ class SettingsStore(context: Context) {
         listenNarrator = prefs.getString("listenNarrator", "gemini") ?: "gemini",
         listenSpeed = prefs.getFloat("listenSpeed", 0.9f),
         listenGapSec = prefs.getInt("listenGapSec", 2),
+        listenHeadsetMic = prefs.getBoolean("listenHeadsetMic", true),
         listenSearch = prefs.getBoolean("listenSearch", false),
         listenMinutes = prefs.getInt("listenMinutes", 10),
         listenRecentTopics = prefs.getString("listenRecentTopics", "") ?: "",
@@ -212,6 +215,7 @@ class SettingsStore(context: Context) {
             .putString("listenNarrator", s.listenNarrator)
             .putFloat("listenSpeed", s.listenSpeed)
             .putInt("listenGapSec", s.listenGapSec)
+            .putBoolean("listenHeadsetMic", s.listenHeadsetMic)
             .putBoolean("listenSearch", s.listenSearch)
             .putInt("listenMinutes", s.listenMinutes)
             .putString("listenRecentTopics", s.listenRecentTopics)

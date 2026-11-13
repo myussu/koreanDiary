@@ -94,6 +94,9 @@ object Features {
                 phone("«− Lento», «+ Rápido», «Repetir», «Siguiente» y ver el texto con traducción."),
                 phone("Sirve con la pantalla apagada: botones en la notificación y en los audífonos (1 toque pausa, 2 sigue, 3 repite)."),
                 phone("Al final, preguntas de comprensión."),
+                phone("Con audífonos Bluetooth, en las pausas preguntas desde su micrófono (se apaga en Ajustes → «Micrófono de los audífonos»)."),
+                phone("En la revisión de una escucha: «Escuchar» otra vez la narración guardada, sin gastar cuota, con «‹ Anterior», «Siguiente ›» y velocidad."),
+                phone("Quedan las últimas 5 escuchas; «☆ Guardar» conserva una para siempre."),
             ),
         ),
         FeatureGroup(
