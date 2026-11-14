@@ -33,9 +33,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      # :shared:jvmTest corre los tests de la lógica compartida (FSRS, parsers, tinta…).
+      # Se publica la variante release (sin depuración, con R8), firmada con la misma llave del repo:
+      # la de depuración corre mucho más lenta. Los tests de :app solo existen para la variante de
+      # depuración; :shared:jvmTest corre los de la lógica compartida (FSRS, parsers, tinta…).
       - name: Compilar APK y correr tests
-        run: ./gradlew --stacktrace assembleDebug testDebugUnitTest :shared:jvmTest
+        run: ./gradlew --stacktrace assembleRelease testDebugUnitTest :shared:jvmTest
 
       # El esquema que generó esta compilación, por si hay que agregarlo al repo.
       - uses: actions/upload-artifact@v7
@@ -77,12 +79,19 @@ jobs:
           fi
 
       - name: Renombrar APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk koreandiary.apk
+        run: cp app/build/outputs/apk/release/app-release.apk koreandiary.apk
 
       - uses: actions/upload-artifact@v7
         with:
           name: koreandiary-apk-${{ github.run_number }}
           path: koreandiary.apk
+
+      # Para leer los errores de esta compilación: R8 cambia los nombres de clases y métodos.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mapping-${{ github.run_number }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
 
       # Publica el APK en un release "latest" fijo: el enlace de descarga siempre es el mismo.
       - name: Publicar release "latest"

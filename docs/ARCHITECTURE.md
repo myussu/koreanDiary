@@ -105,6 +105,7 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
 
 ## Diferencias con el documento (MVP)
 
+- Se publica la variante **release**: sin depuración y con R8 (`isMinifyEnabled`), que es como Compose rinde de verdad; la de depuración corre mucho más lenta y gasta más batería. Va firmada con la misma llave del repo (`app/debug.keystore`) para que se instale encima de la anterior. Las reglas propias están en `app/proguard-rules.pro`; el `mapping.txt` de cada compilación queda como artefacto de Actions para leer los errores.
 - Perfil y proveedores viven en SharedPreferences (claves cifradas con Android Keystore), no en tablas.
 - Las reglas de conjugación se guardan como campo `irregular` de cada palabra; la tabla aparte queda para después.
 - La integración con AnkiDroid queda para la siguiente iteración.

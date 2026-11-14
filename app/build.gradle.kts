@@ -33,9 +33,14 @@ android {
     }
 
     buildTypes {
+        // Es la variante que publica GitHub Actions: sin depuración y con R8, que es como Compose
+        // rinde de verdad (la de depuración corre mucho más lenta y gasta más batería).
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // La misma llave de siempre: Android solo instala una actualización encima de la app si
+            // la firma coincide. Con otra llave habría que desinstalar y se perderían los diarios.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
