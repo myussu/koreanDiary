@@ -151,6 +151,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     private var session: LiveSession? = null
     private var mic: Microphone? = null
+    /** La sesión ya abrió su micrófono: al volver del segundo plano hay que abrirlo otra vez. */
+    private var micWanted = false
+    /** Espera en segundo plano: si no vuelves, termina la sesión. */
+    private var backgroundJob: Job? = null
     private var speaker: AudioOut? = null
     private var ticker: Job? = null
     private var record: ConversationRecord? = null
@@ -477,7 +481,18 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     private fun startMic() {
         if (mic != null) return
-        val m = Microphone { buffer, n ->
+        micWanted = true
+        val m = Microphone(
+            onLost = {
+                // El sistema cortó el micrófono: sin él no hay conversación; se termina y se guarda.
+                viewModelScope.launch {
+                    if (_state.value.stage == ConvStage.Live && mic != null) {
+                        _state.update { it.copy(message = "El micrófono dejó de responder.") }
+                        end("Se perdió el micrófono.")
+                    }
+                }
+            },
+        ) { buffer, n ->
             val st = _state.value
             val send = if (st.turnMode == TurnMode.PUSH_TO_TALK) st.talking else !st.muted
             if (send && st.connected) session?.send(LiveProtocol.audio(buffer, n))
@@ -567,12 +582,32 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         if (muted) session?.send(LiveProtocol.audioStreamEnd())
     }
 
-    /** La app pasó a segundo plano: sin servicio en primer plano no se puede seguir grabando. */
+    /**
+     * La app pasó a segundo plano (otra app o la pantalla apagada): sin servicio en primer plano no se
+     * puede seguir grabando. Se suelta el micrófono, que antes seguía grabando aunque no se enviara
+     * nada, y si no vuelves pronto la sesión termina y se guarda: antes quedaba conectada, con la
+     * pantalla apagada, hasta agotar su tiempo.
+     */
     fun onBackground() {
         val st = _state.value
         if (st.stage != ConvStage.Live) return
         if (st.talking) stopTalking()
         if (st.turnMode == TurnMode.AUTO && !st.muted) toggleMute()
+        mic?.stop()
+        mic = null
+        backgroundJob?.cancel()
+        backgroundJob = viewModelScope.launch {
+            delay(BACKGROUND_GRACE_MS)
+            backgroundJob = null
+            end("Saliste de la app.")
+        }
+    }
+
+    /** Volviste a tiempo: la sesión sigue. En automático queda en silencio hasta que quites el silencio. */
+    fun onForeground() {
+        backgroundJob?.cancel()
+        backgroundJob = null
+        if (_state.value.stage == ConvStage.Live && micWanted) startMic()
     }
 
     fun slower() {
@@ -758,6 +793,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     fun end(reason: String = "Terminaste la sesión.") {
         if (ending || _state.value.stage != ConvStage.Live) return
         ending = true
+        micWanted = false
+        // Si es la espera en segundo plano la que termina la sesión, ya dejó de apuntar a sí misma.
+        backgroundJob?.cancel()
+        backgroundJob = null
         ticker?.cancel()
         coachJob?.cancel()
         abandonAudioFocus()
@@ -1001,5 +1040,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         session?.close()
         abandonAudioFocus()
         speech.release()
+    }
+
+    private companion object {
+        /** Cuánto espera la sesión en segundo plano antes de terminar sola. */
+        const val BACKGROUND_GRACE_MS = 60_000L
     }
 }

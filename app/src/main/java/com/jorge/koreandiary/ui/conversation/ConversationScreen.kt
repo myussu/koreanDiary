@@ -123,8 +123,10 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
         if (granted) begin() else permission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
-    // Sin servicio en primer plano: al salir de la app se deja de enviar audio.
+    // Sin servicio en primer plano: al salir de la app se deja de enviar audio y se suelta el
+    // micrófono; si no vuelves en un minuto, la sesión termina y se guarda.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.onBackground() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.onForeground() }
 
     val live = st.stage == ConvStage.Live
     val view = LocalView.current

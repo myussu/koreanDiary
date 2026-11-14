@@ -6,6 +6,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -53,9 +54,20 @@ class SystemVoice(private val context: Context) {
                 }
             }
         }
-        val error = withTimeout(10_000) { ready.await() }
+        val error = orFail(10_000, "La voz del celular no respondió.") { ready.await() }
         if (error != null) throw IllegalStateException(error)
         return tts!!
+    }
+
+    /**
+     * Un tiempo de espera vencido es un fallo de la voz, no una cancelación de quien llama. Si saliera
+     * como cancelación (lo que lanza `withTimeout`), la escucha no se enteraba y quedaba esperando
+     * una voz que ya no iba a llegar.
+     */
+    private suspend fun <T> orFail(ms: Long, problem: String, block: suspend () -> T): T = try {
+        withTimeout(ms) { block() }
+    } catch (e: TimeoutCancellationException) {
+        throw IllegalStateException(problem)
     }
 
     suspend fun synth(text: String): PcmAudio {
@@ -63,7 +75,7 @@ class SystemVoice(private val context: Context) {
         val file = File(context.cacheDir, "voz_${System.nanoTime()}.wav")
         val id = file.name
         try {
-            withTimeout(60_000) {
+            orFail(60_000, "La voz del celular tardó demasiado.") {
                 suspendCancellableCoroutine { cont ->
                     pending[id] = { error ->
                         if (error == null) cont.resume(Unit) else cont.resumeWithException(IllegalStateException(error))

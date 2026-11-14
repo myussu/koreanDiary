@@ -81,6 +81,11 @@ data class ListenState(
     val lines: List<ListenLine> = emptyList(),
     val talking: Boolean = false,
     val aiSpeaking: Boolean = false,
+    /**
+     * En una pausa, el micrófono está cerrado: nadie habló en un buen rato o la pausa la provocó otra
+     * app (una llamada). «Hablar» lo abre de nuevo; en modo automático hay que seguir y volver a pausar.
+     */
+    val micResting: Boolean = false,
     val elapsedSec: Int = 0,
     val totalSec: Int = 0,
     val turnMode: String = TurnMode.PUSH_TO_TALK,
@@ -151,6 +156,10 @@ class ListenEngine(private val c: AppContainer) {
     private var narratorsUsed = linkedSetOf<String>()
     private var lookups = mutableListOf<String>()
     private var geminiVoiceFailed = false
+    /** Falló también la voz del celular: los segmentos que faltan ya no van a tener audio. */
+    private var voiceLost = false
+    /** Última vez que alguien habló en una pausa (tú o la IA): pasado un rato, el micrófono descansa. */
+    private var lastVoiceAt = 0L
     private var scriptModel = ""
     private var searched = false
 
@@ -223,6 +232,8 @@ class ListenEngine(private val c: AppContainer) {
         narratorsUsed = linkedSetOf()
         lookups = mutableListOf()
         geminiVoiceFailed = false
+        voiceLost = false
+        lastVoiceAt = 0L
         cursor = 0
         waitingFor = -1
         pausedMid = false
@@ -308,7 +319,15 @@ class ListenEngine(private val c: AppContainer) {
             } catch (e: Exception) {
                 notes += "La voz del celular falló: ${e.message}"
                 showMessage(e.message ?: "La voz del celular falló.")
-                earcon(Earcon.ERROR)
+                // Lo que falta ya no va a tener voz. Si la narración lo está esperando (o cuando llegue
+                // ahí), termina con el motivo: antes quedaba en «Preparando la voz…», con el tono de
+                // espera cada pocos segundos, hasta que se cumplía el tiempo máximo de la sesión.
+                voiceLost = true
+                if (waitingFor >= 0 && audio.getOrNull(waitingFor) == null) {
+                    finish(VOICE_LOST, error = true)
+                } else {
+                    earcon(Earcon.ERROR)
+                }
                 return
             }
         }
@@ -349,14 +368,19 @@ class ListenEngine(private val c: AppContainer) {
         closeMic()
         val pcm = audio.getOrNull(i)
         if (pcm == null) {
+            // La voz de este segmento ya no va a llegar: se termina con lo que se alcanzó a escuchar.
+            if (voiceLost) {
+                finish(VOICE_LOST, error = true)
+                return
+            }
             // La voz de este segmento todavía no llegó: tonos de espera hasta que llegue.
             waitingFor = i
-            _state.update { it.copy(phase = ListenPhase.NARRATING, segment = i, buffering = true, floating = null, status = "Preparando la voz…") }
+            _state.update { it.copy(phase = ListenPhase.NARRATING, segment = i, buffering = true, floating = null, micResting = false, status = "Preparando la voz…") }
             return
         }
         _state.update {
             it.copy(
-                phase = ListenPhase.NARRATING, segment = i, buffering = false, floating = null, gapLeft = 0,
+                phase = ListenPhase.NARRATING, segment = i, buffering = false, floating = null, gapLeft = 0, micResting = false,
                 status = "Segmento ${i + 1} de ${script.segments.size}",
             )
         }
@@ -421,15 +445,34 @@ class ListenEngine(private val c: AppContainer) {
     private fun enterInteractive(phase: ListenPhase, status: String) {
         _state.update { it.copy(phase = phase, status = status, buffering = false, gapLeft = 0) }
         earcon(Earcon.TURN)
+        lastVoiceAt = System.currentTimeMillis()
         openMic()
     }
+
+    /**
+     * Cierra el micrófono en una pausa en la que nadie habla (se te olvidó, o la provocó una llamada):
+     * abierto mantiene los audífonos en modo llamada y, en automático, sube audio todo el tiempo.
+     * La pausa sigue; «Hablar» lo abre otra vez.
+     */
+    private fun restMic(status: String) {
+        closeMic()
+        _state.update { it.copy(micResting = true, status = status) }
+    }
+
+    /**
+     * El micrófono solo descansa si la pantalla y los audífonos ofrecen cómo volver: con «pulsar para
+     * hablar», «Hablar» lo abre; en automático, solo en una pausa tuya, donde «Seguir» continúa. En
+     * una pregunta de la IA en automático se queda abierto: ahí no hay botón que lo reabra.
+     */
+    private fun canRestMic(st: ListenState) =
+        st.phase.interactive && (st.turnMode == TurnMode.PUSH_TO_TALK || st.phase == ListenPhase.PAUSED)
 
     private fun leaveInteractive() {
         if (_state.value.talking) stopTalking(tone = false)
         closeMic()
         voice?.flush()
         pending = null
-        _state.update { it.copy(floating = null) }
+        _state.update { it.copy(floating = null, micResting = false) }
     }
 
     private fun liveUsable() = session != null && !liveDead
@@ -452,7 +495,12 @@ class ListenEngine(private val c: AppContainer) {
         if (st.phase == ListenPhase.NARRATING || st.phase == ListenPhase.GAP) pause() else if (st.phase.interactive) resume()
     }
 
-    fun pause() {
+    /**
+     * Con [quiet], la pausa la provocó otra app que tomó el audio (una llamada, la alarma): la
+     * narración espera sin tono, sin avisar a la IA y sin abrir el micrófono, que antes quedaba
+     * grabando durante toda la llamada.
+     */
+    fun pause(quiet: Boolean = false) {
         val st = _state.value
         when (st.phase) {
             ListenPhase.NARRATING -> if (st.buffering) {
@@ -463,9 +511,17 @@ class ListenEngine(private val c: AppContainer) {
                 pausedMid = true
             }
             ListenPhase.GAP -> pausedMid = false
-            else -> return
+            else -> {
+                // Ya estabas en una pausa: solo se suelta el micrófono.
+                if (quiet && mic != null && canRestMic(st)) restMic(QUIET_PAUSE)
+                return
+            }
         }
         pauses++
+        if (quiet) {
+            _state.update { it.copy(phase = ListenPhase.PAUSED, status = QUIET_PAUSE, buffering = false, gapLeft = 0, micResting = true) }
+            return
+        }
         enterInteractive(ListenPhase.PAUSED, statusFor(ListenPhase.PAUSED))
         sendSilent(ListenPrompts.manualPause(st.segment))
     }
@@ -547,6 +603,9 @@ class ListenEngine(private val c: AppContainer) {
     fun startTalking() {
         val st = _state.value
         if (!st.phase.interactive || !st.connected || st.talking || st.turnMode != TurnMode.PUSH_TO_TALK) return
+        // Si el micrófono estaba descansando, se abre de nuevo.
+        openMic()
+        lastVoiceAt = System.currentTimeMillis()
         if (session?.send(LiveProtocol.activityStart()) != true) return
         voice?.flush()
         // Si querías hablar, no se sigue solo aunque la IA lo haya pedido.
@@ -562,6 +621,7 @@ class ListenEngine(private val c: AppContainer) {
     fun stopTalking(tone: Boolean = true) {
         if (!_state.value.talking) return
         session?.send(LiveProtocol.activityEnd())
+        lastVoiceAt = System.currentTimeMillis()
         _state.update { it.copy(talking = false) }
         if (tone) earcon(Earcon.WORKING)
     }
@@ -639,7 +699,10 @@ class ListenEngine(private val c: AppContainer) {
                 lastAiAudioAt = System.currentTimeMillis()
                 voice?.play(e.pcm)
             }
-            is LiveEvent.InputText -> appendUser(e.text)
+            is LiveEvent.InputText -> {
+                lastVoiceAt = System.currentTimeMillis()
+                appendUser(e.text)
+            }
             is LiveEvent.OutputText -> if (st.phase.interactive && !st.talking) appendAi(e.text)
             LiveEvent.Interrupted -> {
                 voice?.flush()
@@ -758,14 +821,28 @@ class ListenEngine(private val c: AppContainer) {
         if (c.settings.state.value.listenHeadsetMic && headsetMic.route()) {
             if ("Micrófono de los audífonos" !in notes) notes += "Micrófono de los audífonos"
         }
-        val m = Microphone { buffer, n ->
+        var opened: Microphone? = null
+        val m = Microphone(
+            onLost = {
+                // El sistema cortó el micrófono: se cierra y queda en reposo en vez de seguir intentando.
+                scope.launch {
+                    if (mic != null && mic === opened) {
+                        if (_state.value.talking) stopTalking(tone = false)
+                        restMic("El micrófono dejó de responder")
+                        showMessage("El micrófono dejó de responder. Sigue la narración o pausa de nuevo para preguntar.")
+                    }
+                }
+            },
+        ) { buffer, n ->
             val st = _state.value
             val send = st.phase.interactive && st.connected && (st.turnMode == TurnMode.AUTO || st.talking)
             if (send) session?.send(LiveProtocol.audio(buffer, n))
         }
+        opened = m
         try {
             m.start(scope)
             mic = m
+            _state.update { it.copy(micResting = false) }
         } catch (e: Exception) {
             headsetMic.release()
             notes += "Micrófono: ${e.message}"
@@ -809,6 +886,10 @@ class ListenEngine(private val c: AppContainer) {
                     earcon(Earcon.WORKING)
                 }
                 if (st.phase == ListenPhase.GAP && now >= gapUntil) playSegment(cursor)
+                // Una pausa en la que nadie habla hace rato (se te olvidó): el micrófono descansa.
+                if (mic != null && canRestMic(st) && !st.talking && !speaking && now - maxOf(lastVoiceAt, lastAiAudioAt) > MIC_REST_MS) {
+                    restMic(if (st.turnMode == TurnMode.PUSH_TO_TALK) "En pausa: pulsa «Hablar» o «Seguir»" else "En pausa: pulsa «Seguir» para continuar")
+                }
                 // Seguir/repetir/terminar esperan a que la IA termine su frase.
                 pending?.let { p ->
                     val quiet = !st.talking && !speaking && now - lastAiAudioAt > 700
@@ -847,8 +928,10 @@ class ListenEngine(private val c: AppContainer) {
         headsetMic.release()
         session?.close()
         session = null
-        // El audio de la narración, para volver a escucharla sin gastar cuota.
+        // El audio de la narración, para volver a escucharla sin gastar cuota. Solo queda en manos del
+        // guardado: aquí se suelta (son decenas de MB que antes seguían en memoria hasta la próxima escucha).
         val narration = audio.toList()
+        audio = mutableListOf()
         scope.launch {
             voice?.flush()
             earcon(if (error) Earcon.ERROR else Earcon.END)
@@ -923,7 +1006,8 @@ class ListenEngine(private val c: AppContainer) {
                 if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
                     scope.launch {
                         if (_state.value.talking) stopTalking(tone = false)
-                        pause()
+                        // En silencio: sin tono y sin abrir el micrófono durante la llamada.
+                        pause(quiet = true)
                     }
                 }
             }
@@ -941,6 +1025,12 @@ class ListenEngine(private val c: AppContainer) {
     companion object {
         /** Entre segmentos en un mismo pedido al TTS: silencio largo para poder cortar el audio ahí. */
         private const val PAUSE_BETWEEN = "\n<long pause> <long pause>\n"
+
+        /** Cuánto silencio (tuyo y de la IA) en una pausa antes de cerrar el micrófono. */
+        private const val MIC_REST_MS = 3 * 60_000L
+
+        private const val QUIET_PAUSE = "En pausa por otra app: pulsa «Seguir»"
+        private const val VOICE_LOST = "No se pudo preparar la voz de lo que faltaba."
 
         internal fun syllables(text: String) = text.count { it in '가'..'힣' }.coerceAtLeast(1)
 

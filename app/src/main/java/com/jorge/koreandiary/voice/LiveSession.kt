@@ -57,6 +57,8 @@ class LiveSession(
     @Volatile private var fallback = 0
     @Volatile private var everConnected = false
     @Volatile private var attempts = 0
+    /** Cuándo aceptó el servidor la conexión actual (0 = todavía no). */
+    @Volatile private var setupAt = 0L
     /** goAway recibido: se reconecta al terminar el turno de la IA (o antes del corte). */
     @Volatile private var swapPending = false
 
@@ -107,6 +109,12 @@ class LiveSession(
             }
             return
         }
+        // Los intentos vuelven a cero solo si la conexión que se cayó llegó a durar: si el servidor
+        // acepta y corta enseguida una y otra vez (p. ej. sin cuota), se termina en vez de reconectar
+        // cada segundo hasta el final de la sesión.
+        val connectedAt = setupAt
+        if (connectedAt > 0 && System.currentTimeMillis() - connectedAt >= STABLE_MS) attempts = 0
+        setupAt = 0
         if (handle == null || attempts >= MAX_ATTEMPTS) {
             finish(reason, error = true)
             return
@@ -151,7 +159,7 @@ class LiveSession(
                         val resumed = everConnected
                         ready = true
                         everConnected = true
-                        attempts = 0
+                        setupAt = System.currentTimeMillis()
                         signals.trySend(SessionSignal.Connected(resumed))
                     }
                     is LiveEvent.ResumeHandle -> this@LiveSession.handle = event.handle
@@ -204,5 +212,8 @@ class LiveSession(
 
     companion object {
         private const val MAX_ATTEMPTS = 3
+
+        /** Una conexión que duró al menos esto cuenta como buena: los intentos vuelven a cero. */
+        private const val STABLE_MS = 10_000L
     }
 }

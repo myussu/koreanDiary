@@ -87,6 +87,7 @@ object Features {
                 phone("Pista automática si no respondes (se activa en Ajustes)."),
                 phone("Al terminar: confirmas lo que dijiste, recibes la revisión y «Practicar correcciones» en voz alta."),
             ),
+                phone("Si sales de la app o apagas la pantalla, la conversación espera un minuto; si no vuelves, termina y se guarda."),
         ),
         FeatureGroup(
             "Escuchar (en Hablar)",
@@ -97,6 +98,7 @@ object Features {
                 phone("Sirve con la pantalla apagada: botones en la notificación y en los audífonos (1 toque pausa, 2 sigue, 3 repite)."),
                 phone("Al final, preguntas de comprensión."),
                 phone("Con audífonos Bluetooth, en las pausas preguntas desde su micrófono (se apaga en Ajustes → «Micrófono de los audífonos»)."),
+                phone("Una pausa en la que nadie habla por 3 minutos cierra el micrófono («Hablar» lo abre de nuevo); una llamada pausa la narración sin abrirlo."),
                 phone("En la revisión de una escucha: «Escuchar» otra vez la narración guardada, sin gastar cuota, con «‹ Anterior», «Siguiente ›» y velocidad."),
                 phone("Quedan las últimas 5 escuchas; «☆ Guardar» conserva una para siempre."),
             ),

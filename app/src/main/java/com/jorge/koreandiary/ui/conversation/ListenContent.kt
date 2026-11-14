@@ -206,6 +206,8 @@ internal fun ListenLiveContent(ls: ListenState, engine: ListenEngine, conv: Conv
             ls.phase.interactive && !ls.connected -> "La IA se está conectando…"
             ls.phase.interactive && ptt && ls.talking -> "Te escucho… pulsa «Listo» cuando termines."
             ls.phase.interactive && ptt -> "Pulsa «Hablar» para preguntar o responder. Di «sigue» o pulsa «Seguir» para continuar."
+            // El micrófono se cerró (pausa larga sin hablar, o una llamada): decir «sigue» ya no se oye.
+            ls.phase.interactive && ls.micResting -> "El micrófono está cerrado. Pulsa «Seguir» para continuar; para preguntar, pausa de nuevo."
             ls.phase.interactive -> "Te escucho: pregunta o responde. Di «sigue» para continuar."
             else -> ""
         }

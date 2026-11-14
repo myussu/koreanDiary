@@ -51,9 +51,24 @@ class NarrationPlayer(private val scope: CoroutineScope) {
             val data = audio.data
             val totalFrames = data.size / 2
             var offset = 0
+            var refused = 0
             while (offset < data.size && gen == generation && isActive) {
                 val n = t.write(data, offset, minOf(CHUNK, data.size - offset))
-                if (n <= 0) break
+                if (n < 0) break
+                if (n == 0) {
+                    // En pausa el AudioTrack deja de aceptar audio y `write` vuelve con 0. Se espera a
+                    // que sigas y se continúa donde quedó: antes aquí se abandonaba el resto del segmento.
+                    if (paused) {
+                        refused = 0
+                        delay(PAUSED_POLL_MS)
+                        continue
+                    }
+                    // Sin estar en pausa y no acepta audio durante medio segundo: se da por perdido.
+                    if (++refused > 25) break
+                    delay(20)
+                    continue
+                }
+                refused = 0
                 offset += n
             }
             // Un poco de silencio al final empuja las últimas muestras fuera del búfer.
@@ -72,7 +87,8 @@ class NarrationPlayer(private val scope: CoroutineScope) {
                     stalledSince = 0L
                 }
                 last = head
-                delay(40)
+                // En pausa no hay nada que mirar tan seguido.
+                delay(if (paused) PAUSED_POLL_MS else 40)
             }
             if (gen == generation && isActive) onDone()
         }
@@ -86,8 +102,10 @@ class NarrationPlayer(private val scope: CoroutineScope) {
 
     fun resume() {
         if (!paused) return
-        paused = false
+        // Primero suena y después deja de contar como pausa: quien escribe el audio espera mientras
+        // `paused` sea cierto, y con el orden inverso podía ver el AudioTrack todavía detenido.
         runCatching { track?.play() }
+        paused = false
     }
 
     /** Corta lo que suena y descarta el resto del segmento. */
@@ -148,5 +166,8 @@ class NarrationPlayer(private val scope: CoroutineScope) {
 
     private companion object {
         const val CHUNK = 9_600
+
+        /** Cada cuánto se mira si terminó la pausa. */
+        const val PAUSED_POLL_MS = 100L
     }
 }

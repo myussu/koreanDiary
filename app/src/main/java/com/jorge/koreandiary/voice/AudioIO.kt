@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -19,7 +20,11 @@ import kotlinx.coroutines.launch
  * Micrófono a 16 kHz, mono, PCM de 16 bits (lo que pide la Live API), en trozos de 40 ms.
  * Usa la fuente de "comunicación por voz", que activa la cancelación de eco del celular.
  */
-class Microphone(private val onChunk: (ByteArray, Int) -> Unit) {
+class Microphone(
+    /** El micrófono dejó de responder (se llama desde el hilo de lectura). */
+    private val onLost: () -> Unit = {},
+    private val onChunk: (ByteArray, Int) -> Unit,
+) {
     private var record: AudioRecord? = null
     private var job: Job? = null
     private val effects = mutableListOf<android.media.audiofx.AudioEffect>()
@@ -48,7 +53,17 @@ class Microphone(private val onChunk: (ByteArray, Int) -> Unit) {
             val buffer = ByteArray(CHUNK_BYTES)
             while (isActive) {
                 val n = r.read(buffer, 0, buffer.size)
-                if (n > 0) onChunk(buffer, n)
+                when {
+                    n > 0 -> onChunk(buffer, n)
+                    // Un error (p. ej. el sistema reinició el audio) vuelve al instante una y otra vez:
+                    // sin cortar aquí, este ciclo dejaba un núcleo del procesador al máximo hasta el
+                    // final de la sesión.
+                    n < 0 -> {
+                        if (isActive) onLost()
+                        break
+                    }
+                    else -> delay(10)
+                }
             }
         }
     }
