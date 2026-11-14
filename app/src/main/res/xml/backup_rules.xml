@@ -2,8 +2,8 @@
 <!--
   Copia de seguridad (Android 11 o anterior): las mismas reglas de la nube de data_extraction_rules.xml.
   Este formato no separa la nube del paso entre celulares, así que aquí las fotos del workbook
-  (workbook_photos/) y el audio de las escuchas (listen_audio/) no viajan de ninguna de las dos
-  formas; van en la copia exportada a un archivo.
+  (workbook_photos/), el audio de las escuchas (listen_audio/) y las imágenes de las escenas
+  (scene_images/) no viajan de ninguna de las dos formas; van en la copia exportada a un archivo.
 -->
 <full-backup-content>
     <include domain="database" path="." />

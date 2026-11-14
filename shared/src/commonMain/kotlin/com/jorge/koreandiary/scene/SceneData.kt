@@ -29,7 +29,12 @@ data class SceneData(
      * el último leído; una lectura sin tono no lo borra.
      */
     val mood: MoodReading? = null,
+    /** Cómo se ve la escena, en inglés, para pintarla (lo da la IA al revisar). */
+    val imagePrompt: String = "",
 ) {
+    fun withImagePrompt(prompt: String?): SceneData =
+        if (prompt.isNullOrBlank() || prompt.trim() == imagePrompt) this else copy(imagePrompt = prompt.trim())
+
     fun withMood(reading: MoodReading?): SceneData =
         if (reading == null || reading == mood) this else copy(mood = reading)
 
@@ -53,6 +58,7 @@ data class SceneData(
         .put("ideas", JSONArray().apply { ideas.forEach { put(JSONObject().put("t", it.text).put("p", it.hints)) } })
         .put("els", JSONArray(elements))
         .apply { mood?.let { put("tono", JSONObject().put("id", it.id).put("n", it.level)) } }
+        .apply { if (imagePrompt.isNotEmpty()) put("img", imagePrompt) }
         .toString()
 
     companion object {
@@ -80,6 +86,7 @@ data class SceneData(
                     elements = if (els == null) emptyList() else (0 until els.length()).map { els.optString(it) }
                         .filter { SceneDictionary.element(it) != null }.distinct(),
                     mood = tono?.let { SceneMoods.reading(it.optString("id"), it.optInt("n", 2)) },
+                    imagePrompt = o.optString("img").trim(),
                 )
             } catch (e: org.json.JSONException) {
                 SceneData()

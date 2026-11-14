@@ -16,6 +16,10 @@ object Prompts {
     private val MOOD_TASK = "el sentimiento que transmite, no lo que pasa (tomar la mano de alguien querido es una acción simple, pero el tono es amor). " +
         "\"id\" de esta lista: ${SceneMoods.promptList()}; \"n\": 1 (apenas), 2 (claro) o 3 (muy fuerte). null si es neutro."
 
+    /** Escenas: la descripción para pintar la escena (la usa el servidor de imágenes; en inglés para SDXL). */
+    private const val IMAGE_TASK = "una o dos frases EN INGLÉS que describan cómo se ve la escena para pintarla: lugar, " +
+        "momento del día, luz, objetos y personas (de lejos o de espaldas, sin rostros detallados). Solo lo que se ve; sin estilo artístico ni texto."
+
     /**
      * Prompt de corrección. Pensado para gastar pocos tokens: instrucciones compactas y
      * claves cortas en "usados", que es la lista más larga de la respuesta.
@@ -63,14 +67,14 @@ object Prompts {
                - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
                - "id": el de la lista de sugeridos si coincide; si no, null.
                - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
-            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].${if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""}${if (ideas.isNotEmpty()) "\n            5. \"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, []." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 6 else 5}. \"escena\": qué elementos de esta lista aparecen en la página, de lo más importante a lo menos (solo ids; [] si ninguno): ${SceneDictionary.promptList()}." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 7 else 6}. \"tono\": $MOOD_TASK" else ""}
+            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].${if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""}${if (ideas.isNotEmpty()) "\n            5. \"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, []." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 6 else 5}. \"escena\": qué elementos de esta lista aparecen en la página, de lo más importante a lo menos (solo ids; [] si ninguno): ${SceneDictionary.promptList()}." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 7 else 6}. \"tono\": $MOOD_TASK" else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 8 else 7}. \"imagen\": $IMAGE_TASK" else ""}
 
             FORMATO:
             {
               "oraciones": [{"n": 1, "texto": "...", "tiempo": "pasado"}],
               "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "ortografia|particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": null}],
               "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}, {"f": "-어서", "t": "g", "ok": true, "id": null}],
-              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]${if (ideas.isNotEmpty()) ",\n              \"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]" else ""}${if (scene) ",\n              \"escena\": [\"sea\", \"sand\"],\n              \"tono\": {\"id\": \"love\", \"n\": 2}" else ""}
+              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]${if (ideas.isNotEmpty()) ",\n              \"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]" else ""}${if (scene) ",\n              \"escena\": [\"sea\", \"sand\"],\n              \"tono\": {\"id\": \"love\", \"n\": 2},\n              \"imagen\": \"...\"" else ""}
             }
             """.trimIndent()
         )

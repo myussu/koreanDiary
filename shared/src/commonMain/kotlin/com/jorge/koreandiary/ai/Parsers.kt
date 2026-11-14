@@ -95,6 +95,7 @@ object CorrectionParser {
         return CorrectionResponse(
             sentences, corrections, allUsed, improvements, notes,
             sceneElements(json.optJSONArray("escena")), sceneMood(json.opt("tono")),
+            json.optString("imagen").trim().take(600),
         )
     }
 

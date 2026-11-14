@@ -216,6 +216,10 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             modelStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
 
+        Section("Imagen de la escena") {
+            SceneImageSettings(container)
+        }
+
         Section("Corrección") {
             Text("Proveedor por defecto", style = MaterialTheme.typography.labelLarge)
             Row(

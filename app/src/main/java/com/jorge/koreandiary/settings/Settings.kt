@@ -59,6 +59,14 @@ data class AppSettings(
     val penPressure: Boolean = true,
     /** Escenas: los bordes de la página reaccionan a lo que escribes (mar, pasto, viento…). */
     val liveScene: Boolean = true,
+    /** Escenas: tu servidor de ComfyUI por Tailscale, p. ej. http://truenas:8188 ("" = sin servidor). */
+    val imageServer: String = "",
+    /** El modelo (checkpoint) que usa el servidor para pintar. */
+    val imageCheckpoint: String = "",
+    /** Pintar la escena sola al terminarla (revisada y sin correcciones pendientes). */
+    val sceneImageAuto: Boolean = true,
+    /** Mostrar la imagen de la escena de fondo, muy suave, detrás de la tinta. */
+    val sceneImageBackground: Boolean = true,
     /** Ocultar la tarjeta "Primeros pasos" del inicio. */
     val hideOnboarding: Boolean = false,
     /** Recordatorio diario para escribir, solo si ese día aún no hay página. */
@@ -149,6 +157,10 @@ class SettingsStore(context: Context) {
         penWidth = prefs.getString("penWidth", "medio") ?: "medio",
         penPressure = prefs.getBoolean("penPressure", true),
         liveScene = prefs.getBoolean("liveScene", true),
+        imageServer = prefs.getString("imageServer", "") ?: "",
+        imageCheckpoint = prefs.getString("imageCheckpoint", "") ?: "",
+        sceneImageAuto = prefs.getBoolean("sceneImageAuto", true),
+        sceneImageBackground = prefs.getBoolean("sceneImageBackground", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
         reminderEnabled = prefs.getBoolean("reminderEnabled", false),
         reminderHour = prefs.getInt("reminderHour", 20),
@@ -195,6 +207,10 @@ class SettingsStore(context: Context) {
             .putString("penWidth", s.penWidth)
             .putBoolean("penPressure", s.penPressure)
             .putBoolean("liveScene", s.liveScene)
+            .putString("imageServer", s.imageServer)
+            .putString("imageCheckpoint", s.imageCheckpoint)
+            .putBoolean("sceneImageAuto", s.sceneImageAuto)
+            .putBoolean("sceneImageBackground", s.sceneImageBackground)
             .putBoolean("hideOnboarding", s.hideOnboarding)
             .putBoolean("reminderEnabled", s.reminderEnabled)
             .putInt("reminderHour", s.reminderHour)

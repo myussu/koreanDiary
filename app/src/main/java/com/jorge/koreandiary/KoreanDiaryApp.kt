@@ -1,5 +1,6 @@
 package com.jorge.koreandiary
 
+import com.jorge.koreandiary.scene.SceneImages
 import android.app.Application
 import com.jorge.koreandiary.ai.AzureOpenAIProvider
 import com.jorge.koreandiary.ai.CorrectionProvider
@@ -53,6 +54,9 @@ class AppContainer(val app: Application) {
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** La imagen de cada escena: la pinta tu servidor de ComfyUI o la eliges tú. */
+    val sceneImages = SceneImages(app, appScope) { settings.state.value }
 
     /** Exportar e importar todo a un archivo, y el estado de la copia automática de Google. */
     val backup = BackupManager(app, database, appScope, updater.currentVersionCode, updater.currentVersionName)

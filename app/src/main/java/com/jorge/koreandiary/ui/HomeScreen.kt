@@ -194,24 +194,27 @@ suspend fun newPageWithSuggestions(container: AppContainer, kind: String): Long 
 
 /** Tarjeta de una página en las listas del diario y de escenas. */
 @Composable
-fun PageSummaryCard(p: PageSummary, today: LocalDate, onClick: () -> Unit) {
+fun PageSummaryCard(p: PageSummary, today: LocalDate, onClick: () -> Unit, leading: (@Composable () -> Unit)? = null) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(Modifier.padding(14.dp)) {
-            Row {
-                Text(relativeDay(p.date, today), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        Row(Modifier.padding(start = if (leading != null) 10.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
+            leading?.invoke()
+            Column(Modifier.weight(1f).padding(14.dp)) {
+                Row {
+                    Text(relativeDay(p.date, today), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    Text(
+                        pageStatusLabel(p.status),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (p.status == PageStatus.PENDING) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
-                    pageStatusLabel(p.status),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (p.status == PageStatus.PENDING) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    p.preview?.takeIf { it.isNotBlank() } ?: "(sin texto reconocido)",
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            Text(
-                p.preview?.takeIf { it.isNotBlank() } ?: "(sin texto reconocido)",
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 4.dp),
-            )
         }
     }
 }

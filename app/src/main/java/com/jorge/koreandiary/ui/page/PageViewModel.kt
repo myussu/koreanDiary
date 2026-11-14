@@ -36,6 +36,7 @@ import com.jorge.koreandiary.scene.SceneData
 import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneElement
 import com.jorge.koreandiary.scene.SceneIdea
+import com.jorge.koreandiary.scene.SceneImage
 import com.jorge.koreandiary.voice.KoreanSpeech
 import com.jorge.koreandiary.ink.strokesNear
 import com.jorge.koreandiary.settings.ProviderId
@@ -870,7 +871,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         // En una escena, suma lo que la IA vio en la página a la escena viva.
         persist {
             val scene = if (it.kind == PageKind.SCENE) {
-                SceneData.parse(it.sceneJson).withElements(response.sceneElements).withMood(response.sceneMood).toJson()
+                SceneData.parse(it.sceneJson).withElements(response.sceneElements).withMood(response.sceneMood)
+                    .withImagePrompt(response.sceneImagePrompt).toJson()
             } else {
                 it.sceneJson
             }
@@ -896,6 +898,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         _feedback.trySend(if (summary.corrections == 0) Feedback.SUCCESS else Feedback.TICK)
         val hint = if (summary.corrections > 0) " Reescribe las correcciones debajo y pulsa “Verificar”." else ""
         setPhase(Phase.Writing, parts.joinToString(" · ") + "." + hint)
+        if (summary.corrections == 0) maybePaintSceneImage()
     }
 
     /**
@@ -935,6 +938,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     }
                 )
                 _feedback.trySend(if (ok == pending.size) Feedback.SUCCESS else Feedback.FAIL)
+                if (ok == pending.size) maybePaintSceneImage()
                 val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
                 setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
             } catch (e: Exception) {
@@ -956,6 +960,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             if (left == 0) {
                 react(MascotMood.HAPPY)
                 _feedback.trySend(Feedback.SUCCESS)
+                maybePaintSceneImage()
             }
         }
     }
@@ -969,6 +974,37 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private fun setPhase(phase: Phase, message: String? = _state.value.message) =
         _state.update { it.copy(phase = phase, message = message) }
 
+    // ---------- Imagen de la escena ----------
+
+    /**
+     * La escena quedó terminada (revisada y sin correcciones pendientes): si tienes servidor y no
+     * tiene imagen, se pinta sola. Sin servidor no pasa nada: queda el botón «Imagen».
+     */
+    private fun maybePaintSceneImage() {
+        if (!isScene) return
+        val s = c.settings.state.value
+        if (!s.sceneImageAuto || !c.sceneImages.serverReady() || c.sceneImages.has(pageId)) return
+        val description = SceneData.parse(_state.value.page?.sceneJson).imagePrompt
+        if (description.isBlank()) return
+        c.sceneImages.paint(pageId, description)
+    }
+
+    /** «Pintar en mi servidor» (también para pintarla otra vez). */
+    fun paintSceneImage() {
+        c.sceneImages.paint(pageId, SceneData.parse(_state.value.page?.sceneJson).imagePrompt)
+    }
+
+    /** El texto para pegar en el chat de Gemini: la descripción de la revisión o, si no hay, tu texto. */
+    fun sceneImageChatPrompt(): String {
+        val page = _state.value.page
+        val text = page?.confirmedText?.takeIf { it.isNotBlank() } ?: page?.recognizedText.orEmpty()
+        return SceneImage.chatPrompt(SceneData.parse(page?.sceneJson).imagePrompt.ifBlank { null }, text)
+    }
+
+    fun importSceneImage(uri: android.net.Uri) = c.sceneImages.importFrom(pageId, uri)
+
+    fun removeSceneImage() = c.sceneImages.delete(pageId)
+
     private var deleted = false
 
     fun deletePage(onDone: () -> Unit) {
@@ -977,6 +1013,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         saveJob?.cancel()
         viewModelScope.launch {
             c.diary.deletePage(page.id)
+            c.sceneImages.delete(page.id)
             onDone()
         }
     }

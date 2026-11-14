@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.ui.page
 
+import com.jorge.koreandiary.scene.SceneImageJob
 import android.Manifest
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
@@ -104,6 +105,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val reaction by vm.mascotMood.collectAsStateWithLifecycle()
     var howToOpen by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var imageDialog by remember { mutableStateOf(false) }
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val paper = LocalPaperStyle.current
     val scheme = MaterialTheme.colorScheme
@@ -150,6 +152,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking || explain?.loading == true) MascotMood.THINKING else reaction
 
     val isScene = page?.kind == PageKind.SCENE
+    val imageJobs by container.sceneImages.jobs.collectAsStateWithLifecycle()
     val header: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -162,6 +165,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             page?.let { AppTag(pageStatusLabel(it.status), accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
+            if (isScene) {
+                val painting = page?.let { imageJobs[it.id] } == SceneImageJob.Painting
+                AppTextButton(onClick = { imageDialog = true }) { Text(if (painting) "Pintando…" else "Imagen") }
+            }
             AppTextButton(onClick = { confirmDelete = true }) { Text("Borrar") }
         }
     }
@@ -215,6 +222,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 
     val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
         Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper)) {
+            // La imagen de la escena, muy suave, y encima la escena viva; la tinta siempre arriba de todo.
+            if (isScene && settings.sceneImageBackground && page != null) {
+                SceneImageBackground(container.sceneImages, page.id, dark = paper.background.luminance() < 0.5f)
+            }
             // Escena viva: detrás del lienzo, así la tinta queda siempre encima con su contraste.
             if (isScene && settings.liveScene && (state.sceneElements.isNotEmpty() || state.sceneMood != null)) {
                 SceneVignette(state.sceneElements, state.sceneMood, dark = paper.background.luminance() < 0.5f, modifier = Modifier.fillMaxSize())
@@ -325,6 +336,10 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 paperAndTools(paperWidth)
             }
         }
+    }
+
+    if (imageDialog && page != null) {
+        SceneImageDialog(container.sceneImages, page.id, vm, onDismiss = { imageDialog = false })
     }
 
     if (confirmDelete) {

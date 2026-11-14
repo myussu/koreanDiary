@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.data.db.PageKind
+import com.jorge.koreandiary.ui.page.SceneThumb
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -80,7 +81,9 @@ fun ScenesScreen(container: AppContainer, onBack: () -> Unit, onOpenPage: (Long)
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
         ) {
-            items(scenes, key = { it.pageId }) { p -> PageSummaryCard(p, today, onClick = { onOpenPage(p.pageId) }) }
+            items(scenes, key = { it.pageId }) { p ->
+                PageSummaryCard(p, today, onClick = { onOpenPage(p.pageId) }, leading = { SceneThumb(container.sceneImages, p.pageId) })
+            }
         }
     }
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tu servidor de imágenes (ComfyUI en el TrueNAS) se alcanza por Tailscale con http:// y la dirección
+  que escribes en Ajustes: un nombre corto de MagicDNS (truenas) o una IP 100.x. Estas reglas no
+  aceptan rangos de IP ni nombres sin dominio, así que se permite http en general.
+  Todo lo demás de la app usa https fijo en el código (Gemini, Azure, GitHub, ML Kit): esto no lo
+  cambia, solo deja de bloquear la dirección que tú configures.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

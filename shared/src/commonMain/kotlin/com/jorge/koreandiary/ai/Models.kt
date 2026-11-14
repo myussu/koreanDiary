@@ -16,6 +16,8 @@ data class CorrectionResponse(
     val sceneElements: List<String> = emptyList(),
     /** Escenas: el sentimiento de la página (`SceneMoods`); null si es neutra o no vino. */
     val sceneMood: MoodReading? = null,
+    /** Escenas: cómo se ve, en inglés, para pintarla; "" si no vino. */
+    val sceneImagePrompt: String = "",
 )
 
 /** Nota de sentido: [original] dice otra cosa que la idea; [suggestion] es cómo se diría lo que quería. */
