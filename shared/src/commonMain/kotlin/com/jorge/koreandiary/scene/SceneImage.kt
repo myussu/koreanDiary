@@ -50,11 +50,16 @@ object SceneImage {
      * con esquema y sin barra final. Null si está vacía o no parece una dirección.
      */
     fun normalizeServer(input: String): String? {
-        var s = input.trim().trimEnd('/')
+        val s = input.trim()
         if (s.isEmpty() || ' ' in s) return null
-        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s"
-        val host = s.substringAfter("://").substringBefore('/').substringBefore(':')
-        return if (host.isEmpty()) null else s
+        val scheme = when {
+            s.startsWith("https://") -> "https"
+            s.startsWith("http://") -> "http"
+            else -> null
+        }
+        val rest = (if (scheme == null) s else s.substringAfter("://")).trimEnd('/')
+        val host = rest.substringBefore('/').substringBefore(':')
+        return if (host.isEmpty()) null else "${scheme ?: "http"}://$rest"
     }
 
     /**
