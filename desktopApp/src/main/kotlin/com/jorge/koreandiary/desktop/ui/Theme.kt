@@ -9,6 +9,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -165,3 +166,10 @@ fun AppTextButton(
     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     content = content,
 )
+
+/** Opción de un grupo (relleno si está elegida), como `AppToggle` del celular. */
+@Composable
+fun AppToggle(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    if (selected) AppButton(onClick = onClick, modifier = modifier) { Text(label) }
+    else AppOutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
+}

@@ -3,6 +3,7 @@ package com.jorge.koreandiary
 import com.jorge.koreandiary.features.Features
 import com.jorge.koreandiary.features.Platform
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,6 +54,31 @@ class FeaturesTest {
     fun blankQueryReturnsEverything() {
         assertEquals(Features.groups.map { it.title }, Features.search("  ¿? ").map { it.title })
         assertEquals(Features.total, Features.search("").sumOf { it.features.size })
+    }
+
+    @Test
+    fun flowsAreWellFormed() {
+        val titles = Features.flows.map { it.title }
+        assertEquals("Recorridos repetidos", titles.size, titles.toSet().size)
+        assertTrue(Features.flows.isNotEmpty())
+        for (f in Features.flows) {
+            assertTrue("«${f.title}» tiene menos de dos pasos", f.steps.size >= 2)
+            assertTrue("«${f.title}» sin plataforma", f.platforms.isNotEmpty())
+            // Desde la lista se salta al recorrido por el nombre del grupo: tiene que existir.
+            assertNotNull("«${f.title}» apunta a «${f.group}», que no está en la lista", Features.groups.firstOrNull { it.title == f.group })
+            assertEquals(f, Features.flowFor(f.group))
+            for (step in f.steps) {
+                assertTrue("Paso sin título en «${f.title}»", step.title.isNotBlank())
+                assertTrue("«${step.title}» sin texto", step.text.isNotBlank())
+                val buttons = step.buttons + step.aside?.buttons.orEmpty()
+                assertTrue("Botón vacío en «${step.title}»", buttons.all { it.isNotBlank() })
+                step.aside?.let { a -> assertTrue("Recuadro vacío en «${step.title}»", a.buttons.isNotEmpty() || !a.text.isNullOrBlank()) }
+            }
+        }
+        // Un recorrido solo del celular sale en gris en la PC, igual que la lista.
+        val phoneOnly = Features.flows.first { it.platforms == setOf(Platform.PHONE) }
+        assertNull(phoneOnly.missingLabel(Platform.PHONE))
+        assertEquals("solo en celular", phoneOnly.missingLabel(Platform.DESKTOP))
     }
 
     @Test

@@ -19,6 +19,31 @@ class Feature(val text: String, val platforms: Set<Platform>) {
 /** Un grupo de la lista: el nombre de la pantalla y una línea por función. */
 class FeatureGroup(val title: String, val features: List<Feature>)
 
+/**
+ * Un recuadro junto a un paso: lo que tienes a mano en cualquier momento de ese paso (las ayudas
+ * mientras hablas, los botones de los audífonos).
+ */
+class FlowAside(val title: String, val buttons: List<String> = emptyList(), val text: String? = null)
+
+/** Un paso de un recorrido: qué haces, los botones que usas (tal como aparecen) y, si hay, un recuadro al lado. */
+class FlowStep(val title: String, val text: String, val buttons: List<String> = emptyList(), val aside: FlowAside? = null)
+
+/**
+ * Una pantalla de principio a fin, paso a paso, para «Cómo se usa» del botón «?». [group] es el
+ * grupo de la lista al que pertenece (desde ahí se salta al recorrido); [where] cómo se llega.
+ */
+class FeatureFlow(
+    val title: String,
+    val group: String,
+    val where: String,
+    val platforms: Set<Platform>,
+    val steps: List<FlowStep>,
+    val note: String? = null,
+) {
+    /** "solo en celular" si no funciona en [platform]; null si sí. */
+    fun missingLabel(platform: Platform): String? = Feature("", platforms).missingLabel(platform)
+}
+
 private fun phone(text: String) = Feature(text, setOf(Platform.PHONE))
 private fun desktop(text: String) = Feature(text, setOf(Platform.DESKTOP))
 private fun both(text: String) = Feature(text, setOf(Platform.PHONE, Platform.DESKTOP))
@@ -35,6 +60,7 @@ object Features {
             "Inicio",
             listOf(
                 both("«?»: esta lista, con buscador. Lo que no funciona en esta versión sale en gris."),
+                both("«Cómo se usa» (en «?»): cada pantalla paso a paso, dibujada, con sus botones. Desde la lista, «Ver cómo se usa ›» salta a la de ese grupo."),
             ),
         ),
         FeatureGroup(
@@ -140,6 +166,94 @@ object Features {
             ),
         ),
     )
+
+    /**
+     * Los recorridos de «Cómo se usa»: lo mismo que la lista, pero en el orden en que lo vas usando.
+     * Mismas reglas que la lista: los botones con el nombre tal como aparecen, y se actualizan en el
+     * mismo commit que la función.
+     */
+    val flows: List<FeatureFlow> = listOf(
+        FeatureFlow(
+            title = "Conversar",
+            group = "Hablar",
+            where = "Inicio › Hablar › Conversar",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Eliges de qué hablar",
+                    "Un tema libre, tu diario de hoy u otro que escribas, y cuántos minutos (5 a 20). La app trae de tu lista de estudio unas palabras y gramáticas para practicar; toca una para quitarla de esta sesión.",
+                    listOf("Libre", "Mi diario de hoy", "Otro", "Empezar"),
+                ),
+                FlowStep(
+                    "Hablas con la IA",
+                    "Con «Pulsar para hablar» tocas «Hablar», dices tu frase y tocas «Listo»: no te corta aunque te quedes pensando. En «Automático» solo hablas (se elige en Ajustes).",
+                    listOf("Hablar", "Listo"),
+                    FlowAside(
+                        "Si te trabas",
+                        listOf("Pista", "Más ayuda", "¿Cómo digo?", "Dictar", "Traducir", "Lento"),
+                        "Toca una palabra de la IA para traducirla. Su texto sale borroso hasta que lo tocas.",
+                    ),
+                ),
+                FlowStep(
+                    "Usas tus objetivos",
+                    "Cuando una palabra o gramática de tu lista sube y flota, la pregunta de la IA es para que la uses en tu respuesta.",
+                ),
+                FlowStep(
+                    "Terminas",
+                    "Se acaba el tiempo o tocas «Terminar». Si sales de la app o apagas la pantalla, espera un minuto; si no vuelves, termina y se guarda.",
+                    listOf("Terminar"),
+                ),
+                FlowStep(
+                    "Revisas lo que dijiste",
+                    "Primero corriges lo que el reconocimiento de voz entendió mal; después la IA te muestra las correcciones, estructuras para mejorar y qué objetivos usaste.",
+                    listOf("Revisar lo que dije"),
+                ),
+                FlowStep(
+                    "Practicas en voz alta",
+                    "Escuchas cada oración corregida y la dices: la parte corregida tiene que oírse igual.",
+                    listOf("Practicar correcciones", "Escuchar", "Decir"),
+                ),
+            ),
+            note = "Tu lista de estudio no cambia con la conversación; los minutos hablados salen en Progreso.",
+        ),
+        FeatureFlow(
+            title = "Escuchar",
+            group = "Escuchar (en Hablar)",
+            where = "Inicio › Hablar › Escuchar",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Eliges el tema",
+                    "Escribe o dicta de qué quieres escuchar (vacío es algo cotidiano) y cuántos minutos. «Tema actual» busca en Google lo que está pasando.",
+                    listOf("Dictar", "Tema actual (buscar en Google)", "Empezar a escuchar"),
+                ),
+                FlowStep(
+                    "Escuchas la narración",
+                    "Un pódcast corto a tu nivel, por partes. Sirve con la pantalla apagada.",
+                    listOf("Pausa", "Seguir", "Repetir", "− Lento", "+ Rápido", "Siguiente"),
+                    FlowAside("Con audífonos", text = "1 toque pausa · 2 toques sigue · 3 toques repite. También desde la notificación."),
+                ),
+                FlowStep(
+                    "En las pausas, hablas",
+                    "La IA te hace una pregunta, o tú le preguntas lo que no entendiste, en coreano o en español. «Seguir», o decir «sigue», continúa la narración.",
+                    listOf("Hablar", "Listo", "Seguir"),
+                ),
+                FlowStep(
+                    "Respondes las preguntas del final",
+                    "La IA te hace unas preguntas por voz sobre lo que escuchaste.",
+                ),
+                FlowStep(
+                    "Revisas y vuelves a escuchar",
+                    "Igual que en Conversar: corriges la transcripción, la IA revisa y practicas en voz alta. Además puedes escuchar otra vez la narración guardada sin gastar cuota.",
+                    listOf("Revisar lo que dije", "Escuchar", "‹ Anterior", "Siguiente ›", "☆ Guardar"),
+                ),
+            ),
+            note = "Quedan las últimas 5 escuchas; «☆ Guardar» conserva una para siempre.",
+        ),
+    )
+
+    /** El recorrido de un grupo de la lista, si tiene. */
+    fun flowFor(group: String): FeatureFlow? = flows.firstOrNull { it.group == group }
 
     /** Cuántas funciones de la lista funcionan en [platform]. */
     fun countOn(platform: Platform): Int = groups.sumOf { g -> g.features.count { platform in it.platforms } }
