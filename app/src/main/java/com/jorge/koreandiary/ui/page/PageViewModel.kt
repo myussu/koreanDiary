@@ -793,8 +793,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     private suspend fun addSuggested(refs: List<ItemRef>) {
-        // También en páginas revisadas: el repaso cuenta una sola vez por página (ver
-        // StudyRepository.applyCorrection), así que solo suma sugerencias a la vista.
+        // También en páginas revisadas: si usas una de estas en lo que sigues escribiendo, la próxima
+        // revisión la cuenta (cada ítem se califica una sola vez por página, ver StudyRepository.applyCorrection).
         val page = _state.value.page ?: return
         val existing = ItemRef.decodeList(page.suggestedItems)
         val merged = (existing + refs).distinct()

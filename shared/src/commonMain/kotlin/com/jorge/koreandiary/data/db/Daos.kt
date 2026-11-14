@@ -100,7 +100,14 @@ interface MemoryDao {
     /** Repasos que ya dejó una página: si hay alguno, su uso ya se contó en FSRS. */
     @Query("SELECT COUNT(*) FROM review_events WHERE pageId = :pageId")
     suspend fun eventCountForPage(pageId: Long): Int
+
+    /** Lo que una página ya calificó en FSRS: al revisarla otra vez no se cuenta de nuevo. */
+    @Query("SELECT DISTINCT itemType, itemId FROM review_events WHERE pageId = :pageId AND rating IS NOT NULL")
+    suspend fun ratedOnPage(pageId: Long): List<RatedItem>
 }
+
+/** Un ítem que una página ya calificó (ver [MemoryDao.ratedOnPage]). */
+data class RatedItem(val itemType: String, val itemId: Long)
 
 @Dao
 interface DiaryDao {

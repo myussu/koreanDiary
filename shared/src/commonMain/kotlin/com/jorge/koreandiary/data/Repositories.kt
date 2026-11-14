@@ -250,9 +250,15 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             )
         }
 
+        val suggested = ItemRef.decodeList(page.suggestedItems).toSet()
+        // Al revisar otra vez (sigues escribiendo después de revisar) solo cuenta lo que esta página
+        // no calificó todavía: lo nuevo que escribiste, p. ej. una de las gramáticas nuevas de la escena.
         val usage = if (firstReview) {
-            registerUsage(response.used, ItemRef.decodeList(page.suggestedItems).toSet(), now, page.id)
-        } else UsageSummary()
+            registerUsage(response.used, suggested, now, page.id)
+        } else {
+            val already = memory.ratedOnPage(page.id).map { ItemRef(it.itemType, it.itemId) }.toSet()
+            registerUsage(response.used, suggested, now, page.id, alreadyCounted = already, recordUnused = false)
+        }
         diary.setPageStatus(page.id, PageStatus.REVIEWED)
         ApplySummary(
             response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending,
@@ -297,8 +303,18 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
     suspend fun applyUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary =
         db.withWriteTransaction { registerUsage(used, suggested, now, pageId) }
 
-    /** El trabajo de [applyUsage]. Quien llama ya abrió la transacción. */
-    private suspend fun registerUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary {
+    /**
+     * El trabajo de [applyUsage]. Quien llama ya abrió la transacción. [alreadyCounted]: lo que esta
+     * página ya calificó (no se califica dos veces). Con [recordUnused] se anota lo sugerido que no usaste.
+     */
+    private suspend fun registerUsage(
+        used: List<UsedItemDto>,
+        suggested: Set<ItemRef>,
+        now: Long,
+        pageId: Long?,
+        alreadyCounted: Set<ItemRef> = emptySet(),
+        recordUnused: Boolean = true,
+    ): UsageSummary {
         var reviewed = 0
         var newWords = 0
         var newGrammar = 0
@@ -307,7 +323,7 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         val counted = mutableSetOf<ItemRef>()
         for (u in used) {
             val resolved = resolve(u, suggested, myGrammar, pageId, now, onPending = { pending++ }) ?: continue
-            if (!counted.add(resolved.ref)) continue
+            if (resolved.ref in alreadyCounted || !counted.add(resolved.ref)) continue
             // Sin id de la IA (p. ej. en el workbook) se compara el ítem encontrado con lo que viste.
             val wasSuggested = resolved.wasSuggested || resolved.ref in suggested
             val rating = when {
@@ -329,8 +345,10 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             }
         }
         // Sugerido y no usado: se registra sin calificación. No es un fallo.
-        (suggested.filterNot { it.isStandard }.toSet() - counted).forEach { ref ->
-            memory.insertEvent(ReviewEvent(itemType = ref.type, itemId = ref.id, at = now, kind = EventKind.SUGGESTED_UNUSED, rating = null, pageId = pageId))
+        if (recordUnused) {
+            (suggested.filterNot { it.isStandard }.toSet() - counted).forEach { ref ->
+                memory.insertEvent(ReviewEvent(itemType = ref.type, itemId = ref.id, at = now, kind = EventKind.SUGGESTED_UNUSED, rating = null, pageId = pageId))
+            }
         }
         return UsageSummary(reviewed, newWords, newGrammar, pending)
     }
