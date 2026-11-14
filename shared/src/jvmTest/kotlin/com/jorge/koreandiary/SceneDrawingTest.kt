@@ -1,5 +1,6 @@
 package com.jorge.koreandiary
 
+import com.jorge.koreandiary.ai.ClaudeCutOffException
 import com.jorge.koreandiary.ai.ClaudeProtocol
 import com.jorge.koreandiary.ai.CorrectionParser
 import com.jorge.koreandiary.ai.Prompts
@@ -204,7 +205,13 @@ class SceneDrawingTest {
         assertEquals(2100, reply.inputTokens)
         assertEquals("gato", DrawingFormat.parse(reply.json).name)
         val cut = JSONObject().put("stop_reason", "max_tokens").put("content", JSONArray())
-        assertThrows(ProviderException::class.java) { ClaudeProtocol.reply(cut) }
+            .put("usage", JSONObject().put("input_tokens", 3000).put("output_tokens", 16000))
+        val e = assertThrows(ClaudeCutOffException::class.java) { ClaudeProtocol.reply(cut) }
+        assertEquals(16000, e.outputTokens)
+        assertTrue(e.message!!.contains("16000"))
+        // El esfuerzo va en output_config solo si se pide.
+        assertEquals("low", ClaudeProtocol.request("m", "s", "u", JSONObject(), 100, effort = "low").getJSONObject("output_config").getString("effort"))
+        assertFalse(body.getJSONObject("output_config").has("effort"))
         val refused = JSONObject().put("stop_reason", "refusal").put("content", JSONArray())
         assertThrows(ProviderException::class.java) { ClaudeProtocol.reply(refused) }
     }

@@ -3,6 +3,7 @@ package com.jorge.koreandiary.scene
 import android.app.Application
 import android.util.Log
 import com.jorge.koreandiary.ai.ClaudeClient
+import com.jorge.koreandiary.ai.ClaudeCutOffException
 import com.jorge.koreandiary.ai.ClaudeProtocol
 import com.jorge.koreandiary.ai.HttpProviderException
 import com.jorge.koreandiary.scene.art.CustomDrawing
@@ -186,7 +187,15 @@ class SceneDrawings(
         val client = client() ?: throw IllegalStateException("Falta la clave de Claude: ponla en Ajustes → «Dibujos nuevos (Claude)».")
         if (usedToday() >= DAILY_LIMIT) throw IllegalStateException("Ya se hicieron $DAILY_LIMIT dibujos hoy (el límite cuida tus créditos). Mañana sigue.")
         val existing = (SceneDictionary.elements.map { it.name } + _saved.value.map { it.drawing.name }).distinct()
-        val first = client.json(DrawingFormat.system, DrawingFormat.request(thing, context, existing), DrawingFormat.schema())
+        // Primera vuelta, un borrador: con poco esfuerzo piensa lo justo (con el de fábrica, high, llegó a
+        // gastar los 16 000 tokens pensando y no terminó). La revisión, que mira la imagen, piensa más.
+        val first = try {
+            client.json(DrawingFormat.system, DrawingFormat.request(thing, context, existing), DrawingFormat.schema(), effort = DRAFT_EFFORT)
+        } catch (e: ClaudeCutOffException) {
+            // Se cobró igual: cuenta para el límite del día.
+            settings.registerUse(USAGE)
+            throw e
+        }
         settings.registerUse(USAGE)
         var drawing = DrawingFormat.parse(first.json, thing.ko, thing.es)
         var tokensIn = first.inputTokens
@@ -197,7 +206,7 @@ class SceneDrawings(
             val content = JSONArray()
                 .put(ClaudeProtocol.imageBlock(png))
                 .put(ClaudeProtocol.textBlock(DrawingFormat.review(thing, DrawingFormat.toJson(drawing))))
-            val second = client.json(DrawingFormat.system, content, DrawingFormat.schema())
+            val second = client.json(DrawingFormat.system, content, DrawingFormat.schema(), effort = REVIEW_EFFORT)
             tokensIn += second.inputTokens
             tokensOut += second.outputTokens
             drawing = DrawingFormat.parse(second.json, thing.ko, thing.es)
@@ -272,6 +281,10 @@ class SceneDrawings(
         const val DIR = "scene_drawings"
         private const val PENDING = "pending.json"
         private const val USAGE = "claude"
+
+        /** Cuánto piensa Claude en el borrador y en la revisión mirando la imagen. */
+        private const val DRAFT_EFFORT = "low"
+        private const val REVIEW_EFFORT = "medium"
 
         /** Dibujos por día como máximo: cuida los créditos si algo se repite sin querer. */
         const val DAILY_LIMIT = 12

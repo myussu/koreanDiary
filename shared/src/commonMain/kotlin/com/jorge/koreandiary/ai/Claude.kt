@@ -18,8 +18,14 @@ class ClaudeClient(private val apiKey: String, private val model: String) {
      * una lista de bloques (`ClaudeProtocol.imageBlock`, `textBlock`). El límite deja lugar para que
      * piense antes de responder (el pensamiento cuenta como salida).
      */
-    suspend fun json(system: String, user: Any, schema: JSONObject, maxTokens: Int = 16_000): ClaudeReply = withContext(Dispatchers.IO) {
-        val res = postJson(ENDPOINT, ClaudeProtocol.headers(apiKey), ClaudeProtocol.request(model, system, user, schema, maxTokens), "Claude", 180_000)
+    suspend fun json(
+        system: String,
+        user: Any,
+        schema: JSONObject,
+        maxTokens: Int = 32_000,
+        effort: String? = null,
+    ): ClaudeReply = withContext(Dispatchers.IO) {
+        val res = postJson(ENDPOINT, ClaudeProtocol.headers(apiKey), ClaudeProtocol.request(model, system, user, schema, maxTokens, effort), "Claude", 240_000)
         ClaudeProtocol.reply(res)
     }
 
@@ -42,6 +48,13 @@ class ClaudeClient(private val apiKey: String, private val model: String) {
 /** Lo que devolvió Claude: el objeto pedido y los tokens que gastó. */
 class ClaudeReply(val json: JSONObject, val inputTokens: Int, val outputTokens: Int)
 
+/**
+ * Claude llegó al límite de tokens antes de terminar (casi siempre por pensar de más). Se cobra igual:
+ * [inputTokens] y [outputTokens] dicen cuánto.
+ */
+class ClaudeCutOffException(val inputTokens: Int, val outputTokens: Int) :
+    ProviderException("Claude se quedó sin espacio antes de terminar el dibujo (usó $outputTokens tokens de salida).")
+
 /** El protocolo en funciones puras (con tests). */
 object ClaudeProtocol {
 
@@ -50,13 +63,20 @@ object ClaudeProtocol {
 
     fun headers(apiKey: String): Map<String, String> = mapOf("x-api-key" to apiKey, "anthropic-version" to API_VERSION)
 
-    /** [user]: texto o un `JSONArray` de bloques. */
-    fun request(model: String, system: String, user: Any, schema: JSONObject, maxTokens: Int): JSONObject = JSONObject()
-        .put("model", model)
-        .put("max_tokens", maxTokens)
-        .put("system", system)
-        .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
-        .put("output_config", JSONObject().put("format", JSONObject().put("type", "json_schema").put("schema", schema)))
+    /**
+     * [user]: texto o un `JSONArray` de bloques. [effort] (low, medium, high…) controla cuánto piensa
+     * antes de responder; null deja el del modelo (high en Sonnet 5.5).
+     */
+    fun request(model: String, system: String, user: Any, schema: JSONObject, maxTokens: Int, effort: String? = null): JSONObject {
+        val config = JSONObject().put("format", JSONObject().put("type", "json_schema").put("schema", schema))
+        if (effort != null) config.put("effort", effort)
+        return JSONObject()
+            .put("model", model)
+            .put("max_tokens", maxTokens)
+            .put("system", system)
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
+            .put("output_config", config)
+    }
 
     fun textBlock(text: String): JSONObject = JSONObject().put("type", "text").put("text", text)
 
@@ -71,8 +91,9 @@ object ClaudeProtocol {
 
     /** El JSON del bloque de texto. Lanza con un mensaje claro si se cortó, se negó o no es JSON. */
     fun reply(res: JSONObject): ClaudeReply {
+        val usage = res.optJSONObject("usage")
         when (res.optString("stop_reason")) {
-            "max_tokens" -> throw ProviderException("Claude se quedó sin espacio antes de terminar el dibujo.")
+            "max_tokens" -> throw ClaudeCutOffException(usage?.optInt("input_tokens") ?: 0, usage?.optInt("output_tokens") ?: 0)
             "refusal" -> throw ProviderException("Claude no quiso dibujarlo.")
         }
         val content = res.optJSONArray("content") ?: JSONArray()
@@ -88,7 +109,6 @@ object ClaudeProtocol {
         } catch (e: JSONException) {
             throw ProviderException("Claude devolvió algo que no es JSON.")
         }
-        val usage = res.optJSONObject("usage")
         return ClaudeReply(json, usage?.optInt("input_tokens") ?: 0, usage?.optInt("output_tokens") ?: 0)
     }
 }
