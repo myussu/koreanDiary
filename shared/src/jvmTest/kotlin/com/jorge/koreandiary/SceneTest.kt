@@ -12,6 +12,7 @@ import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneZone
 import com.jorge.koreandiary.scene.SceneIdea
 import com.jorge.koreandiary.scene.MoodReading
+import com.jorge.koreandiary.scene.PendingScene
 import com.jorge.koreandiary.scene.SceneMoods
 import com.jorge.koreandiary.srs.SuggestionEngine
 import org.junit.Assert.assertEquals
@@ -240,6 +241,25 @@ class SceneTest {
         assertNull(SceneData.parse("""{"ng":[1]}""").mood)
         assertNull(SceneData.parse("""{"tono":{"id":"x","n":2}}""").mood)
         assertTrue(SceneMoods.all.map { it.id }.distinct().size == SceneMoods.all.size)
+    }
+
+    @Test
+    fun howToSayWaitsUntilYouWriteIt() {
+        // «escalar una montaña»: la montaña y el tono esperan hasta que la tinta diga 산 u 오르-.
+        val pending = PendingScene(listOf("mountain"), MoodReading("awe", 2), listOf("산", "오르다"))
+        val d = SceneData().withPending(pending)
+        assertTrue(d.elements.isEmpty())
+        assertNull(d.mood)
+        assertEquals(d, SceneData.parse(d.toJson()))
+        assertEquals(d, d.revealWritten("바다를 보고 있어요"))
+        val written = d.revealWritten("높은 산에 올라가요")
+        assertEquals(listOf("mountain"), written.elements)
+        assertEquals(MoodReading("awe", 2), written.mood)
+        assertTrue(written.pending.isEmpty())
+        // Sin palabras de diccionario, el comienzo de cada palabra de la frase.
+        assertEquals(listOf("산에", "올라"), PendingScene.wordsFrom(emptyList(), "산에 올라가요."))
+        // Una idea en la que la IA no vio nada no queda esperando.
+        assertEquals(SceneData(), SceneData().withPending(PendingScene(emptyList(), null, listOf("가다"))))
     }
 
     @Test

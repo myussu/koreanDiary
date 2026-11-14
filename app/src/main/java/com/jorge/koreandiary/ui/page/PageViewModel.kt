@@ -32,6 +32,7 @@ import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
 import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.scene.MoodReading
+import com.jorge.koreandiary.scene.PendingScene
 import com.jorge.koreandiary.scene.SceneData
 import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneElement
@@ -608,8 +609,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (isScene && idea != null) {
             val page = _state.value.page ?: return
             val scene = SceneData.parse(page.sceneJson)
-            // La idea dicha y lo que la IA vio en ella para la escena viva: elementos y tono.
-            val updated = scene.withIdea(SceneIdea(idea, r.shown)).withElements(r.response.sceneElements).withMood(r.response.sceneMood)
+            // La idea dicha, y lo que la IA vio en ella (elementos y tono) esperando a que lo escribas:
+            // la escena reacciona a la tinta, no a lo que pensabas escribir. Si ya está escrito, aparece.
+            val words = PendingScene.wordsFrom(r.response.words.map { it.first }, r.response.mine.text)
+            val updated = scene.withIdea(SceneIdea(idea, r.shown))
+                .withPending(PendingScene(r.response.sceneElements, r.response.sceneMood, words))
+                .revealWritten(liveText())
             if (updated != scene) {
                 persist { it.copy(sceneJson = updated.toJson()) }
                 publishScene()
@@ -742,10 +747,17 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             lineTexts[line] = text
             lineKeys[line] = key
         }
-        val text = lineTexts.toSortedMap().values.joinToString(" ")
+        val text = liveText()
         detected = withContext(Dispatchers.Default) { SceneDictionary.detect(text) }
+        // Lo que vio la IA en «¿Cómo digo?» aparece cuando escribes sus palabras.
+        val scene = SceneData.parse(_state.value.page?.sceneJson)
+        val revealed = scene.revealWritten(text)
+        if (revealed != scene) persist { it.copy(sceneJson = revealed.toJson()) }
         publishScene()
     }
+
+    /** Lo que leyó ML Kit en la página, línea por línea, en orden. */
+    private fun liveText(): String = lineTexts.toSortedMap().values.joinToString(" ")
 
     // ---------- Dictar la idea ----------
 
@@ -872,7 +884,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         persist {
             val scene = if (it.kind == PageKind.SCENE) {
                 SceneData.parse(it.sceneJson).withElements(response.sceneElements).withMood(response.sceneMood)
-                    .withImagePrompt(response.sceneImagePrompt).toJson()
+                    .withImagePrompt(response.sceneImagePrompt).revealWritten(it.confirmedText.orEmpty()).toJson()
             } else {
                 it.sceneJson
             }
