@@ -37,6 +37,7 @@ import com.jorge.koreandiary.ui.HomeScreen
 import com.jorge.koreandiary.ui.ImportScreen
 import com.jorge.koreandiary.ui.KoreanDiaryTheme
 import com.jorge.koreandiary.ui.ProgressScreen
+import com.jorge.koreandiary.ui.SceneDrawingsScreen
 import com.jorge.koreandiary.ui.ScenesScreen
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
@@ -144,11 +145,12 @@ private fun AppNavigation(container: AppContainer) {
             }
             route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
             route == "import" -> ImportScreen(container, onBack = ::pop)
-            route == "settings" -> SettingsScreen(container, onBack = ::pop)
+            route == "settings" -> SettingsScreen(container, onBack = ::pop, onOpenDrawings = { push("drawings") })
+            route == "drawings" -> SceneDrawingsScreen(container, onBack = ::pop, onSettings = { push("settings") })
             route == "progress" -> ProgressScreen(container, onBack = ::pop)
             route == "features" -> FeaturesScreen(onBack = ::pop)
             route == "conversation" -> ConversationScreen(container, onBack = ::pop)
-            route == "scenes" -> ScenesScreen(container, onBack = ::pop, onOpenPage = { push("page:$it") })
+            route == "scenes" -> ScenesScreen(container, onBack = ::pop, onOpenPage = { push("page:$it") }, onDrawings = { push("drawings") })
             route == "workbook" -> WorkbookListScreen(container, onBack = ::pop, onOpen = { push("workbook:$it") })
             route.startsWith("workbook:") -> WorkbookSessionScreen(container, route.removePrefix("workbook:").toLong(), onBack = ::pop)
             else -> HomeScreen(

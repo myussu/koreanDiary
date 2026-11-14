@@ -281,6 +281,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                     dark = paper.background.luminance() < 0.5f,
                     modifier = Modifier.fillMaxSize(),
                     active = sceneAwake,
+                    custom = state.sceneCustom,
                 )
             }
             InkCanvas(

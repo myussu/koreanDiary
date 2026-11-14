@@ -37,6 +37,7 @@ import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.PendingScene
 import com.jorge.koreandiary.scene.SceneData
 import com.jorge.koreandiary.scene.SceneDictionary
+import com.jorge.koreandiary.scene.art.CustomDrawing
 import com.jorge.koreandiary.scene.SceneElement
 import com.jorge.koreandiary.scene.SceneIdea
 import com.jorge.koreandiary.scene.SceneImage
@@ -131,6 +132,8 @@ data class PageUiState(
     val sceneElements: List<SceneElement> = emptyList(),
     /** Escenas: el tono que leyó la IA; cambia la luz de los bordes. */
     val sceneMood: MoodReading? = null,
+    /** Escenas: los dibujos nuevos (de Claude) que están en la escena. */
+    val sceneCustom: List<CustomDrawing> = emptyList(),
     val phase: Phase = Phase.Writing,
     val message: String? = null,
     val canUndo: Boolean = false,
@@ -140,6 +143,8 @@ data class PageUiState(
 class PageViewModel(private val c: AppContainer, private val pageId: Long) : ViewModel() {
 
     private val _state = MutableStateFlow(PageUiState())
+    /** El diccionario de la escena con los dibujos nuevos sumados. */
+    private var lexicon = SceneDictionary.withCustom(c.sceneDrawings.drawings())
     val state: StateFlow<PageUiState> = _state.asStateFlow()
 
     val corrections: StateFlow<List<Correction>> = c.diary.corrections(pageId)
@@ -190,6 +195,18 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private var saveJob: Job? = null
 
     init {
+        // Los dibujos nuevos entran al diccionario de la escena: uno que llega mientras la página está
+        // abierta (Claude terminó de dibujar) aparece enseguida si su palabra ya está escrita.
+        viewModelScope.launch {
+            c.sceneDrawings.saved.collect { list ->
+                lexicon = SceneDictionary.withCustom(list.map { it.drawing })
+                if (isScene) {
+                    val text = if (lineTexts.isEmpty()) _state.value.page?.confirmedText.orEmpty() else liveText()
+                    detected = withContext(Dispatchers.Default) { lexicon.detect(text) }
+                    publishScene()
+                }
+            }
+        }
         viewModelScope.launch {
             val page = c.diary.page(pageId) ?: return@launch
             // Lo que ya se leyó de cada renglón de la escena la última vez: no se lee todo de nuevo.
@@ -277,7 +294,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         _state.update { it.copy(page = page, suggestions = chips.filterNot { c -> c.isNew }, newGrammar = chips.filter { c -> c.isNew }) }
         if (page.kind == PageKind.SCENE) {
             // Hasta que se lea la tinta, la escena parte del texto ya confirmado.
-            if (lineTexts.isEmpty()) detected = SceneDictionary.detect(page.confirmedText.orEmpty())
+            if (lineTexts.isEmpty()) detected = lexicon.detect(page.confirmedText.orEmpty())
             publishScene()
         }
     }
@@ -589,6 +606,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 idea, settings.level, settings.standardLevel,
                 tiered = isScene,
                 targets = if (isScene) _state.value.newGrammar.map { it.label } else emptyList(),
+                customScene = if (isScene) c.sceneDrawings.drawings() else emptyList(),
             )
             // El proveedor por defecto si es una API; si no, la primera API configurada; si no hay, un chat.
             val providerId = listOf(settings.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
@@ -773,10 +791,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
      */
     private fun publishScene() {
         val scene = SceneData.parse(_state.value.page?.sceneJson)
-        val ai = scene.elements.mapNotNull { SceneDictionary.element(it) }
+        val ai = scene.elements.mapNotNull { lexicon.element(it) }
         val all = (detected + ai).distinctBy { it.id }.take(SceneData.MAX_ELEMENTS)
-        if (all != _state.value.sceneElements || scene.mood != _state.value.sceneMood) {
-            _state.update { it.copy(sceneElements = all, sceneMood = scene.mood) }
+        val drawings = c.sceneDrawings.drawings().associateBy { it.id }
+        val custom = all.mapNotNull { drawings[it.id] }
+        if (all != _state.value.sceneElements || scene.mood != _state.value.sceneMood || custom != _state.value.sceneCustom) {
+            _state.update { it.copy(sceneElements = all, sceneMood = scene.mood, sceneCustom = custom) }
         }
     }
 
@@ -820,7 +840,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         readCache.keys.retainAll(keys.values.toSet())
         lineTexts = texts
         val text = liveText()
-        detected = withContext(Dispatchers.Default) { SceneDictionary.detect(text) }
+        detected = withContext(Dispatchers.Default) { lexicon.detect(text) }
         // Lo que vio la IA en «¿Cómo digo?» aparece cuando escribes sus palabras; y lo leído de cada
         // renglón queda guardado con la escena.
         val reads = HashMap(readCache)
@@ -892,6 +912,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             val isScene = page.kind == PageKind.SCENE
             // Escenas: lo que dijiste en «¿Cómo digo?», para avisar si lo escrito dice otra cosa.
             val ideas = if (isScene) SceneData.parse(page.sceneJson).ideas.map { it.text } else emptyList()
+            val custom = if (isScene) c.sceneDrawings.drawings() else emptyList()
 
             if (provider != ProviderId.SHARE) {
                 val name = providerName(provider)
@@ -911,7 +932,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 reviewing.update { it + pageId }
                 c.appScope.launch {
                     try {
-                        val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene, ideas = ideas)
+                        val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene, ideas = ideas, customScene = custom)
                         val raw = api.complete(CorrectionRequest(prompt))
                         c.settings.registerUse(provider)
                         applyResponse(raw)
@@ -929,7 +950,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     }
                 }
             } else {
-                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene, ideas = ideas)
+                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene, ideas = ideas, customScene = custom)
                 val bitmap = renderPage(_state.value.strokes, width.toInt(), height.toInt(), lineHeight)
                 _shareIntents.send(ShareFlow.buildIntent(c.app, prompt, bitmap))
                 setPhase(Phase.AwaitingPaste, "El prompt también quedó copiado. Pégalo en el chat si no aparece.")
@@ -965,7 +986,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             }
             it.copy(status = PageStatus.REVIEWED, sceneJson = scene)
         }
-        if (isScene) publishScene()
+        if (isScene) {
+            publishScene()
+            // Lo que se ve y no tiene dibujo: Claude lo dibuja (o queda en espera en «Dibujos de la escena»).
+            if (response.sceneNew.isNotEmpty()) c.sceneDrawings.offer(response.sceneNew, page.confirmedText.orEmpty())
+        }
         val parts = buildList {
             add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
             if (summary.reviewed > 0) add("${summary.reviewed} ítems repasados")

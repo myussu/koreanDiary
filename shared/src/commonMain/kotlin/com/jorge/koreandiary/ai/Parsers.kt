@@ -3,6 +3,8 @@ package com.jorge.koreandiary.ai
 import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneMoods
+import com.jorge.koreandiary.scene.art.CustomDrawing
+import com.jorge.koreandiary.scene.art.NewSceneThing
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -96,6 +98,7 @@ object CorrectionParser {
             sentences, corrections, allUsed, improvements, notes,
             sceneElements(json.optJSONArray("escena")), sceneMood(json.opt("tono")),
             json.optString("imagen").trim().take(600),
+            sceneNew(json.optJSONArray("nuevos")),
         )
     }
 
@@ -173,12 +176,27 @@ internal fun sceneMood(value: Any?): MoodReading? = when (value) {
     else -> null
 }
 
-/** Ids de la escena viva que devolvió la IA: solo los que la app sabe dibujar, sin repetir. */
+/**
+ * Ids de la escena viva que devolvió la IA: los de la app y los de dibujos nuevos (la app ignora
+ * después los que ya no existan), sin repetir.
+ */
 internal fun sceneElements(arr: JSONArray?): List<String> {
     if (arr == null) return emptyList()
     return (0 until arr.length()).map { arr.optString(it).trim().lowercase() }
-        .filter { SceneDictionary.element(it) != null }
+        .filter { SceneDictionary.element(it) != null || CustomDrawing.isCustomId(it) }
         .distinct()
+}
+
+/** Lo nuevo de la escena: sustantivo en hangul y nombre en español, como máximo 2, sin repetir. */
+internal fun sceneNew(arr: JSONArray?): List<NewSceneThing> {
+    if (arr == null) return emptyList()
+    val hangul = Regex("^[\\p{IsHangul}]{1,8}$")
+    return (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        val ko = o.optString("ko").trim()
+        val es = o.optString("es").trim().take(40)
+        if (!hangul.matches(ko) || SceneDictionary.detect(ko).isNotEmpty()) null else NewSceneThing(ko, es.ifEmpty { ko })
+    }.distinctBy { it.ko }.take(2)
 }
 
 object HowToSayParser {

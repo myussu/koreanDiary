@@ -1,6 +1,7 @@
 package com.jorge.koreandiary.ai
 
 import com.jorge.koreandiary.scene.MoodReading
+import com.jorge.koreandiary.scene.art.NewSceneThing
 
 /** Respuesta de corrección: el contrato entre la app y cualquier proveedor. */
 data class CorrectionResponse(
@@ -18,6 +19,8 @@ data class CorrectionResponse(
     val sceneMood: MoodReading? = null,
     /** Escenas: cómo se ve, en inglés, para pintarla; "" si no vino. */
     val sceneImagePrompt: String = "",
+    /** Escenas: lo que se ve y todavía no tiene dibujo (como máximo 2). */
+    val sceneNew: List<NewSceneThing> = emptyList(),
 )
 
 /** Nota de sentido: [original] dice otra cosa que la idea; [suggestion] es cómo se diría lo que quería. */

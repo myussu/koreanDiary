@@ -62,7 +62,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
+fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenDrawings: () -> Unit = {}) {
     val s by container.settings.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var profile by remember { mutableStateOf(s.profile) }
@@ -218,6 +218,12 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
 
         Section("Imagen de la escena") {
             SceneImageSettings(container)
+        }
+        Section("Dibujos nuevos (Claude)") {
+            SceneDrawingSettings(container) {
+                save()
+                onOpenDrawings()
+            }
         }
 
         Section("Corrección") {
@@ -529,7 +535,7 @@ private fun MascotSettings(container: AppContainer) {
 
 /** Campo para una clave cifrada: nunca se muestra, solo se reemplaza o se borra. */
 @Composable
-private fun SecretKeyField(container: AppContainer, name: String, label: String) {
+internal fun SecretKeyField(container: AppContainer, name: String, label: String) {
     var value by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(container.secrets.has(name)) }
     Text(

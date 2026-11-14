@@ -51,13 +51,23 @@ object ScenePalette {
 
     private val cache = HashMap<String, Color>()
 
-    /** El color de una mancha de acuarela por su clave; gris si la clave no existe. */
+    /**
+     * El color de una mancha de acuarela por su clave; gris si la clave no existe. Los dibujos nuevos
+     * (de Claude) traen sus dos colores en la clave: `#rrggbb|#rrggbb` (papel claro|oscuro).
+     */
     fun watercolor(key: String, dark: Boolean): Color {
         val k = if (dark) "o:$key" else "c:$key"
         return cache.getOrPut(k) {
+            if (key.startsWith('#')) return@getOrPut drawingColor(key, dark)
             val pair = watercolor[key] ?: (0xFF9AA3AD to 0xFF8E979F)
             Color(if (dark) pair.second else pair.first)
         }
+    }
+
+    private fun drawingColor(key: String, dark: Boolean): Color {
+        val hex = key.split('|').let { if (dark) it.getOrNull(1) ?: it[0] else it[0] }.removePrefix("#")
+        val rgb = hex.toLongOrNull(16)?.takeIf { hex.length == 6 } ?: 0x9AA3AD
+        return Color(0xFF000000 or rgb)
     }
 
     /** Los mismos colores sobre papel claro y oscuro: el sombreador baja la luz en papel claro. */

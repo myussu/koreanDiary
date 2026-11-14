@@ -39,17 +39,32 @@ object SceneArt {
     }
 
     /**
-     * Las manchas de toda la escena para una hoja de [width] × [height] en el segundo [t]. [fade] da la
-     * entrada de cada elemento (0..1).
+     * Las manchas de toda la escena para una hoja de [width] × [height] en el segundo [t]. [custom] son
+     * los dibujos nuevos que están en la escena; [fade] da la entrada de cada elemento (0..1).
      */
-    fun paint(elements: List<SceneElement>, width: Float, height: Float, t: Float, fade: (String) -> Float = { 1f }): List<Mark> {
+    fun paint(
+        elements: List<SceneElement>,
+        width: Float,
+        height: Float,
+        t: Float,
+        custom: List<CustomDrawing> = emptyList(),
+        fade: (String) -> Float = { 1f },
+    ): List<Mark> {
         if (width <= 0f || height <= 0f) return emptyList()
         val s = Stage(width, stageHeight(width, height), unit(width, height))
-        val ids = elements.map { it.id }.distinct()
+        // Los elementos de dibujos nuevos se pintan con su dibujo ([custom]), no aquí.
+        val ids = elements.map { it.id }.filterNot { CustomDrawing.isCustomId(it) }.distinct()
+        // Los dibujos nuevos van después de los de la app en su misma capa, cada uno en su lugar.
+        val slots = HashMap<Int, Int>()
+        val jobs = ids.map { id -> Triple(layer(id), 0, { p: Painter -> s.draw(id, p, t, ids) }) to id } +
+            custom.distinctBy { it.id }.map { d ->
+                val slot = slots.getOrDefault(d.zone.ordinal, 0).also { slots[d.zone.ordinal] = it + 1 }
+                Triple(d.layer, 1, { p: Painter -> d.paint(s, p, t, slot) }) to d.id
+            }
         val out = ArrayList<Mark>()
-        for (id in ids.sortedBy { layer(it) }) {
+        for ((job, id) in jobs.sortedWith(compareBy({ it.first.first }, { it.first.second }))) {
             val p = Painter(fade(id).coerceIn(0f, 1f))
-            s.draw(id, p, t, ids)
+            job.third(p)
             out += p.marks
         }
         return out

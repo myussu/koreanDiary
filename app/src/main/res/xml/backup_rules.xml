@@ -11,5 +11,6 @@
     <include domain="file" path="explanations/" />
     <include domain="file" path="conversation/" />
     <include domain="file" path="mascot/" />
+    <include domain="file" path="scene_drawings/" />
     <include domain="sharedpref" path="settings.xml" />
 </full-backup-content>

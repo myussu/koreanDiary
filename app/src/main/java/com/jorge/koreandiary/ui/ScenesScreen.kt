@@ -32,7 +32,7 @@ import java.time.LocalDate
  * Revisar y Verificar que el diario; aquí se prueban las funciones nuevas antes de llevarlas al diario.
  */
 @Composable
-fun ScenesScreen(container: AppContainer, onBack: () -> Unit, onOpenPage: (Long) -> Unit) {
+fun ScenesScreen(container: AppContainer, onBack: () -> Unit, onOpenPage: (Long) -> Unit, onDrawings: () -> Unit = {}) {
     val scenes by container.diary.sceneSummaries.collectAsStateWithLifecycle(emptyList())
     val scope = rememberCoroutineScope()
     var creating by remember { mutableStateOf(false) }
@@ -41,7 +41,8 @@ fun ScenesScreen(container: AppContainer, onBack: () -> Unit, onOpenPage: (Long)
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             AppTextButton(onClick = onBack) { Text("‹ Diario") }
-            Text("Escenas", style = MaterialTheme.typography.titleLarge)
+            Text("Escenas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            AppTextButton(onClick = onDrawings) { Text("Dibujos") }
         }
         Text(
             "Describe un lugar o un momento, vivido o imaginado: lo que ves, oyes y sientes. " +

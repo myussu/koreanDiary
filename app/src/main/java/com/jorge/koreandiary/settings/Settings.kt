@@ -67,6 +67,10 @@ data class AppSettings(
     val sceneImageAuto: Boolean = true,
     /** Mostrar la imagen de la escena de fondo, muy suave, detrás de la tinta. */
     val sceneImageBackground: Boolean = true,
+    /** Claude: el modelo que dibuja lo nuevo de las escenas. */
+    val claudeModel: String = "claude-sonnet-5-5",
+    /** Al revisar una escena, Claude dibuja lo que se ve y la escena viva no sabía pintar. */
+    val sceneDrawAuto: Boolean = true,
     /** Ocultar la tarjeta "Primeros pasos" del inicio. */
     val hideOnboarding: Boolean = false,
     /** Recordatorio diario para escribir, solo si ese día aún no hay página. */
@@ -161,6 +165,8 @@ class SettingsStore(context: Context) {
         imageCheckpoint = prefs.getString("imageCheckpoint", "") ?: "",
         sceneImageAuto = prefs.getBoolean("sceneImageAuto", true),
         sceneImageBackground = prefs.getBoolean("sceneImageBackground", true),
+        claudeModel = prefs.getString("claudeModel", "claude-sonnet-5-5") ?: "claude-sonnet-5-5",
+        sceneDrawAuto = prefs.getBoolean("sceneDrawAuto", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
         reminderEnabled = prefs.getBoolean("reminderEnabled", false),
         reminderHour = prefs.getInt("reminderHour", 20),
@@ -211,6 +217,8 @@ class SettingsStore(context: Context) {
             .putString("imageCheckpoint", s.imageCheckpoint)
             .putBoolean("sceneImageAuto", s.sceneImageAuto)
             .putBoolean("sceneImageBackground", s.sceneImageBackground)
+            .putString("claudeModel", s.claudeModel)
+            .putBoolean("sceneDrawAuto", s.sceneDrawAuto)
             .putBoolean("hideOnboarding", s.hideOnboarding)
             .putBoolean("reminderEnabled", s.reminderEnabled)
             .putInt("reminderHour", s.reminderHour)
@@ -319,6 +327,7 @@ class SecretStore(context: Context) {
     companion object {
         const val GEMINI_KEY = "gemini_api_key"
         const val AZURE_KEY = "azure_openai_api_key"
+        const val CLAUDE_KEY = "claude_api_key"
         private const val ALIAS = "korean_diary_secrets"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val IV_SIZE = 12

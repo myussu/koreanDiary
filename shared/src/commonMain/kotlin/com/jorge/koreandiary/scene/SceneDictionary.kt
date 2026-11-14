@@ -110,55 +110,98 @@ object SceneDictionary {
      * Raíces de una sílaba que sí van al inicio (맑다 → 맑아요, 맑은): esa sílaba no empieza otras
      * palabras comunes.
      */
-    private val stems = setOf("맑", "밝")
+    internal val stems = setOf("맑", "밝")
 
     /**
      * Partículas que pueden seguir a un sustantivo de una sílaba. Sin 로: «별로» (no mucho) no son
      * estrellas.
      */
-    private val particles = listOf(
+    internal val particles = listOf(
         "", "이", "가", "은", "는", "을", "를", "에", "에서", "에는", "도", "의", "과", "와", "랑", "이랑",
         "으로", "처럼", "만", "까지", "부터", "보다", "같이", "같은", "들", "들이", "들은", "들을", "이에요", "예요", "이다",
     )
 
-    /** Claves de varias palabras ("해가 지"): se buscan en el texto tal cual. */
-    private val phraseKeys = keys.filterKeys { ' ' in it }
-    private val singleSyllable = keys.filterKeys { ' ' !in it && it.length == 1 && it !in stems }
-    private val prefixKeys = keys.filterKeys { ' ' !in it && (it.length >= 2 || it in stems) }.entries.sortedByDescending { it.key.length }
-
-    private val wordSplit = Regex("[^\\p{IsHangul}]+")
+    /** Las palabras de la app, sin dibujos nuevos. */
+    private val builtIn = SceneLexicon(keys.entries.map { it.key to it.value }, stems, particles) { byId[it] }
 
     /**
      * Elementos que aparecen en [text], en el orden en que se escribieron, sin repetir: la escena
      * se arma elemento por elemento a medida que escribes.
      */
-    fun detect(text: String): List<SceneElement> {
+    fun detect(text: String): List<SceneElement> = builtIn.detect(text)
+
+    /** Dónde aparece cada palabra de la app (para la ventana de dibujos y sus pruebas). */
+    fun detectWithKeys(text: String): List<Pair<SceneElement, String>> = builtIn.detectWithKeys(text)
+
+    /** Las claves de la app de un elemento, en el orden del diccionario. */
+    fun keysOf(id: String): List<String> = keys.filterValues { it == id }.keys.toList()
+
+    /** ¿Esta clave es de una sílaba (sola o con partícula, como 해가)? */
+    fun isSingleSyllable(key: String): Boolean = ' ' !in key && key.length == 1 && key !in stems
+
+    /**
+     * El diccionario con los dibujos nuevos sumados: sus palabras se reconocen con las mismas reglas.
+     * Si una palabra nueva ya es de la app, gana la de la app.
+     */
+    fun withCustom(custom: List<com.jorge.koreandiary.scene.art.CustomDrawing>): SceneLexicon {
+        if (custom.isEmpty()) return builtIn
+        val extra = custom.flatMap { d -> d.keys.map { it to d.id } }.filter { (k, _) -> k !in keys }
+        val elements = custom.associate { it.id to it.element }
+        return SceneLexicon(keys.entries.map { it.key to it.value } + extra, stems, particles) { byId[it] ?: elements[it] }
+    }
+
+    /** Ids de la lista para el prompt: «id (nombre)», con los dibujos nuevos al final. */
+    fun promptList(custom: List<com.jorge.koreandiary.scene.art.CustomDrawing> = emptyList()): String =
+        (elements + custom.map { it.element }).joinToString(", ") { "${it.id} (${it.name})" }
+}
+
+/**
+ * Palabra → elemento con las reglas de [SceneDictionary] (ver allí). Una instancia por juego de
+ * palabras: la de la app sola o con los dibujos nuevos sumados.
+ */
+class SceneLexicon internal constructor(
+    keys: List<Pair<String, String>>,
+    stems: Set<String>,
+    private val particles: List<String>,
+    private val elementOf: (String) -> SceneElement?,
+) {
+    /** Claves de varias palabras ("해가 지"): se buscan en el texto tal cual. */
+    private val phraseKeys = keys.filter { ' ' in it.first }
+    private val singleSyllable = keys.filter { ' ' !in it.first && it.first.length == 1 && it.first !in stems }.toMap()
+    private val prefixKeys = keys.filter { ' ' !in it.first && (it.first.length >= 2 || it.first in stems) }.sortedByDescending { it.first.length }
+
+    private val wordSplit = Regex("[^\\p{IsHangul}]+")
+
+    fun element(id: String): SceneElement? = elementOf(id)
+
+    fun detect(text: String): List<SceneElement> = detectWithKeys(text).map { it.first }
+
+    /** Lo que aparece en [text] con la palabra que lo trajo, en orden de escritura y sin repetir. */
+    fun detectWithKeys(text: String): List<Pair<SceneElement, String>> {
         if (text.isBlank()) return emptyList()
-        val found = LinkedHashMap<String, Int>()
-        fun add(id: String, at: Int) {
-            if (id !in found || found.getValue(id) > at) found[id] = at
+        val found = LinkedHashMap<String, Pair<Int, String>>()
+        fun add(id: String, at: Int, key: String) {
+            val prev = found[id]
+            if (prev == null || prev.first > at) found[id] = at to key
         }
         phraseKeys.forEach { (key, id) ->
             val i = text.indexOf(key)
-            if (i >= 0) add(id, i)
+            if (i >= 0) add(id, i, key)
         }
         var position = 0
         for (word in text.split(wordSplit)) {
             if (word.isEmpty()) continue
             val at = text.indexOf(word, position).coerceAtLeast(0)
             position = at + word.length
-            val prefix = prefixKeys.firstOrNull { word.startsWith(it.key) }
+            val prefix = prefixKeys.firstOrNull { word.startsWith(it.first) }
             if (prefix != null) {
-                add(prefix.value, at)
+                add(prefix.second, at, prefix.first)
                 continue
             }
             val head = word.substring(0, 1)
             val single = singleSyllable[head] ?: continue
-            if (word.substring(1) in particles) add(single, at)
+            if (word.substring(1) in particles) add(single, at, head)
         }
-        return found.entries.sortedBy { it.value }.mapNotNull { byId[it.key] }
+        return found.entries.sortedBy { it.value.first }.mapNotNull { (id, v) -> elementOf(id)?.let { it to v.second } }
     }
-
-    /** Ids de la lista para el prompt: «id (nombre)». */
-    fun promptList(): String = elements.joinToString(", ") { "${it.id} (${it.name})" }
 }

@@ -1,5 +1,6 @@
 package com.jorge.koreandiary
 
+import com.jorge.koreandiary.scene.SceneDrawings
 import com.jorge.koreandiary.scene.SceneImages
 import android.app.Application
 import com.jorge.koreandiary.ai.AzureOpenAIProvider
@@ -57,6 +58,9 @@ class AppContainer(val app: Application) {
 
     /** La imagen de cada escena: la pinta tu servidor de ComfyUI o la eliges tú. */
     val sceneImages = SceneImages(app, appScope) { settings.state.value }
+
+    /** Lo nuevo de las escenas, dibujado por Claude: entra a la escena viva y a su diccionario. */
+    val sceneDrawings = SceneDrawings(app, appScope, settings, secrets)
 
     /** Exportar e importar todo a un archivo, y el estado de la copia automática de Google. */
     val backup = BackupManager(app, database, appScope, updater.currentVersionCode, updater.currentVersionName)

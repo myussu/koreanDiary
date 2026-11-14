@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import com.jorge.koreandiary.scene.SceneMoods
 import com.jorge.koreandiary.scene.SceneShaders
 import com.jorge.koreandiary.scene.art.Mark
 import com.jorge.koreandiary.scene.art.SceneArt
+import com.jorge.koreandiary.scene.art.CustomDrawing
 import com.jorge.koreandiary.ui.ScenePalette
 import com.jorge.koreandiary.ui.rememberSlowClock
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +66,14 @@ import kotlinx.coroutines.withContext
  * piensas o lees; al tocarla sigue). Los dibujos se pintan a la resolución completa de la pantalla.
  */
 @Composable
-fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolean, modifier: Modifier = Modifier, active: Boolean = true) {
+fun SceneVignette(
+    elements: List<SceneElement>,
+    mood: MoodReading?,
+    dark: Boolean,
+    modifier: Modifier = Modifier,
+    active: Boolean = true,
+    custom: List<CustomDrawing> = emptyList(),
+) {
     val context = LocalContext.current
     val motionOn = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
@@ -132,7 +141,7 @@ fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolea
         }
         if (elements.isNotEmpty()) {
             ArtLayer(
-                elements, appear, time, dark, width, height,
+                elements, custom, appear, time, dark, width, height,
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(with(density) { stage.toDp() }),
             )
         }
@@ -166,6 +175,7 @@ private const val ART_OPACITY = 0.72f
 @Composable
 private fun ArtLayer(
     elements: List<SceneElement>,
+    custom: List<CustomDrawing>,
     appear: Map<String, Animatable<Float, AnimationVector1D>>,
     time: FloatState,
     dark: Boolean,
@@ -174,15 +184,24 @@ private fun ArtLayer(
     modifier: Modifier,
 ) {
     val marks = remember { mutableStateOf<List<Mark>>(emptyList()) }
-    LaunchedEffect(elements, width, height) {
+    LaunchedEffect(elements, custom, width, height) {
         // El tiempo y la entrada de cada elemento: así uno nuevo aparece aunque la escena esté quieta.
         // conflate: cada cuadro se termina de calcular y después se toma el momento más reciente. Con
         // collectLatest, un cálculo que tardaba más que un cuadro (el celular caliente va más lento)
         // se tiraba sin mostrarse y la escena quedaba congelada gastando igual.
         snapshotFlow { time.floatValue to elements.associate { it.id to (appear[it.id]?.value ?: 1f) } }.conflate().collect { (t, fades) ->
-            marks.value = withContext(Dispatchers.Default) { SceneArt.paint(elements, width, height, t) { fades[it] ?: 1f } }
+            marks.value = withContext(Dispatchers.Default) { SceneArt.paint(elements, width, height, t, custom) { fades[it] ?: 1f } }
         }
     }
+    MarksCanvas(marks, dark, modifier)
+}
+
+/**
+ * Rellena las manchas de [marks] con la paleta de acuarela y, si se puede, el filtro de acuarela.
+ * Lo usan la escena viva y la ventana «Dibujos de la escena».
+ */
+@Composable
+internal fun MarksCanvas(marks: State<List<Mark>>, dark: Boolean, modifier: Modifier) {
     val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) remember(dark) { watercolorEffect(dark) } else null
     // Sin filtro, el pigmento se ajusta a mano: un poco más de cuerpo en papel oscuro, como hace el filtro.
     val alphaScale = if (effect != null) 1f else ART_OPACITY * (if (dark) 1.3f else 1f)
