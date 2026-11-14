@@ -138,48 +138,65 @@ class CustomDrawing(
                 val dy = (y - 100f) / 100f * side
                 return Pt(baseX + dx * ca - dy * sa, baseY + dx * sa + dy * ca)
             }
-            shapes.forEachIndexed { i, shape ->
-                val color = colorKeys[shape.color] ?: return@forEachIndexed
-                val phase = i * 1.3f + k * 0.9f
-                var alpha = shape.alpha
-                if (shape.move == PartMotion.TWINKLE) alpha *= 0.65f + 0.35f * sin(t * 2.2f + phase)
-                fun moved(points: List<Pt>): List<Pt> {
-                    if (points.isEmpty()) return points
-                    val pivot = points.first()
-                    return when (shape.move) {
-                        PartMotion.SWAY, PartMotion.FLAP -> {
-                            val flap = shape.move == PartMotion.FLAP
-                            val dir = if (flap && points.last().x < pivot.x) -1f else 1f
-                            val a = if (flap) dir * 0.35f * sin(t * 5f + k * 0.7f) else 0.12f * sin(t * 1.4f + phase)
-                            val c = cos(a)
-                            val sn = sin(a)
-                            points.map { q ->
-                                val dx = q.x - pivot.x
-                                val dy = q.y - pivot.y
-                                Pt(pivot.x + dx * c - dy * sn, pivot.y + dx * sn + dy * c)
-                            }
+            paintShapes(p, t, k, side, angle) { x, y -> place(x, y) }
+        }
+    }
+
+    /**
+     * El dibujo en una caja de [side] píxeles con la esquina de arriba a la izquierda en ([left], [top]),
+     * sin moverse por la franja (solo sus partes, en el segundo [t]). Para la ventana de dibujos y para
+     * la imagen que Claude mira al revisar su dibujo.
+     */
+    fun boxMarks(side: Float, left: Float = 0f, top: Float = 0f, t: Float = 0f): List<Mark> {
+        val p = Painter()
+        paintShapes(p, t, 0, side, 0f) { x, y -> Pt(left + x / 100f * side, top + y / 100f * side) }
+        return p.marks
+    }
+
+    /** Las formas, de la caja a donde diga [place]; [k] es la copia (desfasa los movimientos). */
+    private fun paintShapes(p: Painter, t: Float, k: Int, side: Float, angle: Float, place: (Float, Float) -> Pt) {
+        val seed = id.hashCode()
+        shapes.forEachIndexed { i, shape ->
+            val color = colorKeys[shape.color] ?: return@forEachIndexed
+            val phase = i * 1.3f + k * 0.9f
+            var alpha = shape.alpha
+            if (shape.move == PartMotion.TWINKLE) alpha *= 0.65f + 0.35f * sin(t * 2.2f + phase)
+            fun moved(points: List<Pt>): List<Pt> {
+                if (points.isEmpty()) return points
+                val pivot = points.first()
+                return when (shape.move) {
+                    PartMotion.SWAY, PartMotion.FLAP -> {
+                        val flap = shape.move == PartMotion.FLAP
+                        val dir = if (flap && points.last().x < pivot.x) -1f else 1f
+                        val a = if (flap) dir * 0.35f * sin(t * 5f + k * 0.7f) else 0.12f * sin(t * 1.4f + phase)
+                        val c = cos(a)
+                        val sn = sin(a)
+                        points.map { q ->
+                            val dx = q.x - pivot.x
+                            val dy = q.y - pivot.y
+                            Pt(pivot.x + dx * c - dy * sn, pivot.y + dx * sn + dy * c)
                         }
-                        PartMotion.BOB -> points.map { Pt(it.x, it.y + 2f * sin(t * 1.6f + phase)) }
-                        else -> points
                     }
+                    PartMotion.BOB -> points.map { Pt(it.x, it.y + 2f * sin(t * 1.6f + phase)) }
+                    else -> points
                 }
-                when (shape) {
-                    is DrawingShape.Wash -> p.wash(moved(shape.points).map { place(it.x, it.y) }, color, alpha)
-                    is DrawingShape.Stroke -> p.stroke(
-                        moved(shape.points).map { place(it.x, it.y) },
-                        shape.width / 100f * side,
-                        color,
-                        alpha,
-                        taperIn = 0.12f,
-                        taperOut = 0.3f,
-                        wobble = 0.1f,
-                        seed = seed + i,
-                    )
-                    is DrawingShape.Blob -> {
-                        val c = moved(listOf(Pt(shape.x, shape.y))).first()
-                        val at = place(c.x, c.y)
-                        p.blob(at.x, at.y, shape.r / 100f * side, color, alpha, irregular = 0.18f, seed = seed + i, squash = shape.squash, angle = shape.angle + angle)
-                    }
+            }
+            when (shape) {
+                is DrawingShape.Wash -> p.wash(moved(shape.points).map { place(it.x, it.y) }, color, alpha)
+                is DrawingShape.Stroke -> p.stroke(
+                    moved(shape.points).map { place(it.x, it.y) },
+                    shape.width / 100f * side,
+                    color,
+                    alpha,
+                    taperIn = 0.12f,
+                    taperOut = 0.3f,
+                    wobble = 0.1f,
+                    seed = seed + i,
+                )
+                is DrawingShape.Blob -> {
+                    val c = moved(listOf(Pt(shape.x, shape.y))).first()
+                    val at = place(c.x, c.y)
+                    p.blob(at.x, at.y, shape.r / 100f * side, color, alpha, irregular = 0.18f, seed = seed + i, squash = shape.squash, angle = shape.angle + angle)
                 }
             }
         }

@@ -36,8 +36,9 @@ fun SceneDrawingSettings(container: AppContainer, onOpenDrawings: () -> Unit) {
 
     Text(
         "Al revisar una escena, lo que se ve y la escena viva no sabía pintar (un gato, un faro) lo dibuja Claude en acuarela. " +
-            "Se dibuja una vez y queda: desde entonces aparece al escribir su palabra. Usa tu clave de la API de Claude (se paga por uso, " +
-            "unos centavos por dibujo con Sonnet) y como mucho ${SceneDrawings.DAILY_LIMIT} dibujos por día.",
+            "Claude dibuja, mira cómo quedó y lo corrige. Se dibuja una vez y queda: desde entonces aparece al escribir su palabra. " +
+            "Usa tu clave de la API de Claude (se paga por uso: unos 5 a 8 centavos de dólar por dibujo con Sonnet) y como mucho " +
+            "${SceneDrawings.DAILY_LIMIT} dibujos por día.",
         style = MaterialTheme.typography.bodySmall,
     )
     SecretKeyField(container, SecretStore.CLAUDE_KEY, "Clave de API de Claude")

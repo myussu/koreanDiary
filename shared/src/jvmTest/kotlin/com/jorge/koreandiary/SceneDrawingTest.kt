@@ -210,12 +210,47 @@ class SceneDrawingTest {
     }
 
     @Test
+    fun aDrawingAloneFillsItsBox() {
+        val d = drawing(cat)
+        val marks = d.boxMarks(512f, 10f, 20f)
+        assertEquals(d.shapes.size, marks.size)
+        for (m in marks) {
+            for (i in m.outline.indices step 2) {
+                assertTrue(m.outline[i] in (10f - 60f)..(10f + 512f + 60f))
+                assertTrue(m.outline[i + 1] in (20f - 60f)..(20f + 512f + 60f))
+            }
+        }
+        // Lo que más baja es el suelo de la caja (y = 100).
+        val bottom = marks.maxOf { m -> (1 until m.outline.size step 2).maxOf { m.outline[it] } }
+        assertTrue(bottom in (20f + 512f - 15f)..(20f + 512f + 15f))
+    }
+
+    @Test
+    fun theSecondRoundShowsClaudeItsDrawing() {
+        val d = drawing(cat)
+        val review = DrawingFormat.review(NewSceneThing("강아지", "cachorro"), DrawingFormat.toJson(d))
+        assertTrue(review.startsWith("The image above is how your drawing of «강아지» (cachorro) renders"))
+        assertTrue(review.contains("say «cachorro» at a glance"))
+        assertTrue(review.endsWith(DrawingFormat.toJson(d).toString()))
+        val content = JSONArray().put(ClaudeProtocol.imageBlock(byteArrayOf(1, 2, 3))).put(ClaudeProtocol.textBlock(review))
+        val body = ClaudeProtocol.request("claude-sonnet-5-5", DrawingFormat.system, content, DrawingFormat.schema(), 16_000)
+        val blocks = body.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+        val source = blocks.getJSONObject(0).getJSONObject("source")
+        assertEquals("image", blocks.getJSONObject(0).getString("type"))
+        assertEquals("base64", source.getString("type"))
+        assertEquals("image/png", source.getString("media_type"))
+        assertEquals("AQID", source.getString("data"))
+        assertEquals(review, blocks.getJSONObject(1).getString("text"))
+    }
+
+    @Test
     fun theRequestCarriesTheSentenceAndWhatAlreadyExists() {
         val req = DrawingFormat.request(NewSceneThing("등대", "faro"), "바다 옆에\n등대가 있다", listOf("mar", "gato"))
         assertTrue(req.startsWith("Draw: «등대» (faro)."))
         assertTrue(req.contains("«바다 옆에 등대가 있다»"))
         assertTrue(req.contains("do not repeat these): mar, gato."))
         assertNull(Regex("\\n\\n").find(req))
-        assertNotNull(DrawingFormat.system.lines().firstOrNull { it.startsWith("EXAMPLE") })
+        assertNotNull(DrawingFormat.system.lines().firstOrNull { it.startsWith("EXAMPLE 1") })
+        assertNotNull(DrawingFormat.system.lines().firstOrNull { it.startsWith("EXAMPLE 2") })
     }
 }

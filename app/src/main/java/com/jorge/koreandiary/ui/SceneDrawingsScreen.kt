@@ -244,7 +244,12 @@ private fun NewDrawingCard(
         words = d.keys,
         dark = dark,
         paper = paper,
-        paint = { w, h -> SceneArt.paint(emptyList(), w, h, PREVIEW_TIME, listOf(d)) },
+        // El dibujo solo, en su caja y llenando la tarjeta: en la franja entera se vería chiquito.
+        paint = { w, _ ->
+            val stage = w * STAGE
+            val side = stage * 0.92f
+            d.boxMarks(side, (w - side) / 2, stage * 0.04f, PREVIEW_TIME)
+        },
         key = d.id + d.shapes.hashCode(),
     ) {
         Text(

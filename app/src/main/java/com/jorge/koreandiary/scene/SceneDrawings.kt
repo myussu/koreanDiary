@@ -1,7 +1,9 @@
 package com.jorge.koreandiary.scene
 
 import android.app.Application
+import android.util.Log
 import com.jorge.koreandiary.ai.ClaudeClient
+import com.jorge.koreandiary.ai.ClaudeProtocol
 import com.jorge.koreandiary.ai.HttpProviderException
 import com.jorge.koreandiary.scene.art.CustomDrawing
 import com.jorge.koreandiary.scene.art.DrawingFormat
@@ -44,7 +46,7 @@ data class PendingThing(val thing: NewSceneThing, val context: String)
 
 /**
  * Los dibujos nuevos de la escena: lo que apareció al revisar y la app no sabía pintar, dibujado por
- * Claude. Un archivo por dibujo en `filesDir/scene_drawings/<id>.json` (el mismo JSON que devolvió
+ * Claude en dos vueltas (dibuja; mira la imagen de su dibujo y lo corrige). Un archivo por dibujo en `filesDir/scene_drawings/<id>.json` (el mismo JSON que devolvió
  * Claude, más `meta`) y lo que espera en `pending.json`. Vive en el `AppContainer`: dibujar tarda unos
  * segundos y sigue aunque salgas de la página. La carpeta entra en la copia de seguridad.
  */
@@ -184,9 +186,26 @@ class SceneDrawings(
         val client = client() ?: throw IllegalStateException("Falta la clave de Claude: ponla en Ajustes → «Dibujos nuevos (Claude)».")
         if (usedToday() >= DAILY_LIMIT) throw IllegalStateException("Ya se hicieron $DAILY_LIMIT dibujos hoy (el límite cuida tus créditos). Mañana sigue.")
         val existing = (SceneDictionary.elements.map { it.name } + _saved.value.map { it.drawing.name }).distinct()
-        val reply = client.json(DrawingFormat.system, DrawingFormat.request(thing, context, existing), DrawingFormat.schema())
+        val first = client.json(DrawingFormat.system, DrawingFormat.request(thing, context, existing), DrawingFormat.schema())
         settings.registerUse(USAGE)
-        var drawing = DrawingFormat.parse(reply.json, thing.ko, thing.es)
+        var drawing = DrawingFormat.parse(first.json, thing.ko, thing.es)
+        var tokensIn = first.inputTokens
+        var tokensOut = first.outputTokens
+        // Segunda vuelta: Claude mira cómo quedó y lo corrige. Si falla, se queda el primero.
+        try {
+            val png = withContext(Dispatchers.Default) { DrawingSnapshot.png(drawing) }
+            val content = JSONArray()
+                .put(ClaudeProtocol.imageBlock(png))
+                .put(ClaudeProtocol.textBlock(DrawingFormat.review(thing, DrawingFormat.toJson(drawing))))
+            val second = client.json(DrawingFormat.system, content, DrawingFormat.schema())
+            tokensIn += second.inputTokens
+            tokensOut += second.outputTokens
+            drawing = DrawingFormat.parse(second.json, thing.ko, thing.es)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("SceneDrawings", "No se pudo revisar el dibujo; queda el primero.", e)
+        }
         lock.withLock {
             drawing = if (replace != null) {
                 // Mismo id y las palabras de antes más las nuevas.
@@ -198,7 +217,7 @@ class SceneDrawings(
                 while (id in taken || SceneDictionary.element(id) != null) id = "${drawing.id}_${n++}"
                 if (id == drawing.id) drawing else copyOf(drawing, id = id, keys = drawing.keys)
             }
-            val entry = SavedDrawing(drawing, System.currentTimeMillis(), model(), reply.inputTokens, reply.outputTokens, context.take(400))
+            val entry = SavedDrawing(drawing, System.currentTimeMillis(), model(), tokensIn, tokensOut, context.take(400))
             withContext(Dispatchers.IO) {
                 dir.mkdirs()
                 val json = DrawingFormat.toJson(drawing).put(

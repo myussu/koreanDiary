@@ -13,8 +13,12 @@ import org.json.JSONObject
  */
 class ClaudeClient(private val apiKey: String, private val model: String) {
 
-    /** Un pedido con instrucciones fijas [system] y respuesta JSON según [schema]. */
-    suspend fun json(system: String, user: String, schema: JSONObject, maxTokens: Int = 8000): ClaudeReply = withContext(Dispatchers.IO) {
+    /**
+     * Un pedido con instrucciones fijas [system] y respuesta JSON según [schema]. [user] es texto o
+     * una lista de bloques (`ClaudeProtocol.imageBlock`, `textBlock`). El límite deja lugar para que
+     * piense antes de responder (el pensamiento cuenta como salida).
+     */
+    suspend fun json(system: String, user: Any, schema: JSONObject, maxTokens: Int = 16_000): ClaudeReply = withContext(Dispatchers.IO) {
         val res = postJson(ENDPOINT, ClaudeProtocol.headers(apiKey), ClaudeProtocol.request(model, system, user, schema, maxTokens), "Claude", 180_000)
         ClaudeProtocol.reply(res)
     }
@@ -46,12 +50,24 @@ object ClaudeProtocol {
 
     fun headers(apiKey: String): Map<String, String> = mapOf("x-api-key" to apiKey, "anthropic-version" to API_VERSION)
 
-    fun request(model: String, system: String, user: String, schema: JSONObject, maxTokens: Int): JSONObject = JSONObject()
+    /** [user]: texto o un `JSONArray` de bloques. */
+    fun request(model: String, system: String, user: Any, schema: JSONObject, maxTokens: Int): JSONObject = JSONObject()
         .put("model", model)
         .put("max_tokens", maxTokens)
         .put("system", system)
         .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
         .put("output_config", JSONObject().put("format", JSONObject().put("type", "json_schema").put("schema", schema)))
+
+    fun textBlock(text: String): JSONObject = JSONObject().put("type", "text").put("text", text)
+
+    /** Una imagen PNG para que Claude la mire (va antes del texto que habla de ella). */
+    fun imageBlock(png: ByteArray): JSONObject = JSONObject()
+        .put("type", "image")
+        .put(
+            "source",
+            JSONObject().put("type", "base64").put("media_type", "image/png")
+                .put("data", java.util.Base64.getEncoder().encodeToString(png)),
+        )
 
     /** El JSON del bloque de texto. Lanza con un mensaje claro si se cortó, se negó o no es JSON. */
     fun reply(res: JSONObject): ClaudeReply {

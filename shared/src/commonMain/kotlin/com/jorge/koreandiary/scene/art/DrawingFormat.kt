@@ -172,15 +172,24 @@ object DrawingFormat {
     val system: String = """
         You draw small illustrations for a Korean handwriting diary app. At the bottom of each page there is a strip with a watercolor scene that reacts to what the student writes (sea, trees, sun, rain...). You add new things to that scene: one drawing per request, which the app paints with soft brush strokes and a watercolor filter, in the same hand as the existing drawings.
 
-        THE BOX: draw inside a 100 x 100 box. x goes from 0 (left) to 100 (right); y goes from 0 (top) to 100 (bottom). y = 100 is where the thing rests: the ground for things that stand, the waterline for things on the water. Center the drawing horizontally around x = 50 and use most of the box. Side or three-quarter view, simple iconic silhouette that still reads at 100 pixels. No text, no letters, no outlines around everything, no detailed faces (a dot for an eye is enough).
+        GOAL: anyone must recognize the thing at a glance, small (about 250 px wide on a phone) and through a watercolor filter that softens edges and wobbles them a few pixels. So: one clear iconic silhouette in the view where it is most recognizable (usually side view); its defining features big and a little exaggerated (a puppy: big round head, floppy ears, snout, short thick legs, little tail; a lighthouse: tall tapered tower, stripes, lamp on top); solid shapes; nothing thinner than w 3 except whiskers; eyes at least r 2.5. Avoid piles of small overlapping blobs: they melt into one stain. No text, no outline around everything, no detailed faces.
+
+        HOW TO BUILD IT:
+        1. Plan the silhouette in the box first: where the main body sits, how tall it is, where every part attaches. Use most of the box.
+        2. Main masses as washes whose points follow the real outline (8 to 20 points; the app smooths corners, so put two close points where you want a corner).
+        3. Legs, poles, stems and handles as thick strokes (legs w 5 to 9) that reach y = 100 when the thing stands.
+        4. The defining features: ears, snout, tail, roof, wheels, petals...
+        5. One or two shading blobs in a darker tone (a 0.12 to 0.2), then the small dark details last (eye, nose).
+
+        THE BOX: 100 x 100. x goes from 0 (left) to 100 (right); y from 0 (top) to 100 (bottom). y = 100 is where the thing rests: the ground for things that stand, the waterline for things on the water. Center it around x = 50.
 
         SHAPES (each has a color key "c" and pigment "a" from 0.05 to 0.9):
-        - "wash": an area of color. "pts" is the outline, at least 3 points, smoothed by the app (corners come out round, so add points where you want a corner).
+        - "wash": an area of color. "pts" is the outline, at least 3 points, smoothed by the app.
         - "blob": a round touch at "x","y" with radius "r" (box units); "sq" squashes it (1 = round, 0.5 = flat), "ang" rotates it in radians.
-        - "stroke": a brush stroke along "pts" (at least 3 points) with width "w" (box units, 1-8 usually); it starts thin and ends thinner, like a real brush.
-        Shapes are painted in order: big washes first, then shading, then details and strokes. Use 6 to 30 shapes. Main bodies: wash with a 0.45-0.7. Shading and halos: 0.12-0.25. Strokes: 0.5-0.75.
+        - "stroke": a brush stroke along "pts" (at least 3 points) with width "w" (box units); it starts thin and ends thinner, like a real brush.
+        Shapes are painted in order. Use 8 to 30 shapes. Main bodies: a 0.55 to 0.75. Shading and halos: 0.12 to 0.25. Strokes: 0.55 to 0.8.
 
-        COLORS: 2 to 5 colors, each with "light" (for cream paper #faf7ee) and "dark" (for near-black paper #20201e). Muted watercolor tones, never neon. "light" must be mid-tone so it shows on cream (not pale); "dark" must be a lighter, softer version so it shows on black. Existing scene colors (light/dark) for harmony: sea #5fa8d8/#78b8e0, grass #8dbf5a/#a6d27a, bark #7a5a3c/#b08a66, sun #f6c453/#fbe3a0, stone #9aa3ad/#8e979f.
+        COLORS: 2 to 5 colors, each with "light" (for cream paper #faf7ee) and "dark" (for near-black paper #20201e). Muted watercolor tones, never neon. "light" must be mid-tone so it shows on cream (not pale); "dark" a lighter, softer version so it shows on black. Use a clearly darker tone for details than for the body. Existing scene colors (light/dark) for harmony: sea #5fa8d8/#78b8e0, grass #8dbf5a/#a6d27a, bark #7a5a3c/#b08a66, sun #f6c453/#fbe3a0, stone #9aa3ad/#8e979f.
 
         PLACE ("zone"): GROUND (stands in front: animals, people, objects, small plants), HORIZON (behind, on land or water: buildings, boats, big trees, rocks), SKY (high up: birds, kites, balloons, planes), AIR (small things floating all over: butterflies, fireflies, bubbles). "size": SMALL (cat, bird, flower), MEDIUM (bicycle, bench, dog), LARGE (lighthouse, house, boat).
 
@@ -188,9 +197,30 @@ object DrawingFormat {
 
         WORDS: "keys" are the Korean nouns that make it appear when the student writes them: the dictionary noun first (고양이), then up to 3 common variants or synonyms (냥이), hangul only, no particles, no verbs. "name" is the name in Spanish, lowercase (gato). "id" is a short English slug in lowercase with underscores (cat).
 
-        EXAMPLE (a sitting cat whose tail sways):
-        {"id":"cat","name":"gato","keys":["고양이","냥이"],"zone":"GROUND","size":"SMALL","motion":"NONE","count":1,"colors":[{"key":"fur","light":"#8a7461","dark":"#d8c2a8"},{"key":"fur_dark","light":"#5e4c3f","dark":"#a08a74"}],"shapes":[{"k":"wash","pts":[[38,100],[34,90],[36,76],[42,64],[50,58],[60,60],[68,70],[72,84],[72,100]],"c":"fur","a":0.67},{"k":"blob","x":62,"y":80,"r":11,"sq":1.25,"ang":0.3,"c":"fur_dark","a":0.16},{"k":"blob","x":40,"y":50,"r":13,"sq":0.92,"ang":0,"c":"fur","a":0.72},{"k":"wash","pts":[[29,46],[30,30],[39,40]],"c":"fur","a":0.72},{"k":"wash","pts":[[42,38],[48,27],[51,41]],"c":"fur","a":0.72},{"k":"stroke","pts":[[44,72],[43,86],[42,99]],"w":6,"c":"fur_dark","a":0.32},{"k":"stroke","pts":[[70,97],[83,95],[89,85],[86,72]],"w":5.5,"c":"fur","a":0.72,"move":"SWAY"},{"k":"blob","x":35,"y":49,"r":1.7,"sq":1,"ang":0,"c":"fur_dark","a":0.75}]}
+        EXAMPLE 1 (a sitting cat whose tail sways):
+        {"id":"cat","name":"gato","keys":["고양이","냥이"],"zone":"GROUND","size":"SMALL","motion":"NONE","count":1,"colors":[{"key":"fur","light":"#8a7461","dark":"#d8c2a8"},{"key":"fur_dark","light":"#5e4c3f","dark":"#a08a74"}],"shapes":[{"k":"wash","pts":[[38,100],[34,90],[36,76],[42,64],[50,58],[60,60],[68,70],[72,84],[72,100]],"c":"fur","a":0.67},{"k":"blob","x":62,"y":80,"r":11,"sq":1.25,"ang":0.3,"c":"fur_dark","a":0.16},{"k":"blob","x":40,"y":50,"r":13,"sq":0.92,"ang":0,"c":"fur","a":0.72},{"k":"wash","pts":[[29,46],[30,30],[39,40]],"c":"fur","a":0.72},{"k":"wash","pts":[[42,38],[48,27],[51,41]],"c":"fur","a":0.72},{"k":"stroke","pts":[[44,72],[43,86],[42,99]],"w":6,"c":"fur_dark","a":0.32},{"k":"stroke","pts":[[70,97],[83,95],[89,85],[86,72]],"w":5.5,"c":"fur","a":0.72,"move":"SWAY"},{"k":"blob","x":35,"y":49,"r":2.5,"sq":1,"ang":0,"c":"fur_dark","a":0.8}]}
+
+        EXAMPLE 2 (a standing dog, side view, whose tail sways: body wash, four thick legs to the ground, big head, ear, light snout, dark eye and nose):
+        {"id":"dog","name":"perro","keys":["개","강아지"],"zone":"GROUND","size":"SMALL","motion":"NONE","count":1,"colors":[{"key":"fur","light":"#c08a52","dark":"#dcae7c"},{"key":"ear","light":"#7a5232","dark":"#b48660"},{"key":"belly","light":"#ead2b0","dark":"#f0dcc0"},{"key":"ink","light":"#3a2a20","dark":"#2a1e16"}],"shapes":[{"k":"wash","pts":[[30,62],[34,55],[44,52],[58,52],[70,55],[76,62],[77,72],[72,80],[60,82],[44,82],[33,79],[28,71]],"c":"fur","a":0.72},{"k":"stroke","pts":[[36,76],[36,88],[36,99]],"w":8,"c":"fur","a":0.8},{"k":"stroke","pts":[[46,79],[46,90],[46,99]],"w":8,"c":"fur","a":0.8},{"k":"stroke","pts":[[62,79],[62,90],[62,99]],"w":8,"c":"fur","a":0.8},{"k":"stroke","pts":[[71,76],[71,88],[71,99]],"w":8,"c":"fur","a":0.8},{"k":"stroke","pts":[[76,62],[83,55],[87,46]],"w":5,"c":"fur","a":0.8,"move":"SWAY"},{"k":"blob","x":28,"y":44,"r":17,"sq":0.95,"ang":0,"c":"fur","a":0.78},{"k":"wash","pts":[[14,46],[8,47],[5,52],[8,57],[15,58],[22,55],[22,48]],"c":"belly","a":0.8},{"k":"wash","pts":[[33,32],[41,30],[45,38],[44,52],[39,57],[34,50],[32,40]],"c":"ear","a":0.78},{"k":"blob","x":54,"y":74,"r":9,"sq":0.6,"ang":0,"c":"ear","a":0.18},{"k":"blob","x":22,"y":40,"r":2.8,"sq":1,"ang":0,"c":"ink","a":0.85},{"k":"blob","x":6,"y":50,"r":3,"sq":0.8,"ang":0,"c":"ink","a":0.85},{"k":"stroke","pts":[[8,56],[12,59],[17,58]],"w":1.6,"c":"ink","a":0.6}]}
+
+        EXAMPLE 3 (a lighthouse on rocks whose lamp glows):
+        {"id":"lighthouse","name":"faro","keys":["등대"],"zone":"HORIZON","size":"LARGE","motion":"NONE","count":1,"colors":[{"key":"wall","light":"#d6cdbb","dark":"#d8d0bf"},{"key":"stripe","light":"#b5544a","dark":"#d07a6e"},{"key":"roof","light":"#4f5a63","dark":"#9aa7b1"},{"key":"glow","light":"#f0c24a","dark":"#f5d77a"},{"key":"rock","light":"#8d877c","dark":"#a8a196"}],"shapes":[{"k":"blob","x":50,"y":25,"r":14,"sq":1,"ang":0,"c":"glow","a":0.14,"move":"TWINKLE"},{"k":"wash","pts":[[38,96],[38.5,94],[43,31],[43.5,30],[56.5,30],[57,31],[61.5,94],[62,96]],"c":"wall","a":0.6},{"k":"wash","pts":[[39.6,80],[40.6,68],[59.4,68],[60.4,80]],"c":"stripe","a":0.6},{"k":"wash","pts":[[41.4,56],[42.3,45],[57.7,45],[58.6,56]],"c":"stripe","a":0.6},{"k":"wash","pts":[[45,30],[45,20],[55,20],[55,30]],"c":"glow","a":0.7,"move":"TWINKLE"},{"k":"stroke","pts":[[39,30.5],[50,30],[61,30.5]],"w":3,"c":"roof","a":0.65},{"k":"wash","pts":[[42,20.5],[50,10],[58,20.5]],"c":"roof","a":0.65},{"k":"wash","pts":[[47,96],[47,88],[50,86],[53,88],[53,96]],"c":"roof","a":0.4},{"k":"wash","pts":[[20,100],[25,92],[36,88],[50,91],[64,87],[75,93],[80,100]],"c":"rock","a":0.55}]}
     """.trimIndent()
+
+    /**
+     * La segunda vuelta: Claude mira cómo se ve su dibujo (la imagen va antes de este texto) y lo
+     * corrige. Dibujar a ciegas con coordenadas es difícil; con la imagen ve lo que falta o se empasta.
+     */
+    fun review(thing: NewSceneThing, drawing: JSONObject): String = buildString {
+        append("The image above is how your drawing of «").append(thing.ko).append("» (").append(thing.es).append(") renders: ")
+        append("plain fills on cream paper, the 100 x 100 box at 512 px; the thin grey line is y = 100. ")
+        append("In the app it is shown much smaller (about 250 px) through a watercolor filter that softens and wobbles edges, so thin or tiny details disappear.\n\n")
+        append("Look at the image as someone who has not seen the JSON. Would they say «").append(thing.es).append("» at a glance? ")
+        append("Check the silhouette and proportions; parts that are missing, detached or in the wrong place; parts that melt together into a stain; ")
+        append("legs that do not reach the ground; colors too pale for the paper; a drawing too small for the box.\n\n")
+        append("Then return the complete improved drawing in the same format, with every field. Keep what works; if it already reads clearly, make only small fixes.\n\n")
+        append("Your drawing:\n").append(drawing.toString())
+    }
 
     /** El pedido de un dibujo: qué es y dónde apareció (la frase ayuda: un faro en las rocas, un gato dormido). */
     fun request(thing: NewSceneThing, context: String, existing: List<String>): String = buildString {
