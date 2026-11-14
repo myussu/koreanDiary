@@ -216,8 +216,8 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
         Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper)) {
             // Escena viva: detrás del lienzo, así la tinta queda siempre encima con su contraste.
-            if (isScene && settings.liveScene && state.sceneElements.isNotEmpty()) {
-                SceneVignette(state.sceneElements, dark = paper.background.luminance() < 0.5f, modifier = Modifier.fillMaxSize())
+            if (isScene && settings.liveScene && (state.sceneElements.isNotEmpty() || state.sceneMood != null)) {
+                SceneVignette(state.sceneElements, state.sceneMood, dark = paper.background.luminance() < 0.5f, modifier = Modifier.fillMaxSize())
             }
             InkCanvas(
                 strokes = state.strokes,

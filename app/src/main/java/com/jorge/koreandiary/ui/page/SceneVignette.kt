@@ -1,34 +1,44 @@
 package com.jorge.koreandiary.ui.page
 
+import android.graphics.RuntimeShader
+import android.os.Build
 import android.provider.Settings
+import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.SceneElement
+import com.jorge.koreandiary.scene.SceneLayout
+import com.jorge.koreandiary.scene.SceneMaterial
+import com.jorge.koreandiary.scene.SceneMoods
 import com.jorge.koreandiary.scene.SceneMotion
+import com.jorge.koreandiary.scene.SceneShaders
+import com.jorge.koreandiary.scene.SceneSide
 import com.jorge.koreandiary.scene.SceneZone
 import com.jorge.koreandiary.ui.ScenePalette
 import kotlinx.coroutines.launch
@@ -40,14 +50,16 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * Escena viva: los bordes de la página se llenan con lo que escribes, elemento por elemento.
+ * Escena viva: los bordes de la página se llenan con lo que escribes, elemento por elemento, y la luz
+ * toma el tono de la escena ([mood], lo lee la IA al revisar o en «¿Cómo digo?»).
  * Va DETRÁS del lienzo (la tinta queda siempre encima, con su contraste) y vive junto a los bordes:
- * el suelo abajo, el horizonte a los lados, el cielo arriba y el aire por todo el marco. El centro
- * solo cambia de tono muy apenas. Cada elemento entra de a poco y se mueve solo si el sistema tiene
- * las animaciones encendidas.
+ * el suelo abajo, el horizonte a los lados, el cielo arriba y el aire por todo el marco
+ * ([SceneLayout]). Desde Android 13 cada elemento lo pinta un sombreador ([SceneShaders]); antes, o
+ * si un sombreador no compila en este celular, se dibuja con figuras simples. Cada elemento entra de
+ * a poco y todo se mueve solo si el sistema tiene las animaciones encendidas.
  */
 @Composable
-fun SceneVignette(elements: List<SceneElement>, dark: Boolean, modifier: Modifier = Modifier) {
+fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val motionOn = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
@@ -65,23 +77,204 @@ fun SceneVignette(elements: List<SceneElement>, dark: Boolean, modifier: Modifie
             }
         }
     }
-    val time: State<Float> = if (motionOn) {
-        rememberInfiniteTransition(label = "escena viva").animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(CYCLE_MS, easing = LinearEasing)),
-            label = "tiempo",
-        )
-    } else {
-        remember { mutableFloatStateOf(0f) }
+    // El tono cambia despacio: el nuevo aparece mientras el anterior se apaga.
+    val moods = remember { mutableStateMapOf<String, MoodLayer>() }
+    LaunchedEffect(mood) {
+        if (mood != null) {
+            val layer = moods.getOrPut(mood.id) { MoodLayer(mood, Animatable(if (motionOn) 0f else 1f)) }
+            layer.reading = mood
+            launch { layer.alpha.animateTo(1f, tween(MOOD_FADE_MS)) }
+        }
+        moods.values.filter { it.reading.id != mood?.id }.forEach { old ->
+            launch {
+                old.alpha.animateTo(0f, tween(MOOD_FADE_MS))
+                if (moods[old.reading.id] === old && old.alpha.value == 0f) moods.remove(old.reading.id)
+            }
+        }
+    }
+    val time = rememberSceneTime(motionOn)
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val cache = remember { SceneShaderCache() }
+        val keys = elements.mapNotNull { e -> SceneLayout.look(e.id)?.let { e.id to it.material } } +
+            moods.keys.map { MOOD_KEY + it to SceneMaterial.MOOD }
+        if (cache.prepare(keys)) {
+            ShaderScene(elements, moods.values.toList(), appear, time, dark, cache, modifier)
+            return
+        }
+    }
+    FigureScene(elements, moods.values.toList(), appear, time, dark, modifier)
+}
+
+/** Un tono en pantalla y cuánto se ve (sube al llegar, baja cuando lo reemplaza otro). */
+private class MoodLayer(var reading: MoodReading, val alpha: Animatable<Float, AnimationVector1D>)
+
+private const val MOOD_FADE_MS = 2_500
+private const val MOOD_KEY = "tono:"
+
+/**
+ * Segundos para los sombreadores, a unos 30 cuadros por segundo: el movimiento es lento y así la GPU
+ * trabaja la mitad o menos (las pantallas van a 60–120). Vuelve a cero cada [TIME_WRAP_S] para no
+ * perder precisión en la GPU. Sin animaciones, un instante fijo.
+ */
+@Composable
+private fun rememberSceneTime(motionOn: Boolean): FloatState {
+    val time = remember { mutableFloatStateOf(STILL_TIME_S) }
+    if (motionOn) {
+        LaunchedEffect(Unit) {
+            var start = -1L
+            var last = 0L
+            while (true) {
+                withFrameNanos { now ->
+                    if (start < 0) start = now
+                    if (now - last >= FRAME_NANOS) {
+                        last = now
+                        time.floatValue = ((now - start) / 1_000_000_000.0 % TIME_WRAP_S).toFloat() + STILL_TIME_S
+                    }
+                }
+            }
+        }
+    }
+    return time
+}
+
+private const val FRAME_NANOS = 33_000_000L
+private const val TIME_WRAP_S = 600.0
+private const val STILL_TIME_S = 3f
+
+// ---------- Con sombreadores (Android 13+) ----------
+
+/** Un sombreador compilado, su pincel y los uniformes que este celular no reconoce (se saltan). */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class SceneShader(source: String) {
+    val shader = RuntimeShader(source)
+    val brush = ShaderBrush(shader)
+    private val missing = HashSet<String>()
+
+    private inline fun safe(name: String, set: () -> Unit) {
+        if (name in missing) return
+        try {
+            set()
+        } catch (e: IllegalArgumentException) {
+            missing += name
+        }
     }
 
+    fun set(
+        size: Size, box: Rect, side: SceneSide, edge: Float, time: Float, alpha: Float, seed: Float, kind: Int,
+        dark: Boolean, param0: Float, param1: Float, color: Color, color2: Color,
+    ) {
+        safe("uSize") { shader.setFloatUniform("uSize", size.width, size.height) }
+        safe("uBox") { shader.setFloatUniform("uBox", box.left, box.top, box.right, box.bottom) }
+        safe("uSide") { shader.setFloatUniform("uSide", side.ordinal.toFloat()) }
+        safe("uEdge") { shader.setFloatUniform("uEdge", edge) }
+        safe("uTime") { shader.setFloatUniform("uTime", time) }
+        safe("uAlpha") { shader.setFloatUniform("uAlpha", alpha) }
+        safe("uSeed") { shader.setFloatUniform("uSeed", seed) }
+        safe("uKind") { shader.setFloatUniform("uKind", kind.toFloat()) }
+        safe("uDark") { shader.setFloatUniform("uDark", if (dark) 1f else 0f) }
+        safe("uParam") { shader.setFloatUniform("uParam", param0, param1, 0f, 0f) }
+        safe("uColor") { shader.setColorUniform("uColor", color.toArgb()) }
+        safe("uColor2") { shader.setColorUniform("uColor2", color2.toArgb()) }
+    }
+}
+
+/**
+ * Un sombreador por elemento (y por tono), compilado la primera vez que aparece. Si uno no compila
+ * en este celular, la escena entera pasa a las figuras simples.
+ */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class SceneShaderCache {
+    private val shaders = HashMap<String, SceneShader>()
+    private var failed = false
+
+    fun prepare(keys: List<Pair<String, SceneMaterial>>): Boolean {
+        if (failed) return false
+        for ((key, material) in keys) {
+            if (key in shaders) continue
+            try {
+                shaders[key] = SceneShader(SceneShaders.source(material))
+            } catch (e: RuntimeException) {
+                Log.w("SceneVignette", "No compiló el sombreador $material; uso figuras simples.", e)
+                failed = true
+                return false
+            }
+        }
+        return true
+    }
+
+    operator fun get(key: String): SceneShader? = shaders[key]
+}
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun ShaderScene(
+    elements: List<SceneElement>,
+    moods: List<MoodLayer>,
+    appear: Map<String, Animatable<Float, AnimationVector1D>>,
+    time: FloatState,
+    dark: Boolean,
+    cache: SceneShaderCache,
+    modifier: Modifier,
+) {
     Canvas(modifier.fillMaxSize().clipToBounds()) {
-        if (elements.isEmpty()) return@Canvas
-        val t = time.value
+        val t = time.floatValue
+        val edge = SceneLayout.edge(size.width, size.height)
+        val page = Rect(Offset.Zero, size)
+        // Primero la luz del tono; los elementos van encima.
+        for (layer in moods) {
+            val a = layer.alpha.value
+            val m = SceneMoods.byId(layer.reading.id) ?: continue
+            val s = cache[MOOD_KEY + m.id] ?: continue
+            if (a <= 0.001f) continue
+            val (c1, c2) = ScenePalette.mood(m.id)
+            s.set(size, page, SceneSide.FRAME, edge, t, a, 3f, m.particles.ordinal, dark, layer.reading.intensity, m.speed, c1, c2)
+            drawRect(s.brush)
+        }
+        for (slot in SceneLayout.slots(elements, size.width, size.height)) {
+            val s = cache[slot.element.id] ?: continue
+            val box = Rect(slot.left, slot.top, slot.right, slot.bottom)
+            val visible = box.intersect(page)
+            if (visible.isEmpty) continue
+            val key = slot.element.palette
+            s.set(
+                size, box, slot.side, edge, t, appear[slot.element.id]?.value ?: 1f, slot.seed, slot.look.kind, dark, 0f, 0f,
+                ScenePalette.color(key, dark), ScenePalette.secondary(key, dark),
+            )
+            drawRect(s.brush, topLeft = visible.topLeft, size = visible.size)
+        }
+    }
+}
+
+// ---------- Con figuras simples (antes de Android 13) ----------
+
+@Composable
+private fun FigureScene(
+    elements: List<SceneElement>,
+    moods: List<MoodLayer>,
+    appear: Map<String, Animatable<Float, AnimationVector1D>>,
+    time: FloatState,
+    dark: Boolean,
+    modifier: Modifier,
+) {
+    Canvas(modifier.fillMaxSize().clipToBounds()) {
+        val t = (time.floatValue % CYCLE_S) / CYCLE_S
         val edge = min(size.width, size.height) * 0.12f
         val glow = if (dark) 0.40f else 0.48f
         fun alphaOf(e: SceneElement) = appear[e.id]?.value ?: 1f
+
+        // El tono: luz del color del sentimiento que entra por los cuatro bordes.
+        for (layer in moods) {
+            val a = layer.alpha.value * layer.reading.intensity * (if (dark) 0.22f else 0.16f)
+            if (a <= 0.001f) continue
+            val c = ScenePalette.mood(layer.reading.id).first.copy(alpha = a)
+            val band = edge * 2f
+            drawRect(Brush.verticalGradient(listOf(c, Color.Transparent), startY = 0f, endY = band))
+            drawRect(Brush.verticalGradient(listOf(Color.Transparent, c), startY = size.height - band, endY = size.height))
+            drawRect(Brush.horizontalGradient(listOf(c, Color.Transparent), startX = 0f, endX = band))
+            drawRect(Brush.horizontalGradient(listOf(Color.Transparent, c), startX = size.width - band, endX = size.width))
+        }
+        if (elements.isEmpty()) return@Canvas
 
         // Un tono apenas perceptible del primer elemento en toda la hoja.
         val first = elements.first()
@@ -117,8 +310,8 @@ fun SceneVignette(elements: List<SceneElement>, dark: Boolean, modifier: Modifie
     }
 }
 
-/** Un ciclo de animación; los movimientos son múltiplos enteros para que el ciclo cierre sin saltos. */
-private const val CYCLE_MS = 12_000
+/** Un ciclo de las figuras simples; los movimientos son múltiplos enteros para que el ciclo cierre sin saltos. */
+private const val CYCLE_S = 12f
 private const val TAU = (2 * PI).toFloat()
 
 private fun frac(x: Float) = x - floor(x)

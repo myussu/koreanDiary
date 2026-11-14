@@ -1,5 +1,7 @@
 package com.jorge.koreandiary.ai
 
+import com.jorge.koreandiary.scene.MoodReading
+
 /** Respuesta de corrección: el contrato entre la app y cualquier proveedor. */
 data class CorrectionResponse(
     val sentences: List<SentenceDto>,
@@ -12,6 +14,8 @@ data class CorrectionResponse(
     val notes: List<MeaningNoteDto> = emptyList(),
     /** Escenas: elementos de la escena viva en la página (ids de `SceneDictionary`). */
     val sceneElements: List<String> = emptyList(),
+    /** Escenas: el sentimiento de la página (`SceneMoods`); null si es neutra o no vino. */
+    val sceneMood: MoodReading? = null,
 )
 
 /** Nota de sentido: [original] dice otra cosa que la idea; [suggestion] es cómo se diría lo que quería. */
@@ -96,6 +100,8 @@ data class HowToSayResponse(
     val hint: String? = null,
     /** Escenas: elementos de la escena viva en esta idea (ids de `SceneDictionary`). */
     val sceneElements: List<String> = emptyList(),
+    /** Escenas: el sentimiento de esta idea (`SceneMoods`); null si es neutra o no vino. */
+    val sceneMood: MoodReading? = null,
 ) {
     data class Phrase(val text: String, val grammar: List<String>)
 }

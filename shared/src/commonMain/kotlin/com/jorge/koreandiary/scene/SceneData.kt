@@ -24,7 +24,15 @@ data class SceneData(
      * que el diccionario no reconoce. Los del diccionario no se guardan: salen de la tinta.
      */
     val elements: List<String> = emptyList(),
+    /**
+     * El tono de la escena según la IA (al revisar o en «¿Cómo digo?»): la luz de los bordes. Se queda
+     * el último leído; una lectura sin tono no lo borra.
+     */
+    val mood: MoodReading? = null,
 ) {
+    fun withMood(reading: MoodReading?): SceneData =
+        if (reading == null || reading == mood) this else copy(mood = reading)
+
     /** Suma elementos sin repetir, manteniendo el orden en que aparecieron. */
     fun withElements(ids: List<String>): SceneData {
         val merged = (elements + ids.filter { SceneDictionary.element(it) != null }).distinct().takeLast(MAX_ELEMENTS)
@@ -44,6 +52,7 @@ data class SceneData(
         .put("ng", JSONArray(newGrammar))
         .put("ideas", JSONArray().apply { ideas.forEach { put(JSONObject().put("t", it.text).put("p", it.hints)) } })
         .put("els", JSONArray(elements))
+        .apply { mood?.let { put("tono", JSONObject().put("id", it.id).put("n", it.level)) } }
         .toString()
 
     companion object {
@@ -60,6 +69,7 @@ data class SceneData(
                 val ng = o.optJSONArray("ng")
                 val ideas = o.optJSONArray("ideas")
                 val els = o.optJSONArray("els")
+                val tono = o.optJSONObject("tono")
                 SceneData(
                     newGrammar = if (ng == null) emptyList() else (0 until ng.length()).map { ng.optInt(it, -1) }.filter { it >= 0 },
                     ideas = if (ideas == null) emptyList() else (0 until ideas.length()).mapNotNull { i ->
@@ -69,6 +79,7 @@ data class SceneData(
                     },
                     elements = if (els == null) emptyList() else (0 until els.length()).map { els.optString(it) }
                         .filter { SceneDictionary.element(it) != null }.distinct(),
+                    mood = tono?.let { SceneMoods.reading(it.optString("id"), it.optInt("n", 2)) },
                 )
             } catch (e: org.json.JSONException) {
                 SceneData()

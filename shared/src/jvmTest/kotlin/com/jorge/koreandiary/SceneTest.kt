@@ -11,6 +11,8 @@ import com.jorge.koreandiary.scene.SceneData
 import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneZone
 import com.jorge.koreandiary.scene.SceneIdea
+import com.jorge.koreandiary.scene.MoodReading
+import com.jorge.koreandiary.scene.SceneMoods
 import com.jorge.koreandiary.srs.SuggestionEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -207,6 +209,51 @@ class SceneTest {
         assertFalse(diary.contains("\"escena\""))
         assertFalse(diary.contains("LO QUE QUISO DECIR"))
         assertTrue(diary.lines().any { it.startsWith("4. \"mejoras\"") })
+    }
+
+    // ---------- Tono de la escena ----------
+
+    @Test
+    fun correctionReadsTheMood() {
+        val base = """{"oraciones": [{"n": 1, "texto": "여보의 손을 잡아요.", "tiempo": "presente"}]"""
+        assertEquals(MoodReading("love", 3), CorrectionParser.parse(base + """, "tono": {"id": "Love", "n": 3}}""").sceneMood)
+        // Solo el id: intensidad media. Neutro, desconocido o sin tono: nada.
+        assertEquals(MoodReading("joy", 2), CorrectionParser.parse(base + """, "tono": "joy"}""").sceneMood)
+        assertNull(CorrectionParser.parse(base + """, "tono": null}""").sceneMood)
+        assertNull(CorrectionParser.parse(base + """, "tono": {"id": "romance", "n": 2}}""").sceneMood)
+        assertNull(CorrectionParser.parse(base + "}").sceneMood)
+        // La intensidad se acota a 1..3.
+        assertEquals(MoodReading("calm", 3), CorrectionParser.parse(base + """, "tono": {"id": "calm", "n": 9}}""").sceneMood)
+        val how = HowToSayParser.parse("""{"tu": {"k": "손을 잡아요", "g": []}, "tono": {"id": "love", "n": 1}}""")
+        assertEquals(MoodReading("love", 1), how.sceneMood)
+    }
+
+    @Test
+    fun sceneKeepsTheLastMood() {
+        val love = SceneData().withMood(MoodReading("love", 2))
+        assertEquals(MoodReading("love", 2), love.mood)
+        // Una lectura sin tono no borra el que había.
+        assertEquals(love, love.withMood(null))
+        assertEquals(love, SceneData.parse(love.toJson()))
+        assertEquals(MoodReading("calm", 1), love.withMood(MoodReading("calm", 1)).mood)
+        // JSON viejo (sin tono) o con un tono que ya no existe.
+        assertNull(SceneData.parse("""{"ng":[1]}""").mood)
+        assertNull(SceneData.parse("""{"tono":{"id":"x","n":2}}""").mood)
+        assertTrue(SceneMoods.all.map { it.id }.distinct().size == SceneMoods.all.size)
+    }
+
+    @Test
+    fun promptsAskForTheMoodOnlyInScenes() {
+        val withIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true, ideas = listOf("tomo su mano"))
+        assertTrue(withIdeas.lines().any { it.startsWith("7. \"tono\"") })
+        assertTrue(withIdeas.contains("love (amor, ternura)"))
+        assertTrue(withIdeas.contains("\"tono\": {\"id\": \"love\", \"n\": 2}"))
+        val noIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true)
+        assertTrue(noIdeas.lines().any { it.startsWith("6. \"tono\"") })
+        assertFalse(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false).contains("\"tono\""))
+        val how = Prompts.howToSay("tomo su mano", "3A", 3, tiered = true)
+        assertTrue(how.lines().any { it.startsWith("8. \"tono\"") })
+        assertFalse(Prompts.howToSay("mañana voy", "3A", 3).contains("\"tono\""))
     }
 
     @Test

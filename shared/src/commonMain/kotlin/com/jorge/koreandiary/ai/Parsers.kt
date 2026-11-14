@@ -1,6 +1,8 @@
 package com.jorge.koreandiary.ai
 
+import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.SceneDictionary
+import com.jorge.koreandiary.scene.SceneMoods
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -90,7 +92,10 @@ object CorrectionParser {
         if (sentences.isEmpty() && corrections.isEmpty() && allUsed.isEmpty()) {
             throw ParseException("La respuesta no tiene oraciones, correcciones ni ítems usados.")
         }
-        return CorrectionResponse(sentences, corrections, allUsed, improvements, notes, sceneElements(json.optJSONArray("escena")))
+        return CorrectionResponse(
+            sentences, corrections, allUsed, improvements, notes,
+            sceneElements(json.optJSONArray("escena")), sceneMood(json.opt("tono")),
+        )
     }
 
     /** Lista "usados" (formato compacto f/t/ok o el anterior forma_base/resultado). La comparte el workbook. */
@@ -157,6 +162,16 @@ object ExplainParser {
         })
 }
 
+/**
+ * El tono que devolvió la IA: `{"id": "love", "n": 2}` o solo el id. Null si es neutro (null), si el
+ * id no está en `SceneMoods` o si no vino.
+ */
+internal fun sceneMood(value: Any?): MoodReading? = when (value) {
+    is JSONObject -> SceneMoods.reading(value.optString("id"), value.optInt("n", 2))
+    is String -> SceneMoods.reading(value, 2)
+    else -> null
+}
+
 /** Ids de la escena viva que devolvió la IA: solo los que la app sabe dibujar, sin repetir. */
 internal fun sceneElements(arr: JSONArray?): List<String> {
     if (arr == null) return emptyList()
@@ -179,7 +194,7 @@ object HowToSayParser {
             val f = o.str("f") ?: return@mapObjects null
             f to (o.str("s") ?: "")
         }
-        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words, hint = json.str("pista"), sceneElements = sceneElements(json.optJSONArray("esc")))
+        return HowToSayResponse(mine, natural, json.str("nota") ?: "", words, hint = json.str("pista"), sceneElements = sceneElements(json.optJSONArray("esc")), sceneMood = sceneMood(json.opt("tono")))
     }
 
     private fun phrase(o: JSONObject?): HowToSayResponse.Phrase? {

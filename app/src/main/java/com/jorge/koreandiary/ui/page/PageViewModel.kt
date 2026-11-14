@@ -31,6 +31,7 @@ import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
 import com.jorge.koreandiary.mascot.MascotMood
+import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.SceneData
 import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneElement
@@ -124,6 +125,8 @@ data class PageUiState(
     val refreshing: Boolean = false,
     /** Escenas: lo que se dibuja en los bordes, en el orden en que apareció. */
     val sceneElements: List<SceneElement> = emptyList(),
+    /** Escenas: el tono que leyó la IA; cambia la luz de los bordes. */
+    val sceneMood: MoodReading? = null,
     val phase: Phase = Phase.Writing,
     val message: String? = null,
     val canUndo: Boolean = false,
@@ -604,8 +607,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (isScene && idea != null) {
             val page = _state.value.page ?: return
             val scene = SceneData.parse(page.sceneJson)
-            // La idea dicha y lo que la IA vio en ella para la escena viva.
-            val updated = scene.withIdea(SceneIdea(idea, r.shown)).withElements(r.response.sceneElements)
+            // La idea dicha y lo que la IA vio en ella para la escena viva: elementos y tono.
+            val updated = scene.withIdea(SceneIdea(idea, r.shown)).withElements(r.response.sceneElements).withMood(r.response.sceneMood)
             if (updated != scene) {
                 persist { it.copy(sceneJson = updated.toJson()) }
                 publishScene()
@@ -689,11 +692,17 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private var detected: List<SceneElement> = emptyList()
     private var liveJob: Job? = null
 
-    /** Los bordes: lo del diccionario y lo que vio la IA, sin repetir, en el orden en que aparecieron. */
+    /**
+     * Los bordes: lo del diccionario y lo que vio la IA, sin repetir, en el orden en que aparecieron,
+     * y el último tono que leyó la IA.
+     */
     private fun publishScene() {
-        val ai = SceneData.parse(_state.value.page?.sceneJson).elements.mapNotNull { SceneDictionary.element(it) }
+        val scene = SceneData.parse(_state.value.page?.sceneJson)
+        val ai = scene.elements.mapNotNull { SceneDictionary.element(it) }
         val all = (detected + ai).distinctBy { it.id }.take(SceneData.MAX_ELEMENTS)
-        if (all != _state.value.sceneElements) _state.update { it.copy(sceneElements = all) }
+        if (all != _state.value.sceneElements || scene.mood != _state.value.sceneMood) {
+            _state.update { it.copy(sceneElements = all, sceneMood = scene.mood) }
+        }
     }
 
     /** Un rato después del último trazo (no en cada uno), se lee lo que cambió. */
@@ -860,7 +869,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         // El estado ya está en la base; esto lo refleja en pantalla y guarda la tinta más reciente.
         // En una escena, suma lo que la IA vio en la página a la escena viva.
         persist {
-            val scene = if (it.kind == PageKind.SCENE) SceneData.parse(it.sceneJson).withElements(response.sceneElements).toJson() else it.sceneJson
+            val scene = if (it.kind == PageKind.SCENE) {
+                SceneData.parse(it.sceneJson).withElements(response.sceneElements).withMood(response.sceneMood).toJson()
+            } else {
+                it.sceneJson
+            }
             it.copy(status = PageStatus.REVIEWED, sceneJson = scene)
         }
         if (isScene) publishScene()

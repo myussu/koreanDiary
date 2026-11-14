@@ -1,12 +1,20 @@
 package com.jorge.koreandiary.ai
 
 import com.jorge.koreandiary.scene.SceneDictionary
+import com.jorge.koreandiary.scene.SceneMoods
 
 /**
  * Prompts del documento de arquitectura. Están escritos para que cualquier LLM común
  * (Gemini, Claude, ChatGPT...) los siga y responda solo con JSON.
  */
 object Prompts {
+
+    /**
+     * Escenas: cómo leer el tono (en la revisión y en «¿Cómo digo?»). Es lo que se siente, no lo que
+     * pasa: cambia la luz de la escena viva.
+     */
+    private val MOOD_TASK = "el sentimiento que transmite, no lo que pasa (tomar la mano de alguien querido es una acción simple, pero el tono es amor). " +
+        "\"id\" de esta lista: ${SceneMoods.promptList()}; \"n\": 1 (apenas), 2 (claro) o 3 (muy fuerte). null si es neutro."
 
     /**
      * Prompt de corrección. Pensado para gastar pocos tokens: instrucciones compactas y
@@ -55,14 +63,14 @@ object Prompts {
                - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
                - "id": el de la lista de sugeridos si coincide; si no, null.
                - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
-            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].${if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""}${if (ideas.isNotEmpty()) "\n            5. \"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, []." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 6 else 5}. \"escena\": qué elementos de esta lista aparecen en la página, de lo más importante a lo menos (solo ids; [] si ninguno): ${SceneDictionary.promptList()}." else ""}
+            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].${if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""}${if (ideas.isNotEmpty()) "\n            5. \"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, []." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 6 else 5}. \"escena\": qué elementos de esta lista aparecen en la página, de lo más importante a lo menos (solo ids; [] si ninguno): ${SceneDictionary.promptList()}." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 7 else 6}. \"tono\": $MOOD_TASK" else ""}
 
             FORMATO:
             {
               "oraciones": [{"n": 1, "texto": "...", "tiempo": "pasado"}],
               "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "ortografia|particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": null}],
               "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}, {"f": "-어서", "t": "g", "ok": true, "id": null}],
-              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]${if (ideas.isNotEmpty()) ",\n              \"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]" else ""}${if (scene) ",\n              \"escena\": [\"sea\", \"sand\"]" else ""}
+              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]${if (ideas.isNotEmpty()) ",\n              \"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]" else ""}${if (scene) ",\n              \"escena\": [\"sea\", \"sand\"],\n              \"tono\": {\"id\": \"love\", \"n\": 2}" else ""}
             }
             """.trimIndent()
         )
@@ -99,11 +107,12 @@ object Prompts {
         if (tiered) {
             appendLine("6. \"pista\": cómo unir esas palabras SIN escribir la frase ni partes de ella en coreano: qué partícula lleva cada palabra (바람 + 이) y qué terminación lleva el verbo y por qué (쓰다듬다 en presente -어요). 1 o 2 frases en español. Es la ayuda intermedia antes de ver la frase.")
             appendLine("7. \"esc\": qué elementos de esta lista aparecen en la idea, de lo más importante a lo menos (solo ids de la lista; [] si ninguno): ${SceneDictionary.promptList()}.")
+            appendLine("8. \"tono\": $MOOD_TASK")
         }
         appendLine()
         appendLine("FORMATO:")
         append("{\"tu\": {\"k\": \"...\", \"g\": [\"-은\"]}, \"nat\": {\"k\": \"...\", \"g\": [\"-었던\"]}, \"nota\": \"...\", \"w\": [{\"f\": \"다니다\", \"s\": \"asistir\"}]")
-        appendLine(if (tiered) ", \"pista\": \"...\", \"esc\": [\"wind\", \"grass\"]}" else "}")
+        appendLine(if (tiered) ", \"pista\": \"...\", \"esc\": [\"wind\", \"grass\"], \"tono\": {\"id\": \"calm\", \"n\": 1}}" else "}")
     }
 
     /**
