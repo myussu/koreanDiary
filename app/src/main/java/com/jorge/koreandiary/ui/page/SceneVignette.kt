@@ -9,54 +9,55 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.SceneElement
-import com.jorge.koreandiary.scene.SceneLayout
 import com.jorge.koreandiary.scene.SceneMaterial
 import com.jorge.koreandiary.scene.SceneMoods
-import com.jorge.koreandiary.scene.SceneMotion
 import com.jorge.koreandiary.scene.SceneShaders
-import com.jorge.koreandiary.scene.SceneSide
-import com.jorge.koreandiary.scene.SceneZone
+import com.jorge.koreandiary.scene.art.Mark
+import com.jorge.koreandiary.scene.art.SceneArt
 import com.jorge.koreandiary.ui.ScenePalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.floor
-import kotlin.math.min
-import kotlin.math.sin
+import kotlinx.coroutines.withContext
 
 /**
- * Escena viva: los bordes de la página se llenan con lo que escribes, elemento por elemento, y la luz
- * toma el tono de la escena ([mood], lo lee la IA al revisar o en «¿Cómo digo?»).
- * Va DETRÁS del lienzo (la tinta queda siempre encima, con su contraste) y vive junto a los bordes:
- * el suelo abajo, el horizonte a los lados, el cielo arriba y el aire por todo el marco
- * ([SceneLayout]). Desde Android 13 cada elemento lo pinta un sombreador ([SceneShaders]); antes, o
- * si un sombreador no compila en este celular, se dibuja con figuras simples. Cada elemento entra de
- * a poco y todo se mueve solo si el sistema tiene las animaciones encendidas.
+ * Escena viva: lo que escribes aparece pintado a pincel en acuarela en una franja abajo de la hoja
+ * ([SceneArt]): el fondo de color, lo lejano, el agua y los árboles, el suelo y lo que cae o vuela.
+ * Arriba de la franja se escribe tranquilo. Encima, la luz del tono de la escena ([mood], lo lee la
+ * IA al revisar o en «¿Cómo digo?») sube desde abajo y respira.
+ *
+ * Va DETRÁS del lienzo: la tinta queda siempre encima. Desde Android 13 la capa de los dibujos pasa
+ * por el filtro de acuarela ([SceneMaterial.WATERCOLOR]) y el tono es un sombreador; antes, o si un
+ * sombreador no compila en este celular, los dibujos van sin filtro y el tono es un degradado.
+ * Cada elemento entra de a poco y todo se mueve solo si el sistema tiene las animaciones encendidas.
  */
 @Composable
 fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolean, modifier: Modifier = Modifier) {
@@ -94,28 +95,41 @@ fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolea
     }
     val time = rememberSceneTime(motionOn)
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        val cache = remember { SceneShaderCache() }
-        val keys = elements.mapNotNull { e -> SceneLayout.look(e.id)?.let { e.id to it.material } } +
-            moods.keys.map { MOOD_KEY + it to SceneMaterial.MOOD }
-        if (cache.prepare(keys)) {
-            ShaderScene(elements, moods.values.toList(), appear, time, dark, cache, modifier)
-            return
+    BoxWithConstraints(modifier.fillMaxSize().clipToBounds()) {
+        val width = constraints.maxWidth.toFloat()
+        val height = constraints.maxHeight.toFloat()
+        if (width <= 0f || height <= 0f) return@BoxWithConstraints
+        val stage = SceneArt.stageHeight(width, height)
+        val unit = SceneArt.unit(width, height)
+        val density = LocalDensity.current
+        val layers = moods.values.toList()
+        if (layers.isNotEmpty()) {
+            MoodLight(
+                layers, time, dark, unit,
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(with(density) { (stage * 1.25f).coerceAtMost(height).toDp() }),
+            )
+        }
+        if (elements.isNotEmpty()) {
+            ArtLayer(
+                elements, appear, time, dark, width, height,
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(with(density) { stage.toDp() }),
+            )
         }
     }
-    FigureScene(elements, moods.values.toList(), appear, time, dark, modifier)
 }
 
 /** Un tono en pantalla y cuánto se ve (sube al llegar, baja cuando lo reemplaza otro). */
 private class MoodLayer(var reading: MoodReading, val alpha: Animatable<Float, AnimationVector1D>)
 
 private const val MOOD_FADE_MS = 2_500
-private const val MOOD_KEY = "tono:"
+
+/** Cuánto se ve la capa de los dibujos: deja ver la tinta y el papel. */
+private const val ART_OPACITY = 0.72f
 
 /**
- * Segundos para los sombreadores, a unos 30 cuadros por segundo: el movimiento es lento y así la GPU
- * trabaja la mitad o menos (las pantallas van a 60–120). Vuelve a cero cada [TIME_WRAP_S] para no
- * perder precisión en la GPU. Sin animaciones, un instante fijo.
+ * Segundos para la escena, a unos 30 cuadros por segundo: el movimiento es lento y así se trabaja la
+ * mitad o menos (las pantallas van a 60–120). Vuelve a cero cada [TIME_WRAP_S] para no perder
+ * precisión. Sin animaciones, un instante fijo.
  */
 @Composable
 private fun rememberSceneTime(motionOn: Boolean): FloatState {
@@ -142,12 +156,101 @@ private const val FRAME_NANOS = 33_000_000L
 private const val TIME_WRAP_S = 600.0
 private const val STILL_TIME_S = 3f
 
-// ---------- Con sombreadores (Android 13+) ----------
+// ---------- Los dibujos a pincel ----------
 
-/** Un sombreador compilado, su pincel y los uniformes que este celular no reconoce (se saltan). */
+/**
+ * La franja de los dibujos. Las manchas se calculan fuera del hilo principal (para no trabar el
+ * lápiz) cada vez que avanza el tiempo; aquí solo se rellenan. Con el filtro de acuarela si se puede.
+ */
+@Composable
+private fun ArtLayer(
+    elements: List<SceneElement>,
+    appear: Map<String, Animatable<Float, AnimationVector1D>>,
+    time: FloatState,
+    dark: Boolean,
+    width: Float,
+    height: Float,
+    modifier: Modifier,
+) {
+    val marks = remember { mutableStateOf<List<Mark>>(emptyList()) }
+    LaunchedEffect(elements, width, height) {
+        snapshotFlow { time.floatValue }.collectLatest { t ->
+            val fades = elements.associate { it.id to (appear[it.id]?.value ?: 1f) }
+            marks.value = withContext(Dispatchers.Default) { SceneArt.paint(elements, width, height, t) { fades[it] ?: 1f } }
+        }
+    }
+    val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) remember(dark) { watercolorEffect(dark) } else null
+    // Sin filtro, el pigmento se ajusta a mano: un poco más de cuerpo en papel oscuro, como hace el filtro.
+    val alphaScale = if (effect != null) 1f else ART_OPACITY * (if (dark) 1.3f else 1f)
+    val paths = remember { ArrayList<Path>() }
+    Canvas(if (effect != null) modifier.graphicsLayer { renderEffect = effect } else modifier) {
+        val list = marks.value
+        list.forEachIndexed { i, m ->
+            val path = if (i < paths.size) paths[i].also { it.reset() } else Path().also { paths += it }
+            val o = m.outline
+            path.moveTo(o[0], o[1])
+            var k = 2
+            while (k + 1 < o.size) {
+                path.lineTo(o[k], o[k + 1])
+                k += 2
+            }
+            path.close()
+            drawPath(path, ScenePalette.watercolor(m.color, dark), alpha = (m.alpha * alphaScale).coerceIn(0f, 1f))
+        }
+    }
+}
+
+/** El filtro de acuarela como efecto de capa; null si no compila en este celular. */
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class SceneShader(source: String) {
-    val shader = RuntimeShader(source)
+private fun watercolorEffect(dark: Boolean): RenderEffect? = try {
+    val shader = RuntimeShader(SceneShaders.source(SceneMaterial.WATERCOLOR))
+    runCatching { shader.setFloatUniform("uAlpha", ART_OPACITY) }
+    runCatching { shader.setFloatUniform("uDark", if (dark) 1f else 0f) }
+    android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+} catch (e: RuntimeException) {
+    Log.w("SceneVignette", "No compiló el filtro de acuarela; los dibujos van sin filtro.", e)
+    null
+}
+
+// ---------- La luz del tono ----------
+
+@Composable
+private fun MoodLight(layers: List<MoodLayer>, time: FloatState, dark: Boolean, unit: Float, modifier: Modifier) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val shaders = remember { HashMap<String, MoodShader?>() }
+        // Se compila una vez por tono; si falla queda null y se usa el degradado.
+        layers.forEach { l -> if (!shaders.containsKey(l.reading.id)) shaders[l.reading.id] = MoodShader.create() }
+        val ready = layers.all { shaders[it.reading.id] != null }
+        if (ready) {
+            Canvas(modifier) {
+                val t = time.floatValue
+                for (layer in layers) {
+                    val a = layer.alpha.value
+                    val m = SceneMoods.byId(layer.reading.id) ?: continue
+                    val s = shaders[m.id] ?: continue
+                    if (a <= 0.001f) continue
+                    val (c1, c2) = ScenePalette.mood(m.id)
+                    s.set(size.width, size.height, unit * 0.12f, t, a, m.particles.ordinal, dark, layer.reading.intensity, m.speed, c1, c2)
+                    drawRect(s.brush)
+                }
+            }
+            return
+        }
+    }
+    // Sin sombreador: luz del color del tono que sube desde abajo.
+    Canvas(modifier) {
+        for (layer in layers) {
+            val a = layer.alpha.value * layer.reading.intensity * (if (dark) 0.22f else 0.16f)
+            if (a <= 0.001f) continue
+            val c = ScenePalette.mood(layer.reading.id).first.copy(alpha = a)
+            drawRect(Brush.verticalGradient(listOf(Color.Transparent, c), startY = size.height * 0.2f, endY = size.height))
+        }
+    }
+}
+
+/** El sombreador del tono, su pincel y los uniformes que este celular no reconoce (se saltan). */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class MoodShader private constructor(val shader: RuntimeShader) {
     val brush = ShaderBrush(shader)
     private val missing = HashSet<String>()
 
@@ -161,316 +264,26 @@ private class SceneShader(source: String) {
     }
 
     fun set(
-        size: Size, box: Rect, side: SceneSide, edge: Float, time: Float, alpha: Float, seed: Float, kind: Int,
-        dark: Boolean, param0: Float, param1: Float, color: Color, color2: Color,
+        w: Float, h: Float, edge: Float, time: Float, alpha: Float, kind: Int,
+        dark: Boolean, intensity: Float, speed: Float, color: Color, color2: Color,
     ) {
-        safe("uSize") { shader.setFloatUniform("uSize", size.width, size.height) }
-        safe("uBox") { shader.setFloatUniform("uBox", box.left, box.top, box.right, box.bottom) }
-        safe("uSide") { shader.setFloatUniform("uSide", side.ordinal.toFloat()) }
+        safe("uSize") { shader.setFloatUniform("uSize", w, h) }
         safe("uEdge") { shader.setFloatUniform("uEdge", edge) }
         safe("uTime") { shader.setFloatUniform("uTime", time) }
         safe("uAlpha") { shader.setFloatUniform("uAlpha", alpha) }
-        safe("uSeed") { shader.setFloatUniform("uSeed", seed) }
         safe("uKind") { shader.setFloatUniform("uKind", kind.toFloat()) }
         safe("uDark") { shader.setFloatUniform("uDark", if (dark) 1f else 0f) }
-        safe("uParam") { shader.setFloatUniform("uParam", param0, param1, 0f, 0f) }
+        safe("uParam") { shader.setFloatUniform("uParam", intensity, speed, 0f, 0f) }
         safe("uColor") { shader.setColorUniform("uColor", color.toArgb()) }
         safe("uColor2") { shader.setColorUniform("uColor2", color2.toArgb()) }
     }
-}
 
-/**
- * Un sombreador por elemento (y por tono), compilado la primera vez que aparece. Si uno no compila
- * en este celular, la escena entera pasa a las figuras simples.
- */
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class SceneShaderCache {
-    private val shaders = HashMap<String, SceneShader>()
-    private var failed = false
-
-    fun prepare(keys: List<Pair<String, SceneMaterial>>): Boolean {
-        if (failed) return false
-        for ((key, material) in keys) {
-            if (key in shaders) continue
-            try {
-                shaders[key] = SceneShader(SceneShaders.source(material))
-            } catch (e: RuntimeException) {
-                Log.w("SceneVignette", "No compiló el sombreador $material; uso figuras simples.", e)
-                failed = true
-                return false
-            }
+    companion object {
+        fun create(): MoodShader? = try {
+            MoodShader(RuntimeShader(SceneShaders.source(SceneMaterial.MOOD)))
+        } catch (e: RuntimeException) {
+            Log.w("SceneVignette", "No compiló el sombreador del tono; uso un degradado.", e)
+            null
         }
-        return true
-    }
-
-    operator fun get(key: String): SceneShader? = shaders[key]
-}
-
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
-@Composable
-private fun ShaderScene(
-    elements: List<SceneElement>,
-    moods: List<MoodLayer>,
-    appear: Map<String, Animatable<Float, AnimationVector1D>>,
-    time: FloatState,
-    dark: Boolean,
-    cache: SceneShaderCache,
-    modifier: Modifier,
-) {
-    Canvas(modifier.fillMaxSize().clipToBounds()) {
-        val t = time.floatValue
-        val edge = SceneLayout.edge(size.width, size.height)
-        val page = Rect(Offset.Zero, size)
-        // Primero la luz del tono; los elementos van encima.
-        for (layer in moods) {
-            val a = layer.alpha.value
-            val m = SceneMoods.byId(layer.reading.id) ?: continue
-            val s = cache[MOOD_KEY + m.id] ?: continue
-            if (a <= 0.001f) continue
-            val (c1, c2) = ScenePalette.mood(m.id)
-            s.set(size, page, SceneSide.FRAME, edge, t, a, 3f, m.particles.ordinal, dark, layer.reading.intensity, m.speed, c1, c2)
-            drawRect(s.brush)
-        }
-        for (slot in SceneLayout.slots(elements, size.width, size.height)) {
-            val s = cache[slot.element.id] ?: continue
-            val box = Rect(slot.left, slot.top, slot.right, slot.bottom)
-            val visible = box.intersect(page)
-            if (visible.isEmpty) continue
-            val key = slot.element.palette
-            s.set(
-                size, box, slot.side, edge, t, appear[slot.element.id]?.value ?: 1f, slot.seed, slot.look.kind, dark, 0f, 0f,
-                ScenePalette.color(key, dark), ScenePalette.secondary(key, dark),
-            )
-            drawRect(s.brush, topLeft = visible.topLeft, size = visible.size)
-        }
-    }
-}
-
-// ---------- Con figuras simples (antes de Android 13) ----------
-
-@Composable
-private fun FigureScene(
-    elements: List<SceneElement>,
-    moods: List<MoodLayer>,
-    appear: Map<String, Animatable<Float, AnimationVector1D>>,
-    time: FloatState,
-    dark: Boolean,
-    modifier: Modifier,
-) {
-    Canvas(modifier.fillMaxSize().clipToBounds()) {
-        val t = (time.floatValue % CYCLE_S) / CYCLE_S
-        val edge = min(size.width, size.height) * 0.12f
-        val glow = if (dark) 0.40f else 0.48f
-        fun alphaOf(e: SceneElement) = appear[e.id]?.value ?: 1f
-
-        // El tono: luz del color del sentimiento que entra por los cuatro bordes.
-        for (layer in moods) {
-            val a = layer.alpha.value * layer.reading.intensity * (if (dark) 0.22f else 0.16f)
-            if (a <= 0.001f) continue
-            val c = ScenePalette.mood(layer.reading.id).first.copy(alpha = a)
-            val band = edge * 2f
-            drawRect(Brush.verticalGradient(listOf(c, Color.Transparent), startY = 0f, endY = band))
-            drawRect(Brush.verticalGradient(listOf(Color.Transparent, c), startY = size.height - band, endY = size.height))
-            drawRect(Brush.horizontalGradient(listOf(c, Color.Transparent), startX = 0f, endX = band))
-            drawRect(Brush.horizontalGradient(listOf(Color.Transparent, c), startX = size.width - band, endX = size.width))
-        }
-        if (elements.isEmpty()) return@Canvas
-
-        // Un tono apenas perceptible del primer elemento en toda la hoja.
-        val first = elements.first()
-        drawRect(ScenePalette.color(first.palette, dark).copy(alpha = (if (dark) 0.05f else 0.035f) * alphaOf(first)))
-
-        for (zone in SceneZone.entries) {
-            val inZone = elements.filter { it.zone == zone }
-            inZone.forEachIndexed { i, e ->
-                val a = alphaOf(e)
-                val color = ScenePalette.color(e.palette, dark)
-                val anchor = anchor(zone, i, inZone.size, size)
-                val pulse = if (e.motion == SceneMotion.PULSE) 1f + 0.08f * sin(TAU * t * 4f) else 1f
-                val radius = edge * 2.2f * pulse
-                drawCircle(
-                    brush = Brush.radialGradient(listOf(color.copy(alpha = glow * a), Color.Transparent), center = anchor, radius = radius),
-                    radius = radius,
-                    center = anchor,
-                )
-                when {
-                    e.id == "rainbow" -> drawRainbow(a, edge, dark)
-                    e.id == "fog" -> drawFog(color, a, edge, t)
-                    else -> when (e.motion) {
-                        SceneMotion.WAVE -> drawWaves(color, a, anchor, edge, t)
-                        SceneMotion.SWAY -> drawBlades(e, color, a, zone, anchor, edge, inZone.size, t)
-                        SceneMotion.DRIFT -> if (zone == SceneZone.SKY) drawClouds(color, a, edge, t) else drawWind(color, a, edge, t)
-                        SceneMotion.FALL -> drawFalling(e, color, a, edge, t)
-                        SceneMotion.TWINKLE -> drawTwinkles(color, a, anchor, edge, t, zone)
-                        SceneMotion.PULSE, SceneMotion.NONE -> Unit
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** Un ciclo de las figuras simples; los movimientos son múltiplos enteros para que el ciclo cierre sin saltos. */
-private const val CYCLE_S = 12f
-private const val TAU = (2 * PI).toFloat()
-
-private fun frac(x: Float) = x - floor(x)
-
-/** Dónde nace el resplandor de cada elemento según su zona y cuántos hay en ella. */
-private fun anchor(zone: SceneZone, i: Int, n: Int, size: Size): Offset = when (zone) {
-    SceneZone.GROUND -> Offset(size.width * (i + 0.5f) / n, size.height)
-    SceneZone.SKY -> Offset(size.width * (i + 0.5f) / n, 0f)
-    SceneZone.HORIZON -> {
-        val rows = ceil(n / 2f)
-        val row = i / 2
-        Offset(if (i % 2 == 0) 0f else size.width, size.height * (0.45f + 0.35f * (row + 0.5f) / rows))
-    }
-    SceneZone.AIR -> when (i % 4) {
-        0 -> Offset(0f, 0f)
-        1 -> Offset(size.width, size.height)
-        2 -> Offset(size.width, 0f)
-        else -> Offset(0f, size.height)
-    }
-}
-
-/** Olas: tres líneas onduladas junto al borde del agua. */
-private fun DrawScope.drawWaves(color: Color, a: Float, anchor: Offset, edge: Float, t: Float) {
-    val inward = if (anchor.x < size.width / 2) 1f else -1f
-    val length = edge * 1.4f
-    for (k in 0 until 3) {
-        val y = anchor.y + (k - 1) * edge * 0.35f
-        val path = Path()
-        var step = 0f
-        while (step <= length) {
-            val x = anchor.x + inward * step
-            val yy = y + sin(step / (edge * 0.6f) * TAU + TAU * t * 6f + k) * edge * 0.06f
-            if (step == 0f) path.moveTo(x, yy) else path.lineTo(x, yy)
-            step += 6f
-        }
-        drawPath(path, color.copy(alpha = 0.55f * a * (1f - k * 0.2f)), style = Stroke(width = edge * 0.035f, cap = StrokeCap.Round))
-    }
-}
-
-/** Pasto, trigo, flores y árboles: hojas que se mecen desde el borde. */
-private fun DrawScope.drawBlades(e: SceneElement, color: Color, a: Float, zone: SceneZone, anchor: Offset, edge: Float, n: Int, t: Float) {
-    val stroke = edge * 0.03f
-    if (zone == SceneZone.GROUND) {
-        val span = size.width / n
-        val count = (span / (edge * 0.22f)).toInt().coerceIn(4, 40)
-        for (j in 0 until count) {
-            val x = anchor.x - span / 2 + span * (j + 0.5f) / count
-            val h = edge * (0.45f + 0.45f * frac(j * 0.618f))
-            val sway = sin(TAU * t * 3f + j * 0.7f) * edge * 0.08f
-            val tip = Offset(x + sway, size.height - h)
-            drawLine(color.copy(alpha = 0.6f * a), Offset(x, size.height), tip, strokeWidth = stroke, cap = StrokeCap.Round)
-            when (e.id) {
-                "wheat" -> drawCircle(color.copy(alpha = 0.75f * a), radius = stroke * 1.8f, center = tip)
-                "flowers" -> if (j % 3 == 0) drawCircle(color.copy(alpha = 0.85f * a), radius = stroke * 2.2f, center = tip)
-            }
-        }
-    } else {
-        // Árboles al costado: troncos que suben desde abajo del resplandor.
-        val inward = if (anchor.x < size.width / 2) 1f else -1f
-        for (j in 0 until 6) {
-            val x = anchor.x + inward * edge * (0.15f + 0.13f * j)
-            val base = anchor.y + edge * 0.9f
-            val h = edge * (0.7f + 0.5f * frac(j * 0.618f))
-            val sway = sin(TAU * t * 2f + j) * edge * 0.05f
-            drawLine(color.copy(alpha = 0.55f * a), Offset(x, base), Offset(x + sway, base - h), strokeWidth = stroke * 1.4f, cap = StrokeCap.Round)
-        }
-    }
-}
-
-/** Viento: trazos curvos que cruzan arriba y abajo. */
-private fun DrawScope.drawWind(color: Color, a: Float, edge: Float, t: Float) {
-    val length = size.width * 0.25f
-    for (k in 0 until 4) {
-        val y = if (k % 2 == 0) edge * (0.3f + 0.2f * k) else size.height - edge * (0.3f + 0.2f * k)
-        val x0 = frac(t * 2f + k * 0.27f) * (size.width + 2 * length) - length
-        val path = Path().apply {
-            moveTo(x0, y)
-            quadraticTo(x0 + length / 2, y - edge * 0.18f, x0 + length, y)
-        }
-        drawPath(path, color.copy(alpha = 0.5f * a), style = Stroke(width = edge * 0.025f, cap = StrokeCap.Round))
-    }
-}
-
-/** Nubes: óvalos suaves que pasan por arriba. */
-private fun DrawScope.drawClouds(color: Color, a: Float, edge: Float, t: Float) {
-    val w = size.width * 0.28f
-    val h = edge * 0.55f
-    for (k in 0 until 2) {
-        val x = frac(t + k * 0.5f) * (size.width + w) - w
-        val y = edge * (0.15f + 0.25f * k)
-        drawOval(
-            brush = Brush.radialGradient(listOf(color.copy(alpha = 0.6f * a), Color.Transparent), center = Offset(x + w / 2, y + h / 2), radius = w / 2),
-            topLeft = Offset(x, y),
-            size = Size(w, h),
-        )
-    }
-}
-
-/** Niebla: bandas suaves arriba y abajo que respiran. */
-private fun DrawScope.drawFog(color: Color, a: Float, edge: Float, t: Float) {
-    val breath = 0.75f + 0.25f * sin(TAU * t * 2f)
-    val band = edge * 1.6f
-    drawRect(Brush.verticalGradient(listOf(color.copy(alpha = 0.4f * a * breath), Color.Transparent), startY = 0f, endY = band))
-    drawRect(
-        Brush.verticalGradient(listOf(Color.Transparent, color.copy(alpha = 0.4f * a * breath)), startY = size.height - band, endY = size.height),
-        topLeft = Offset(0f, size.height - band),
-        size = Size(size.width, band),
-    )
-}
-
-/** Lluvia, nieve y pétalos: caen por los costados, nunca por el medio de la hoja. */
-private fun DrawScope.drawFalling(e: SceneElement, color: Color, a: Float, edge: Float, t: Float) {
-    for (p in 0 until 14) {
-        val left = p % 2 == 0
-        val offset = edge * (0.15f + 0.7f * frac(p * 0.37f))
-        val x = if (left) offset else size.width - offset
-        val speed = (1 + p % 3).toFloat()
-        val y = frac(t * speed * 2f + p * 0.13f) * (size.height + edge) - edge / 2
-        when (e.id) {
-            "rain" -> drawLine(
-                color.copy(alpha = 0.55f * a), Offset(x, y), Offset(x - edge * 0.05f, y + edge * 0.22f),
-                strokeWidth = edge * 0.02f, cap = StrokeCap.Round,
-            )
-            "petals" -> drawOval(
-                color.copy(alpha = 0.7f * a),
-                topLeft = Offset(x + sin(TAU * t * 4f + p) * edge * 0.1f, y),
-                size = Size(edge * 0.09f, edge * 0.055f),
-            )
-            else -> drawCircle(color.copy(alpha = 0.8f * a), radius = edge * 0.035f, center = Offset(x + sin(TAU * t * 3f + p) * edge * 0.06f, y))
-        }
-    }
-}
-
-/** Estrellas y brillos: puntos que titilan cerca de su resplandor. */
-private fun DrawScope.drawTwinkles(color: Color, a: Float, anchor: Offset, edge: Float, t: Float, zone: SceneZone) {
-    for (j in 0 until 8) {
-        val dx = (frac(j * 0.618f) - 0.5f) * edge * 3f
-        val dy = frac(j * 0.382f) * edge * 1.3f
-        val x = (anchor.x + dx).coerceIn(edge * 0.1f, size.width - edge * 0.1f)
-        // Siempre hacia adentro desde el borde donde nace.
-        val y = if (anchor.y <= 0f || zone == SceneZone.SKY) dy + edge * 0.1f else if (anchor.y >= size.height) size.height - dy - edge * 0.1f else anchor.y + dy - edge * 0.65f
-        val tw = 0.3f + 0.7f * abs(sin(TAU * (t * 6f + j * 0.31f)))
-        drawCircle(color.copy(alpha = a * tw), radius = edge * 0.03f, center = Offset(x, y))
-    }
-}
-
-/** Arcoíris: tres arcos tenues arriba, de borde a borde. */
-private fun DrawScope.drawRainbow(a: Float, edge: Float, dark: Boolean) {
-    val bands = listOf("sunset", "sun", "sky", "rainbow")
-    bands.forEachIndexed { k, key ->
-        val inset = k * edge * 0.12f
-        drawArc(
-            color = ScenePalette.color(key, dark).copy(alpha = 0.35f * a),
-            startAngle = 180f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(-edge + inset, -edge * 0.2f + inset),
-            size = Size(size.width + 2 * edge - 2 * inset, edge * 2.4f - 2 * inset),
-            style = Stroke(width = edge * 0.08f),
-        )
     }
 }
