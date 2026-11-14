@@ -1,16 +1,15 @@
 package com.jorge.koreandiary.ui.page
 
-import com.jorge.koreandiary.scene.SceneImageJob
 import android.Manifest
 import android.content.ClipboardManager
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
@@ -82,6 +84,7 @@ import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkTool
 import com.jorge.koreandiary.ink.rememberInkScrollState
 import com.jorge.koreandiary.mascot.MascotMood
+import com.jorge.koreandiary.scene.SceneImageJob
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppMascot
@@ -93,6 +96,7 @@ import com.jorge.koreandiary.ui.LocalPaperStyle
 import com.jorge.koreandiary.ui.formatDate
 import com.jorge.koreandiary.ui.pageStatusLabel
 import com.jorge.koreandiary.ui.paperBackground
+import kotlinx.coroutines.delay
 
 @Composable
 fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
@@ -152,6 +156,21 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val mascotMood = if (state.phase is Phase.Busy || howTo == HowTo.Asking || explain?.loading == true) MascotMood.THINKING else reaction
 
     val isScene = page?.kind == PageKind.SCENE
+    // La escena viva se queda quieta si no tocas la hoja un rato: sus dibujos y el filtro de acuarela
+    // se calculan en cada cuadro y calientan el celular aunque nadie los mire. El lápiz (también
+    // flotando sobre la hoja) o un dedo la despiertan. El último toque no es estado: tocar no
+    // recompone la pantalla; solo cambia `sceneAwake` al dormirse o despertarse.
+    val lastTouch = remember { longArrayOf(SystemClock.uptimeMillis()) }
+    var sceneAwake by remember { mutableStateOf(true) }
+    LaunchedEffect(sceneAwake) {
+        if (!sceneAwake) return@LaunchedEffect
+        while (true) {
+            val left = lastTouch[0] + SCENE_IDLE_MS - SystemClock.uptimeMillis()
+            if (left <= 0) break
+            delay(left)
+        }
+        sceneAwake = false
+    }
     val imageJobs by container.sceneImages.jobs.collectAsStateWithLifecycle()
     val header: @Composable () -> Unit = {
         Row(
@@ -221,14 +240,32 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     }
 
     val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
-        Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper)) {
+        val watchTouches = if (isScene) {
+            Modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        // Solo mira (pasada inicial, sin consumir): el lienzo recibe todo igual.
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        lastTouch[0] = SystemClock.uptimeMillis()
+                        if (!sceneAwake) sceneAwake = true
+                    }
+                }
+            }
+        } else Modifier
+        Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper).then(watchTouches)) {
             // La imagen de la escena, muy suave, y encima la escena viva; la tinta siempre arriba de todo.
             if (isScene && settings.sceneImageBackground && page != null) {
                 SceneImageBackground(container.sceneImages, page.id, dark = paper.background.luminance() < 0.5f)
             }
             // Escena viva: detrás del lienzo, así la tinta queda siempre encima con su contraste.
             if (isScene && settings.liveScene && (state.sceneElements.isNotEmpty() || state.sceneMood != null)) {
-                SceneVignette(state.sceneElements, state.sceneMood, dark = paper.background.luminance() < 0.5f, modifier = Modifier.fillMaxSize())
+                SceneVignette(
+                    state.sceneElements,
+                    state.sceneMood,
+                    dark = paper.background.luminance() < 0.5f,
+                    modifier = Modifier.fillMaxSize(),
+                    active = sceneAwake,
+                )
             }
             InkCanvas(
                 strokes = state.strokes,
@@ -372,6 +409,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         else -> Unit
     }
 }
+
+/** Cuánto sigue moviéndose la escena viva después del último toque en la hoja. */
+private const val SCENE_IDLE_MS = 30_000L
 
 /** Lado corto de la pantalla completa (con barras incluidas): el ancho del celular en vertical. */
 @Composable

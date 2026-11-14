@@ -1,18 +1,12 @@
 package com.jorge.koreandiary.mascot
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -28,7 +22,10 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
+import com.jorge.koreandiary.ui.rememberSlowClock
 import kotlinx.coroutines.delay
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.random.Random
 
 /**
@@ -46,21 +43,15 @@ fun Mascot(
     modifier: Modifier = Modifier,
     custom: ImageBitmap? = null,
 ) {
-    val transition = rememberInfiniteTransition(label = "mascota")
-    // Rebote suave; más lento si está dormida.
-    val bob by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(if (mood == MascotMood.SLEEPY) 3200 else 1800), RepeatMode.Reverse),
-        label = "rebote",
-    )
+    // Un reloj lento (20 cuadros por segundo): la mascota está siempre a la vista en la página y con
+    // una animación normal la pantalla quedaría a 120 Hz todo el tiempo. Vuelve a cero cada 403,2 s,
+    // múltiplo de los ciclos de 3,6, 6,4 y 1,4 s, así el movimiento no salta.
+    val clock = rememberSlowClock(fps = 20, wrapSeconds = 403.2f)
+    val period = if (mood == MascotMood.SLEEPY) 3.2f else 1.8f
+    // Rebote suave de ida y vuelta; más lento si está dormida.
+    fun bob() = (1f - cos(PI.toFloat() * clock.floatValue / period)) / 2f
     // Fase continua para los puntos de "pensando" y las Z de "dormida".
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
-        label = "fase",
-    )
+    fun phase() = (clock.floatValue / 1.4f) % 1f
     val blink = remember { Animatable(0f) }
     LaunchedEffect(mood) {
         if (mood == MascotMood.SLEEPY || mood == MascotMood.HAPPY) return@LaunchedEffect
@@ -75,13 +66,15 @@ fun Mascot(
         Image(
             bitmap = custom,
             contentDescription = "Mascota",
-            modifier = modifier.size(size).graphicsLayer { translationY = -bob * this.size.height * 0.04f },
+            modifier = modifier.size(size).graphicsLayer { translationY = -bob() * this.size.height * 0.04f },
         )
         return
     }
 
     Canvas(modifier.size(size)) {
         val w = this.size.width
+        val bob = bob()
+        val phase = phase()
         translate(top = -bob * w * 0.04f) {
             drawDrop(body, features)
             drawFace(mood, features, accent, blink.value, phase)

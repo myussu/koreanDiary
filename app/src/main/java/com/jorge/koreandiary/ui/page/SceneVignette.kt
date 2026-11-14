@@ -16,12 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -43,7 +43,9 @@ import com.jorge.koreandiary.scene.SceneShaders
 import com.jorge.koreandiary.scene.art.Mark
 import com.jorge.koreandiary.scene.art.SceneArt
 import com.jorge.koreandiary.ui.ScenePalette
+import com.jorge.koreandiary.ui.rememberSlowClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,10 +59,12 @@ import kotlinx.coroutines.withContext
  * Va DETRÁS del lienzo: la tinta queda siempre encima. Desde Android 13 la capa de los dibujos pasa
  * por el filtro de acuarela ([SceneMaterial.WATERCOLOR]) y el tono es un sombreador; antes, o si un
  * sombreador no compila en este celular, los dibujos van sin filtro y el tono es un degradado.
- * Cada elemento entra de a poco y todo se mueve solo si el sistema tiene las animaciones encendidas.
+ * Cada elemento entra de a poco y todo se mueve solo si el sistema tiene las animaciones encendidas
+ * y [active] (la página la detiene cuando no la tocas un rato: así no calienta el celular mientras
+ * piensas o lees; al tocarla sigue).
  */
 @Composable
-fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolean, modifier: Modifier = Modifier) {
+fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolean, modifier: Modifier = Modifier, active: Boolean = true) {
     val context = LocalContext.current
     val motionOn = remember {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
@@ -93,7 +97,15 @@ fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolea
             }
         }
     }
-    val time = rememberSceneTime(motionOn)
+    // Si llega un elemento o un tono nuevo con la página quieta, se mueve unos segundos para que se note.
+    var justChanged by remember { mutableStateOf(false) }
+    LaunchedEffect(elements.size, mood?.id) {
+        justChanged = true
+        delay(WAKE_ON_CHANGE_MS)
+        justChanged = false
+    }
+    // ~30 cuadros por segundo y solo mientras se mueve (ver rememberSlowClock).
+    val time = rememberSlowClock(fps = 30, running = motionOn && (active || justChanged), start = 3f)
 
     BoxWithConstraints(modifier.fillMaxSize().clipToBounds()) {
         val width = constraints.maxWidth.toFloat()
@@ -123,38 +135,11 @@ private class MoodLayer(var reading: MoodReading, val alpha: Animatable<Float, A
 
 private const val MOOD_FADE_MS = 2_500
 
+/** Cuánto se mueve la escena quieta cuando le llega algo nuevo. */
+private const val WAKE_ON_CHANGE_MS = 8_000L
+
 /** Cuánto se ve la capa de los dibujos: deja ver la tinta y el papel. */
 private const val ART_OPACITY = 0.72f
-
-/**
- * Segundos para la escena, a unos 30 cuadros por segundo: el movimiento es lento y así se trabaja la
- * mitad o menos (las pantallas van a 60–120). Vuelve a cero cada [TIME_WRAP_S] para no perder
- * precisión. Sin animaciones, un instante fijo.
- */
-@Composable
-private fun rememberSceneTime(motionOn: Boolean): FloatState {
-    val time = remember { mutableFloatStateOf(STILL_TIME_S) }
-    if (motionOn) {
-        LaunchedEffect(Unit) {
-            var start = -1L
-            var last = 0L
-            while (true) {
-                withFrameNanos { now ->
-                    if (start < 0) start = now
-                    if (now - last >= FRAME_NANOS) {
-                        last = now
-                        time.floatValue = ((now - start) / 1_000_000_000.0 % TIME_WRAP_S).toFloat() + STILL_TIME_S
-                    }
-                }
-            }
-        }
-    }
-    return time
-}
-
-private const val FRAME_NANOS = 33_000_000L
-private const val TIME_WRAP_S = 600.0
-private const val STILL_TIME_S = 3f
 
 // ---------- Los dibujos a pincel ----------
 
@@ -174,8 +159,8 @@ private fun ArtLayer(
 ) {
     val marks = remember { mutableStateOf<List<Mark>>(emptyList()) }
     LaunchedEffect(elements, width, height) {
-        snapshotFlow { time.floatValue }.collectLatest { t ->
-            val fades = elements.associate { it.id to (appear[it.id]?.value ?: 1f) }
+        // El tiempo y la entrada de cada elemento: así uno nuevo aparece aunque la escena esté quieta.
+        snapshotFlow { time.floatValue to elements.associate { it.id to (appear[it.id]?.value ?: 1f) } }.collectLatest { (t, fades) ->
             marks.value = withContext(Dispatchers.Default) { SceneArt.paint(elements, width, height, t) { fades[it] ?: 1f } }
         }
     }

@@ -60,7 +60,7 @@ object Features {
                 phone("«¿Cómo digo?»: «Dictar» la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase»."),
                 phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con tu escena (también después de «Revisar»)."),
                 phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste, «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
-                phone("Escena viva: mientras escribes, lo que nombras aparece pintado a pincel en acuarela en una franja abajo de la hoja (el mar, un árbol que se mece, el pasto, el sol, la lluvia…), sin tapar donde escribes. Lo que pides en «¿Cómo digo?» aparece recién cuando lo escribes."),
+                phone("Escena viva: mientras escribes, lo que nombras aparece pintado a pincel en acuarela en una franja abajo de la hoja (el mar, un árbol que se mece, el pasto, el sol, la lluvia…), sin tapar donde escribes. Lo que pides en «¿Cómo digo?» aparece recién cuando lo escribes. Si no tocas la hoja por 30 segundos se queda quieta para no gastar batería; al tocarla sigue."),
                 phone("Tono de la escena: al «Revisar» o con «¿Cómo digo?», la IA lee lo que se siente (amor, calma, nostalgia, tristeza…) y una luz de ese color sube desde abajo. No gasta pedidos extra."),
                 phone("«Imagen»: la escena pintada en acuarela. Con tu servidor ComfyUI (por Tailscale) se pinta sola al terminarla; sin servidor, «Copiar prompt para Gemini» y «Elegir imagen». Sale muy suave de fondo y como miniatura en la lista de escenas."),
                 phone("Cuenta para la racha cuando está revisada y sin correcciones pendientes."),

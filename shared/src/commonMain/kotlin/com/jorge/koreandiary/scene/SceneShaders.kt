@@ -185,27 +185,28 @@ half4 main(float2 p) {
 }
 """
 
-    /** Filtro de acuarela para la capa de los dibujos a pincel (RenderEffect): bordes que se corren con ruido, pigmento acumulado en el borde, granulado y textura del papel. uAlpha = cuánto se ve todo; en papel oscuro el pigmento cubre más para no verse turbio. */
+    /** Filtro de acuarela para la capa de los dibujos a pincel (RenderEffect): bordes que se corren con ruido, pigmento acumulado en el borde, granulado y textura del papel. uAlpha = cuánto se ve todo; en papel oscuro el pigmento cubre más para no verse turbio. Corre en cada píxel de la franja a 30 cuadros por segundo: ruido de una o dos capas y 4 muestras alrededor (no 8), para no calentar. */
     private const val WATERCOLOR = """
 uniform shader content;
 
+float fbm2(float2 p) {
+    return 0.62 * vnoise(p) + 0.38 * vnoise(p * 2.03 + float2(17.0, 9.0));
+}
+
 half4 main(float2 p) {
-    float2 warp = float2(fbm(p / 18.0), fbm(p / 18.0 + 9.0)) - 0.5;
+    float2 warp = float2(fbm2(p / 18.0), fbm2(p / 18.0 + 9.0)) - 0.5;
     float2 q = p + warp * 7.0;
     half4 c = content.eval(q);
     float a = c.a;
     if (a < 0.002) {
         return half4(0.0);
     }
-    float around = 0.0;
-    for (int i = 0; i < 8; i++) {
-        float ang = float(i) * 0.7854;
-        around += content.eval(q + float2(cos(ang), sin(ang)) * 4.0).a;
-    }
-    around /= 8.0;
+    float around = content.eval(q + float2(2.83, 2.83)).a + content.eval(q + float2(-2.83, 2.83)).a
+        + content.eval(q + float2(2.83, -2.83)).a + content.eval(q + float2(-2.83, -2.83)).a;
+    around *= 0.25;
     float edge = clamp((a - around) * 3.0, 0.0, 1.0);
-    float grain = fbm(p / 2.2);
-    float paper = fbm(p / 40.0);
+    float grain = 0.47 + 0.6 * (vnoise(p / 2.2) - 0.5);
+    float paper = 0.47 + 0.6 * (vnoise(p / 40.0) - 0.5);
     float3 col = c.rgb / max(a, 0.001);
     float pigment = a * (0.78 + 0.35 * edge) * (0.82 + 0.3 * grain) * (0.9 + 0.2 * paper);
     col = mix(col, col * (0.8 + 0.2 * grain), 1.0 - uDark);

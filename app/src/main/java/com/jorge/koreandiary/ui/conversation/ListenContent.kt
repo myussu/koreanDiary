@@ -3,11 +3,6 @@ package com.jorge.koreandiary.ui.conversation
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,11 +65,14 @@ import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.rememberSlowClock
 import com.jorge.koreandiary.voice.TurnMode
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import kotlin.math.PI
+import kotlin.math.cos
 
 // ---------------------------------------------------------------- Preparación
 
@@ -263,11 +261,10 @@ private fun SegmentBar(count: Int, current: Int, phase: ListenPhase) {
 @Composable
 private fun TargetRow(ls: ListenState, conv: ConvUiState, vm: ConversationViewModel) {
     val ordered = ls.targets.sortedByDescending { it.ref == ls.floating }
-    val bob = rememberInfiniteTransition(label = "flotar")
-    val lift by bob.animateFloat(
-        initialValue = 0f, targetValue = -6f,
-        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse), label = "altura",
-    )
+    // Sube y baja solo mientras hay uno flotando, y a 30 cuadros por segundo: una animación infinita
+    // normal pediría un cuadro en cada refresco de pantalla todo el rato.
+    val floatClock = rememberSlowClock(fps = 30, running = ls.floating != null)
+    fun lift() = -6f * (1f - cos(PI.toFloat() * floatClock.floatValue / 0.55f)) / 2f
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.padding(top = 2.dp).horizontalScroll(rememberScrollState()).padding(top = 8.dp),
@@ -276,7 +273,7 @@ private fun TargetRow(ls: ListenState, conv: ConvUiState, vm: ConversationViewMo
             val count = ls.heard[t.ref] ?: 0
             val floating = t.ref == ls.floating
             val open = (conv.panel as? CoachPanel.TargetShown)?.item?.ref == t.ref
-            Box(if (floating) Modifier.offset { IntOffset(0, lift.dp.roundToPx()) } else Modifier) {
+            Box(if (floating) Modifier.offset { IntOffset(0, lift().dp.roundToPx()) } else Modifier) {
                 AppTag(
                     when {
                         floating -> "↑ ${t.label}"

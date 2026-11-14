@@ -6,11 +6,6 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -72,12 +67,15 @@ import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.rememberSlowClock
 import com.jorge.koreandiary.voice.TurnMode
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
 
 private val dateFormat = DateTimeFormatter.ofPattern("d MMM · HH:mm", Locale.forLanguageTag("es"))
 
@@ -345,11 +343,10 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
         if (st.activeTargets.isNotEmpty()) {
             // El objetivo que la IA acaba de pedir va primero y flota (sube y baja) hasta que respondas.
             val ordered = st.activeTargets.sortedByDescending { it.ref == st.floating }
-            val bob = rememberInfiniteTransition(label = "flotar")
-            val lift by bob.animateFloat(
-                initialValue = 0f, targetValue = -6f,
-                animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse), label = "altura",
-            )
+            // Sube y baja solo mientras hay uno flotando, y a 30 cuadros por segundo: una animación infinita
+            // normal pediría un cuadro en cada refresco de pantalla todo el rato.
+            val floatClock = rememberSlowClock(fps = 30, running = st.floating != null)
+            fun lift() = -6f * (1f - cos(PI.toFloat() * floatClock.floatValue / 0.55f)) / 2f
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 // El espacio va dentro del scroll: si no, el recorte cortaría el objetivo al subir.
@@ -359,7 +356,7 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
                     val seen = t.kind != "gramática" && ConversationMath.wordSeen(t.label, userText)
                     val open = (st.panel as? CoachPanel.TargetShown)?.item?.ref == t.ref
                     val floating = t.ref == st.floating
-                    Box(if (floating) Modifier.offset { IntOffset(0, lift.dp.roundToPx()) } else Modifier) {
+                    Box(if (floating) Modifier.offset { IntOffset(0, lift().dp.roundToPx()) } else Modifier) {
                         AppTag(
                             when {
                                 floating -> "↑ ${t.label}"

@@ -70,8 +70,11 @@ class Painter(private val fade: Float = 1f) {
 /** Geometría de pincel, sin nada de pantalla: cada app convierte los contornos en su `Path`. */
 object Brush {
 
-    /** Suaviza una polilínea (Catmull-Rom), conservando la primera y la última punta. */
-    fun catmull(points: List<Pt>, steps: Int = 8): List<Pt> {
+    /**
+     * Suaviza una polilínea (Catmull-Rom), conservando la primera y la última punta. 6 pasos por
+     * tramo bastan a este tamaño: la escena rehace todas las pinceladas en cada cuadro.
+     */
+    fun catmull(points: List<Pt>, steps: Int = 6): List<Pt> {
         if (points.size < 3) return points
         val pts = listOf(points.first()) + points + listOf(points.last())
         val out = ArrayList<Pt>((pts.size - 3) * steps + 1)
