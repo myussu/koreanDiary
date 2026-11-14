@@ -15,6 +15,7 @@ import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.EventKind
 import com.jorge.koreandiary.data.db.GrammarPoint
 import com.jorge.koreandiary.data.db.ItemType
+import com.jorge.koreandiary.data.db.PageInk
 import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.MemoryState
 import com.jorge.koreandiary.data.db.PageStatus
@@ -99,6 +100,8 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
 
     val words = study.observeWords()
     val grammar = study.observeGrammar()
+    /** ¿Hay vocabulario o gramática? El inicio solo necesita saber eso, no cargar las listas. */
+    val hasItems = study.observeHasItems()
     val pendingWords = study.observePendingWords()
     val memoryStates = memory.observeAll()
 
@@ -585,20 +588,57 @@ class DiaryRepository(private val db: AppDatabase) {
     }
 
     suspend fun page(id: Long) = diary.page(id)
-    suspend fun save(page: DiaryPage) = diary.updatePage(page)
+
+    /** La tinta de una página (ver InkSerializer); null si no tiene trazos. */
+    suspend fun ink(pageId: Long): String? = diary.ink(pageId)
+
+    /** ¿La página tiene trazos guardados? No lee la tinta. */
+    suspend fun hasInk(pageId: Long): Boolean = diary.hasInk(pageId)
+
+    /** Guarda los datos de la página sin tocar su tinta (un cambio de estado, de sugerencias, de escena). */
+    suspend fun save(page: DiaryPage) = diary.updatePage(page.withoutInk())
+
+    /**
+     * Guarda la página y su tinta juntas, o nada. [inkJson] null = la página quedó sin trazos: se
+     * borra su fila de tinta, que es como la racha sabe que está vacía (ver `PageInk`).
+     */
+    suspend fun save(page: DiaryPage, inkJson: String?): Unit = db.withWriteTransaction {
+        diary.updatePage(page.withoutInk())
+        writeInk(page.id, inkJson)
+    }
+
+    /**
+     * Solo la tinta (y el ancho de la hoja con que se guardó): no toca el estado, para que el
+     * guardado al salir de la página no pise uno que cambió mientras tanto.
+     */
+    suspend fun saveInk(id: Long, inkJson: String?, canvasWidth: Int, updatedAt: Long): Unit = db.withWriteTransaction {
+        writeInk(id, inkJson)
+        diary.touchPage(id, canvasWidth, updatedAt)
+    }
+
+    private suspend fun writeInk(pageId: Long, inkJson: String?) {
+        if (inkJson == null) diary.deleteInk(pageId) else diary.upsertInk(PageInk(pageId, inkJson))
+    }
+
+    /** La columna vieja de la tinta en `pages` se queda siempre vacía (la tinta vive en `page_ink`). */
+    private fun DiaryPage.withoutInk() = if (inkJson == EMPTY_INK) this else copy(inkJson = EMPTY_INK)
+
     /** Descartar una nota de sentido (cambiaste de idea): se borra, no cuenta para nada. */
     suspend fun dismissNote(correction: Correction) = diary.deleteCorrection(correction.id)
-    suspend fun saveInk(id: Long, inkJson: String, canvasWidth: Int, updatedAt: Long) =
-        diary.updateInk(id, inkJson, canvasWidth, updatedAt)
     fun corrections(pageId: Long) = diary.observeCorrections(pageId)
     suspend fun correctionsNow(pageId: Long) = diary.corrections(pageId)
     suspend fun markRewritten(c: Correction) = diary.updateCorrection(c.copy(status = CorrectionStatus.REWRITTEN))
     suspend fun pendingPages() = diary.pagesWithStatus(PageStatus.PENDING)
 
-    /** Borra la página con sus correcciones y oraciones. El historial de FSRS se conserva. */
+    /** Borra la página con su tinta, sus correcciones y oraciones. El historial de FSRS se conserva. */
     suspend fun deletePage(id: Long): Unit = db.withWriteTransaction {
         diary.deleteCorrections(id)
         diary.deleteSentences(id)
+        diary.deleteInk(id)
         diary.deletePage(id)
+    }
+
+    private companion object {
+        const val EMPTY_INK = "[]"
     }
 }

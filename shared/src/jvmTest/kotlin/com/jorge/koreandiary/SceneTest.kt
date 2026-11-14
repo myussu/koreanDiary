@@ -33,6 +33,20 @@ class SceneTest {
     }
 
     @Test
+    fun sceneDataKeepsWhatWasReadOnEachLine() {
+        // Lo leído por renglón (huella de sus trazos → texto), para no leer toda la página al abrirla.
+        val reads = mapOf(4_611_686_018_427_387_904L to "바다에 갔어요", -17L to "", 12L to "바람이 불어요")
+        val data = SceneData(newGrammar = listOf(3)).withReads(reads)
+        assertEquals(reads, SceneData.parse(data.toJson()).reads)
+        assertEquals(data, SceneData.parse(data.toJson()))
+        // Sin cambios no se crea otra copia: quien guarda compara para saber si hace falta escribir.
+        assertTrue(data.withReads(reads) === data)
+        // Una escena guardada antes de esto no trae lecturas.
+        assertEquals(emptyMap<Long, String>(), SceneData.parse("""{"ng":[3]}""").reads)
+        assertEquals(SceneData.MAX_READS, SceneData().withReads((1L..200L).associateWith { "가" }).reads.size)
+    }
+
+    @Test
     fun sceneDataToleratesMissingOrBrokenJson() {
         assertEquals(SceneData(), SceneData.parse(null))
         assertEquals(SceneData(), SceneData.parse(""))

@@ -66,7 +66,19 @@ data class SceneData(
     val imagePrompt: String = "",
     /** Lo de «¿Cómo digo?» que espera a que lo escribas. */
     val pending: List<PendingScene> = emptyList(),
+    /**
+     * Lo que el reconocedor leyó en cada renglón de la tinta, por la huella de sus trazos
+     * (`InkOps.lineKey`): al volver a abrir la escena solo se leen los renglones que cambiaron, no
+     * toda la página. Es un atajo: si falta, se vuelve a leer.
+     */
+    val reads: Map<Long, String> = emptyMap(),
 ) {
+    /** Deja guardado lo leído (como mucho [MAX_READS] renglones). */
+    fun withReads(r: Map<Long, String>): SceneData {
+        val kept = if (r.size <= MAX_READS) r else r.entries.take(MAX_READS).associate { it.key to it.value }
+        return if (kept == reads) this else copy(reads = kept)
+    }
+
     /** Guarda lo que vio la IA en una idea para cuando la escribas (nada si no vio nada). */
     fun withPending(p: PendingScene): SceneData =
         if (p.elements.isEmpty() && p.mood == null) this else copy(pending = (pending + p).takeLast(MAX_PENDING))
@@ -119,9 +131,14 @@ data class SceneData(
                 })
             }
         }
+        .apply {
+            if (reads.isNotEmpty()) put("lec", JSONObject().apply { reads.forEach { (key, text) -> put(key.toString(), text) } })
+        }
         .toString()
 
     companion object {
+        /** Renglones leídos que se guardan por escena (una escena no llega a tantos). */
+        const val MAX_READS = 80
         /** Ideas que se guardan por escena; las más viejas se descartan. */
         const val MAX_IDEAS = 30
         /** Elementos que puede tener una escena viva: más ya no se distinguen en los bordes. */
@@ -160,6 +177,14 @@ data class SceneData(
                                 mood = t?.let { SceneMoods.reading(it.optString("id"), it.optInt("n", 2)) },
                                 words = if (w == null) emptyList() else (0 until w.length()).map { w.optString(it) }.filter { it.isNotBlank() },
                             )
+                        }
+                    },
+                    reads = o.optJSONObject("lec").let { lec ->
+                        if (lec == null) emptyMap() else buildMap {
+                            for (key in lec.keys()) {
+                                val k = key.toLongOrNull() ?: continue
+                                if (size < MAX_READS) put(k, lec.optString(key))
+                            }
                         }
                     },
                 )

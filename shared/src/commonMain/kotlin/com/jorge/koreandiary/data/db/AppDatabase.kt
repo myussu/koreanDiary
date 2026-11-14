@@ -5,6 +5,9 @@ import androidx.room3.ConstructedBy
 import androidx.room3.Database
 import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
+import androidx.room3.migration.AutoMigrationSpec
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 
 /**
  * La base es la misma en Android y en escritorio. Cada plataforma solo decide dónde vive el
@@ -19,6 +22,7 @@ import androidx.room3.RoomDatabaseConstructor
         ReviewEvent::class,
         DiaryEntry::class,
         DiaryPage::class,
+        PageInk::class,
         Correction::class,
         Sentence::class,
         PendingWord::class,
@@ -32,6 +36,8 @@ import androidx.room3.RoomDatabaseConstructor
         AutoMigration(from = 1, to = 2),
         // 3: pages.sceneJson (lo propio de cada escena).
         AutoMigration(from = 2, to = 3),
+        // 4: page_ink (la tinta sale de pages a su propia tabla).
+        AutoMigration(from = 3, to = 4, spec = InkToItsOwnTable::class),
     ],
     // El esquema de cada versión queda en shared/schemas (ver room3 { } en shared/build.gradle.kts) y va al repo.
     exportSchema = true,
@@ -45,10 +51,27 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         /** Versión del esquema (`PRAGMA user_version`). Una copia más nueva no se puede importar. */
-        const val VERSION = 3
+        const val VERSION = 4
 
         /** Archivo de la base. La copia de seguridad (`backup/`) lo copia y lo reemplaza con este nombre. */
         const val FILE_NAME = "korean_diary.db"
+    }
+}
+
+/**
+ * Versión 3 → 4: Room crea `page_ink` y esto pasa ahí la tinta de cada página que tiene trazos (en el
+ * JSON de la tinta, un trazo es un arreglo dentro del arreglo: `[[`; vacía es `[]` o `{"v":2,"s":[]}`).
+ * Después deja `pages.inkJson` en `[]`: es lo que achica las filas de `pages`.
+ *
+ * Corre dentro de la transacción de la migración: si algo falla no queda nada a medias y la base
+ * sigue en la versión 3 con su tinta donde estaba. Test en `PageKindDatabaseTest`.
+ */
+class InkToItsOwnTable : AutoMigrationSpec {
+    override suspend fun onPostMigrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "INSERT OR REPLACE INTO page_ink (pageId, inkJson) SELECT id, inkJson FROM pages WHERE inkJson LIKE '%[[%'"
+        )
+        connection.execSQL("UPDATE pages SET inkJson = '[]'")
     }
 }
 

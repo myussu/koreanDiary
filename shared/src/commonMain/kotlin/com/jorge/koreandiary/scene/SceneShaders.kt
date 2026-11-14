@@ -108,8 +108,12 @@ float segDist(float2 p, float2 a, float2 b) {
 }
 """
 
-    /** El tono de la escena: una luz que sube desde abajo (y un poco por las esquinas de abajo) y respira, con partículas según el sentimiento, solo en la parte de abajo de la hoja. uKind: 0 motas que suben (amor, entusiasmo), 1 polvo en el aire (nostalgia), 2 destellos (alegría, asombro), 3 gotas lentas (tristeza), 4 parpadeo (inquietud), 5 olas de luz (calma). uParam.x = intensidad (0..1), uParam.y = velocidad. */
+    /** El tono de la escena: una luz que sube desde abajo (y un poco por las esquinas de abajo) y respira, con partículas según el sentimiento, solo en la parte de abajo de la hoja. uKind: 0 motas que suben (amor, entusiasmo), 1 polvo en el aire (nostalgia), 2 destellos (alegría, asombro), 3 gotas lentas (tristeza), 4 parpadeo (inquietud), 5 olas de luz (calma). uParam.x = intensidad (0..1), uParam.y = velocidad. La textura de la luz y la mezcla de sus dos colores son manchas grandes y lentas: usan ruido de dos capas (fbmLow, con el mismo rango y la misma media que el de cuatro), no las cuatro de fbm, que se calculaban tres veces por píxel sin que se notara. */
     private const val MOOD = """
+float fbmLow(float2 p) {
+    return 0.625 * vnoise(p) + 0.3125 * vnoise(p * 2.03 + float2(17.0, 9.0));
+}
+
 half4 main(float2 p) {
     float t = uTime * uParam.y;
     float intensity = uParam.x;
@@ -121,13 +125,13 @@ half4 main(float2 p) {
     if (uKind > 3.5 && uKind < 4.5) {
         breath = 0.7 + 0.3 * vnoise(float2(t * 2.2, 1.0)) + 0.1 * step(0.92, vnoise(float2(t * 7.0, 3.0)));
     }
-    float texture = 0.75 + 0.5 * fbm(q * 0.35 + float2(t * 0.03, -t * 0.02));
+    float texture = 0.75 + 0.5 * fbmLow(q * 0.35 + float2(t * 0.03, -t * 0.02));
     float glow = (exp(-d / reach) + 0.6 * exp(-side / (uEdge * 0.9)) * exp(-d / (reach * 1.8))) * breath * texture;
-    float hueMix = fbm(q * 0.2 + float2(-t * 0.02, t * 0.015));
+    float hueMix = fbmLow(q * 0.2 + float2(-t * 0.02, t * 0.015));
     float3 col = mix(uColor.rgb, uColor2.rgb, smoothstep(0.3, 0.7, hueMix));
     float a = glow * (0.2 + 0.14 * intensity);
     if (uKind > 4.5) {
-        float wave = 0.5 + 0.5 * sin(q.y * 0.9 - t * 0.5 + fbm(q * 0.5) * 2.0);
+        float wave = 0.5 + 0.5 * sin(q.y * 0.9 - t * 0.5 + fbmLow(q * 0.5) * 2.0);
         a += exp(-d / reach) * wave * 0.1 * intensity;
     }
     float band = 1.0 - smoothstep(reach * 0.9, reach * 2.0, d);

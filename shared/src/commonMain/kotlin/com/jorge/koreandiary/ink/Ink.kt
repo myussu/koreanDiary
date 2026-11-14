@@ -2,6 +2,7 @@ package com.jorge.koreandiary.ink
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.IdentityHashMap
 import kotlin.math.floor
 
 /** [p]: presión del lápiz (0–1). El dedo y las páginas antiguas usan un valor medio. */
@@ -17,17 +18,35 @@ fun pressureWidth(base: Float, pressure: Float): Float =
     base * (0.4f + 1.2f * pressure.coerceIn(0f, 1f)).coerceIn(0.4f, 1.6f)
 
 data class InkStroke(val points: List<InkPoint>) {
-    val centerY: Float
-        get() {
-            if (points.isEmpty()) return 0f
-            var min = Float.MAX_VALUE
-            var max = -Float.MAX_VALUE
-            for (p in points) {
-                if (p.y < min) min = p.y
-                if (p.y > max) max = p.y
-            }
-            return (min + max) / 2f
+    /**
+     * La caja que ocupa el trazo (todo en 0 si no tiene puntos). Se calcula una sola vez: un trazo
+     * no cambia, se reemplaza por otro. La usan el renglón del trazo, el borrador y el lienzo, que
+     * antes recorrían todos los puntos cada vez.
+     */
+    val minX: Float
+    val maxX: Float
+    val minY: Float
+    val maxY: Float
+
+    init {
+        var x0 = Float.MAX_VALUE
+        var x1 = -Float.MAX_VALUE
+        var y0 = Float.MAX_VALUE
+        var y1 = -Float.MAX_VALUE
+        for (p in points) {
+            if (p.x < x0) x0 = p.x
+            if (p.x > x1) x1 = p.x
+            if (p.y < y0) y0 = p.y
+            if (p.y > y1) y1 = p.y
         }
+        val empty = points.isEmpty()
+        minX = if (empty) 0f else x0
+        maxX = if (empty) 0f else x1
+        minY = if (empty) 0f else y0
+        maxY = if (empty) 0f else y1
+    }
+
+    val centerY: Float get() = (minY + maxY) / 2f
 
     fun lineIndex(lineHeight: Float): Int = floor(centerY / lineHeight).toInt().coerceAtLeast(0)
 }
@@ -52,27 +71,60 @@ object InkOps {
      */
     fun fitToWidth(strokes: List<InkStroke>, width: Float): List<InkStroke>? {
         if (width <= 0f) return null
-        val maxX = strokes.maxOfOrNull { s -> s.points.maxOfOrNull { it.x } ?: 0f } ?: return null
+        val maxX = strokes.maxOfOrNull { it.maxX } ?: return null
         if (maxX <= width * 1.02f) return null
         return scale(strokes, width * 0.98f / maxX)
+    }
+
+    /**
+     * Huella de los trazos de un renglón: cuántos son y, de cada uno, cuántos puntos tiene y cuándo
+     * empezó y terminó. No cambia al guardar la página y volver a abrirla, ni al escalarla o bajarla
+     * de renglón; sí cambia si se agrega, se borra o se reescribe un trazo. Sirve para no volver a
+     * leer con el reconocedor un renglón que ya se leyó.
+     */
+    fun lineKey(strokes: List<InkStroke>): Long {
+        var key = strokes.size.toLong()
+        for (s in strokes) {
+            val points = s.points
+            key = key * 31 + points.size
+            if (points.isNotEmpty()) {
+                key = key * 31 + points.first().t
+                key = key * 31 + points.last().t
+            }
+        }
+        return key
     }
 }
 
 object InkSerializer {
     fun toJson(strokes: List<InkStroke>, width: Float): String {
         val w = if (width > 0f) width else 1f
-        val list = JSONArray()
+        return page(strokes) { strokeJson(it, w) }
+    }
+
+    /** La página: `{"v":2,"s":[trazo, trazo, ...]}`, con el texto de cada trazo que da [strokeText]. */
+    internal inline fun page(strokes: List<InkStroke>, strokeText: (InkStroke) -> String): String {
+        val out = StringBuilder(32 + strokes.size * 256)
+        out.append("{\"v\":2,\"s\":[")
+        var first = true
         for (s in strokes) {
-            val arr = JSONArray()
-            for (p in s.points) {
-                arr.put(round4(p.x / w))
-                arr.put(round4(p.y / w))
-                arr.put(p.t)
-                arr.put(Math.round(p.p * 100.0) / 100.0)
-            }
-            list.put(arr)
+            if (!first) out.append(',')
+            first = false
+            out.append(strokeText(s))
         }
-        return JSONObject().put("v", 2).put("s", list).toString()
+        return out.append("]}").toString()
+    }
+
+    /** Un trazo: `[x, y, t, p, x, y, t, p, ...]` con x e y relativos al ancho [w]. */
+    internal fun strokeJson(stroke: InkStroke, w: Float): String {
+        val arr = JSONArray()
+        for (p in stroke.points) {
+            arr.put(round4(p.x / w))
+            arr.put(round4(p.y / w))
+            arr.put(p.t)
+            arr.put(Math.round(p.p * 100.0) / 100.0)
+        }
+        return arr.toString()
     }
 
     fun fromJson(json: String?, width: Float): List<InkStroke> {
@@ -106,6 +158,36 @@ object InkSerializer {
     }
 
     private fun round4(v: Float): Double = Math.round(v * 10000.0) / 10000.0
+}
+
+/**
+ * Serializa la tinta de una página recordando el texto de cada trazo. La página se guarda después de
+ * cada pausa al escribir: sin esto se convertían a texto todos sus trazos cada vez (una página llena
+ * son decenas de miles de puntos); así solo se convierte lo nuevo y el resto se copia.
+ *
+ * Los trazos se recuerdan por identidad (no cambian, se reemplazan), como las formas del lienzo, y se
+ * olvidan los que ya no están en la página. Da el mismo texto que [InkSerializer.toJson].
+ */
+class InkJsonWriter {
+    private var width = -1f
+    private var cache = IdentityHashMap<InkStroke, String>()
+
+    /** Puede llamarse desde varios hilos (el guardado de la página y el guardado final al salir). */
+    @Synchronized
+    fun toJson(strokes: List<InkStroke>, width: Float): String {
+        val w = if (width > 0f) width else 1f
+        // Las coordenadas se guardan relativas al ancho: con otro ancho, lo recordado ya no sirve.
+        if (w != this.width) {
+            cache = IdentityHashMap()
+            this.width = w
+        }
+        val next = IdentityHashMap<InkStroke, String>(strokes.size * 2)
+        val json = InkSerializer.page(strokes) { s ->
+            (cache[s] ?: InkSerializer.strokeJson(s, w)).also { next[s] = it }
+        }
+        cache = next
+        return json
+    }
 }
 
 /**

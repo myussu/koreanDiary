@@ -72,6 +72,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
@@ -118,12 +120,29 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val density = LocalDensity.current
     val lineHeightPx = with(density) { 64.dp.toPx() }
     val strokeWidthPx = with(density) { settings.penWidthDp.dp.toPx() }
-    // Pantalla encendida mientras estás en la página: pensar qué escribir no debería apagarla.
+    // El último toque en la hoja (también el lápiz flotando sobre ella). No es estado: tocar no
+    // recompone la pantalla; de él dependen la pantalla encendida y el descanso de la escena viva.
+    val lastTouch = remember { longArrayOf(SystemClock.uptimeMillis()) }
+    // Pantalla encendida mientras estás en la página: pensar qué escribir no debería apagarla. Pero
+    // no para siempre: si pasa un buen rato sin tocar la hoja (dejaste el celular con la página
+    // abierta), vuelve a apagarse sola como en cualquier app. Al tocar la hoja se queda otra vez.
     val view = LocalView.current
-    DisposableEffect(view) {
-        view.keepScreenOn = true
+    var screenAwake by remember { mutableStateOf(true) }
+    DisposableEffect(view, screenAwake) {
+        view.keepScreenOn = screenAwake
         onDispose { view.keepScreenOn = false }
     }
+    LaunchedEffect(screenAwake) {
+        if (!screenAwake) return@LaunchedEffect
+        while (true) {
+            val left = lastTouch[0] + KEEP_SCREEN_ON_MS - SystemClock.uptimeMillis()
+            if (left <= 0) break
+            delay(left)
+        }
+        screenAwake = false
+    }
+    // Al salir de la app (o apagar la pantalla) lo escrito se guarda en el momento, sin esperar la pausa.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.saveNow() }
     val inkScroll = rememberInkScrollState()
 
     LaunchedEffect(vm) {
@@ -158,9 +177,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val isScene = page?.kind == PageKind.SCENE
     // La escena viva se queda quieta si no tocas la hoja un rato: sus dibujos y el filtro de acuarela
     // se calculan en cada cuadro y calientan el celular aunque nadie los mire. El lápiz (también
-    // flotando sobre la hoja) o un dedo la despiertan. El último toque no es estado: tocar no
-    // recompone la pantalla; solo cambia `sceneAwake` al dormirse o despertarse.
-    val lastTouch = remember { longArrayOf(SystemClock.uptimeMillis()) }
+    // flotando sobre la hoja) o un dedo la despiertan; solo cambia `sceneAwake` al dormirse o despertarse.
     var sceneAwake by remember { mutableStateOf(true) }
     LaunchedEffect(sceneAwake) {
         if (!sceneAwake) return@LaunchedEffect
@@ -240,18 +257,17 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     }
 
     val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
-        val watchTouches = if (isScene) {
-            Modifier.pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        // Solo mira (pasada inicial, sin consumir): el lienzo recibe todo igual.
-                        awaitPointerEvent(PointerEventPass.Initial)
-                        lastTouch[0] = SystemClock.uptimeMillis()
-                        if (!sceneAwake) sceneAwake = true
-                    }
+        val watchTouches = Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    // Solo mira (pasada inicial, sin consumir): el lienzo recibe todo igual.
+                    awaitPointerEvent(PointerEventPass.Initial)
+                    lastTouch[0] = SystemClock.uptimeMillis()
+                    if (!sceneAwake) sceneAwake = true
+                    if (!screenAwake) screenAwake = true
                 }
             }
-        } else Modifier
+        }
         Box(Modifier.weight(1f).fillMaxWidth().paperBackground(paper).then(watchTouches)) {
             // La imagen de la escena, muy suave, y encima la escena viva; la tinta siempre arriba de todo.
             if (isScene && settings.sceneImageBackground && page != null) {
@@ -412,6 +428,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 
 /** Cuánto sigue moviéndose la escena viva después del último toque en la hoja. */
 private const val SCENE_IDLE_MS = 30_000L
+
+/** Cuánto se mantiene la pantalla encendida sin que toques la hoja. */
+private const val KEEP_SCREEN_ON_MS = 5 * 60_000L
 
 /** Lado corto de la pantalla completa (con barras incluidas): el ancho del celular en vertical. */
 @Composable

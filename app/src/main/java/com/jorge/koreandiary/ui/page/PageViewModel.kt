@@ -1,6 +1,7 @@
 package com.jorge.koreandiary.ui.page
 
 import android.content.Intent
+import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,6 +26,7 @@ import com.jorge.koreandiary.data.db.DiaryPage
 import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
+import com.jorge.koreandiary.ink.InkJsonWriter
 import com.jorge.koreandiary.ink.InkOps
 import com.jorge.koreandiary.ink.InkSerializer
 import com.jorge.koreandiary.ink.InkStroke
@@ -173,7 +175,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private var width = 0f
     private var height = 0f
     private var lineHeight = 0f
+    /** La tinta guardada ya está en pantalla. Hasta entonces no se escribe tinta en la base. */
     private var strokesLoaded = false
+    private var loadingStrokes = false
+    /** La lista de trazos que ya está en la base: si no cambió, guardar la página no reescribe la tinta. */
+    private var savedStrokes: List<InkStroke>? = null
+    /** Recuerda el texto de cada trazo ya guardado: cada guardado convierte solo lo nuevo. */
+    private val inkWriter = InkJsonWriter()
     /** Cada paso guarda los trazos y la zona revisada (insertar una línea puede moverla). */
     private data class Snapshot(val strokes: List<InkStroke>, val reviewedLines: Int)
     private val undoStack = ArrayDeque<Snapshot>()
@@ -184,6 +192,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     init {
         viewModelScope.launch {
             val page = c.diary.page(pageId) ?: return@launch
+            // Lo que ya se leyó de cada renglón de la escena la última vez: no se lee todo de nuevo.
+            if (page.kind == PageKind.SCENE) readCache.putAll(SceneData.parse(page.sceneJson).reads)
             showPage(page)
             tryLoadStrokes()
             // Saliste mientras la IA revisaba y volviste: se espera a que termine y se relee la página,
@@ -221,16 +231,43 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         tryLoadStrokes()
     }
 
+    /**
+     * Trae la tinta de la base y la arma fuera del hilo principal: una página llena son decenas de
+     * miles de puntos y antes la pantalla se trababa al abrirla.
+     */
     private fun tryLoadStrokes() {
         val page = _state.value.page ?: return
-        if (strokesLoaded || width <= 0f) return
-        strokesLoaded = true
-        val loaded = InkSerializer.fromJson(page.inkJson, width)
-        // Páginas que quedaron con tinta fuera de la hoja al girar el celular: se achican para verse enteras.
-        val fitted = InkOps.fitToWidth(loaded, width)
-        _state.update { it.copy(strokes = fitted ?: loaded) }
-        if (fitted != null) scheduleSave()
-        scheduleLiveScene()
+        if (strokesLoaded || loadingStrokes || width <= 0f) return
+        loadingStrokes = true
+        viewModelScope.launch {
+            val json = c.diary.ink(page.id)
+            val w = width
+            val (read, refit) = withContext(Dispatchers.Default) {
+                val strokes = InkSerializer.fromJson(json, w)
+                // Páginas que quedaron con tinta fuera de la hoja al girar el celular: se achican para verse enteras.
+                val fitted = InkOps.fitToWidth(strokes, w)
+                (fitted ?: strokes) to (fitted != null)
+            }
+            // La hoja pudo cambiar de ancho mientras se leía (pantalla dividida).
+            val loaded = if (abs(width - w) > 0.5f) InkOps.scale(read, width / w) else read
+            // Lo que alcanzaste a escribir antes de que apareciera la tinta guardada va después de ella,
+            // también en los pasos de deshacer (si no, deshacer dejaría la página en blanco).
+            val early = _state.value.strokes
+            if (early.isNotEmpty()) {
+                listOf(undoStack, redoStack).forEach { stack ->
+                    val merged = stack.map { snap -> snap.copy(strokes = loaded + snap.strokes) }
+                    stack.clear()
+                    stack.addAll(merged)
+                }
+            }
+            val all = if (early.isEmpty()) loaded else loaded + early
+            strokesLoaded = true
+            loadingStrokes = false
+            _state.update { it.copy(strokes = all) }
+            if (refit || early.isNotEmpty()) scheduleSave() else savedStrokes = all
+            // Con lo ya leído de cada renglón guardado, esto casi nunca llama al reconocedor.
+            scheduleLiveScene(delayMs = LIVE_SCENE_OPEN_DELAY_MS)
+        }
     }
 
     /** Pone la página en pantalla con sus sugerencias, separando las gramáticas nuevas de la escena. */
@@ -355,12 +392,32 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         scheduleLiveScene()
     }
 
+    /** Cuándo quedó el primer cambio sin guardar (0 = todo guardado). */
+    private var dirtySince = 0L
+
+    /**
+     * Guarda un rato después del último trazo, no entre letra y letra: cada guardado escribe toda la
+     * tinta de la página en la base. Si no paras de escribir, igual se guarda cada [SAVE_MAX_WAIT_MS].
+     * Al salir de la página o de la app se guarda en el momento ([saveNow], `onCleared`).
+     */
     private fun scheduleSave() {
+        val now = SystemClock.elapsedRealtime()
+        if (dirtySince == 0L) dirtySince = now
+        val wait = minOf(SAVE_DELAY_MS, (dirtySince + SAVE_MAX_WAIT_MS - now).coerceAtLeast(0L))
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
-            delay(400)
+            delay(wait)
+            dirtySince = 0L
             persist()
         }
+    }
+
+    /** La app pasa a segundo plano: lo pendiente se guarda ya, sin esperar la pausa. */
+    fun saveNow() {
+        if (dirtySince == 0L) return
+        dirtySince = 0L
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch { persist() }
     }
 
     /**
@@ -373,16 +430,23 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (_state.value.page == null) return@withLock null
         val strokes = _state.value.strokes
         val w = width
-        // Serializar la página crece con todo lo escrito: va fuera del hilo principal para no trabar el lápiz.
-        val inkJson = withContext(Dispatchers.Default) { InkSerializer.toJson(strokes, w) }
+        // La tinta solo se escribe si cambió desde el último guardado (un cambio de estado o de
+        // sugerencias no la reescribe) y nunca antes de que cargue la guardada: se borraría.
+        val inkChanged = strokesLoaded && w > 0f && strokes !== savedStrokes
+        // Va fuera del hilo principal para no trabar el lápiz. Sin trazos no queda tinta guardada.
+        val inkJson = if (inkChanged && strokes.isNotEmpty()) withContext(Dispatchers.Default) { inkWriter.toJson(strokes, w) } else null
         // La página se lee después de serializar, para partir de lo último que haya en pantalla.
         val page = _state.value.page ?: return@withLock null
         val updated = transform(page).copy(
-            inkJson = inkJson,
-            canvasWidth = w.toInt(),
+            canvasWidth = if (w > 0f) w.toInt() else page.canvasWidth,
             updatedAt = System.currentTimeMillis(),
         )
-        c.diary.save(updated)
+        if (inkChanged) {
+            c.diary.save(updated, inkJson)
+            savedStrokes = strokes
+        } else {
+            c.diary.save(updated)
+        }
         _state.update { it.copy(page = updated) }
         updated
     }
@@ -691,9 +755,14 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     // ---------- Escena viva ----------
 
-    /** Texto leído por línea y una huella de sus trazos: solo se vuelve a leer la línea que cambió. */
-    private val lineTexts = HashMap<Int, String>()
-    private val lineKeys = HashMap<Int, Int>()
+    /** Texto leído en cada línea de la página, tal como quedó en la última lectura. */
+    private var lineTexts: Map<Int, String> = emptyMap()
+    /**
+     * Lo que el reconocedor leyó de cada renglón, por la huella de sus trazos (`InkOps.lineKey`): solo
+     * se vuelve a leer el renglón que cambió. Se guarda con la escena (`SceneData.reads`), así que al
+     * volver a abrirla tampoco se lee todo de nuevo.
+     */
+    private val readCache = HashMap<Long, String>()
     /** Lo que el diccionario encuentra en la tinta (en vivo). */
     private var detected: List<SceneElement> = emptyList()
     private var liveJob: Job? = null
@@ -712,47 +781,53 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     /** Un rato después del último trazo (no en cada uno), se lee lo que cambió. */
-    private fun scheduleLiveScene() {
+    private fun scheduleLiveScene(delayMs: Long = LIVE_SCENE_DELAY_MS) {
         if (!isScene || !c.settings.state.value.liveScene) return
         liveJob?.cancel()
         liveJob = viewModelScope.launch {
-            delay(LIVE_SCENE_DELAY_MS)
+            delay(delayMs)
             updateLiveScene()
         }
     }
 
     /**
-     * Lee con ML Kit solo las líneas cuyos trazos cambiaron y busca en todo lo leído las palabras del
-     * diccionario. Sin IA ni cuota. No descarga el modelo por su cuenta: eso lo hace Revisar o la
+     * Lee con ML Kit solo los renglones cuyos trazos cambiaron y busca en todo lo leído las palabras
+     * del diccionario. Sin IA ni cuota. No descarga el modelo por su cuenta: eso lo hace Revisar o la
      * precarga por Wi-Fi al abrir la app.
      */
     private suspend fun updateLiveScene() {
         val lh = lineHeight
         val w = width
-        if (lh <= 0f || w <= 0f) return
-        if (!runCatching { c.recognizer.isModelDownloaded() }.getOrDefault(false)) return
+        if (lh <= 0f || w <= 0f || !strokesLoaded) return
         val byLine = _state.value.strokes.groupBy { it.lineIndex(lh) }
-        lineTexts.keys.retainAll(byLine.keys)
-        lineKeys.keys.retainAll(byLine.keys)
+        val keys = byLine.mapValues { InkOps.lineKey(it.value) }
+        // El reconocedor solo hace falta si algún renglón no está leído ya.
+        if (keys.values.any { it !in readCache } && !runCatching { c.recognizer.isModelDownloaded() }.getOrDefault(false)) return
+        val texts = HashMap<Int, String>()
         for ((line, strokes) in byLine) {
-            val key = strokes.fold(strokes.size) { acc, s -> 31 * acc + System.identityHashCode(s) }
-            if (lineKeys[line] == key) continue
-            val text = try {
+            val key = keys.getValue(line)
+            val text = readCache[key] ?: try {
                 c.recognizer.recognizeLines(strokes, lh, w).joinToString(" ") { it.text }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 continue
             }
-            lineTexts[line] = text
-            lineKeys[line] = key
+            // Se recuerda en cuanto se lee: si un trazo nuevo corta esta pasada, lo leído no se pierde.
+            readCache[key] = text
+            texts[line] = text
         }
+        readCache.keys.retainAll(keys.values.toSet())
+        lineTexts = texts
         val text = liveText()
         detected = withContext(Dispatchers.Default) { SceneDictionary.detect(text) }
-        // Lo que vio la IA en «¿Cómo digo?» aparece cuando escribes sus palabras.
+        // Lo que vio la IA en «¿Cómo digo?» aparece cuando escribes sus palabras; y lo leído de cada
+        // renglón queda guardado con la escena.
+        val reads = HashMap(readCache)
         val scene = SceneData.parse(_state.value.page?.sceneJson)
-        val revealed = scene.revealWritten(text)
-        if (revealed != scene) persist { it.copy(sceneJson = revealed.toJson()) }
+        if (scene.revealWritten(text).withReads(reads) != scene) {
+            persist { it.copy(sceneJson = SceneData.parse(it.sceneJson).revealWritten(text).withReads(reads).toJson()) }
+        }
         publishScene()
     }
 
@@ -1036,19 +1111,33 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (deleted) return
         val page = _state.value.page ?: return
         val strokes = _state.value.strokes
+        val w = width
+        val emptyDraft = page.status == PageStatus.DRAFT && page.confirmedText.isNullOrBlank()
+        if (!strokesLoaded) {
+            // Saliste antes de que cargara la tinta guardada: la lista en memoria no es la página.
+            c.appScope.launch {
+                val saved = c.diary.ink(page.id)
+                when {
+                    // Alcanzaste a escribir algo: va después de lo que ya estaba guardado.
+                    strokes.isNotEmpty() && w > 0f ->
+                        c.diary.saveInk(page.id, InkSerializer.toJson(InkSerializer.fromJson(saved, w) + strokes, w), w.toInt(), System.currentTimeMillis())
+                    // Página abierta por error y sin nada escrito ni guardado: se borra.
+                    saved == null && emptyDraft -> c.diary.deletePage(page.id)
+                }
+            }
+            return
+        }
         // Página abierta por error y sin escribir nada: se borra en vez de quedar vacía en la lista.
-        // Se exige también que no haya trazos guardados: si sales antes de que cargue una página con
-        // escritura, la lista en memoria aún está vacía y no debe borrarse.
-        val savedInk = InkSerializer.fromJson(page.inkJson, 1f).isNotEmpty()
-        if (strokes.isEmpty() && !savedInk && page.status == PageStatus.DRAFT && page.confirmedText.isNullOrBlank()) {
+        if (strokes.isEmpty() && emptyDraft) {
             c.appScope.launch { c.diary.deletePage(page.id) }
             return
         }
-        val w = width
-        // Solo la tinta: una revisión que sigue en curso puede cambiar el estado después de esto.
-        if (w > 0f && strokesLoaded) {
+        // Solo la tinta, y solo si cambió desde el último guardado: una revisión que sigue en curso
+        // puede cambiar el estado después de esto. Sin trazos no queda tinta guardada.
+        if (w > 0f && strokes !== savedStrokes) {
             c.appScope.launch {
-                c.diary.saveInk(page.id, InkSerializer.toJson(strokes, w), w.toInt(), System.currentTimeMillis())
+                val json = if (strokes.isEmpty()) null else inkWriter.toJson(strokes, w)
+                c.diary.saveInk(page.id, json, w.toInt(), System.currentTimeMillis())
             }
         }
     }
@@ -1057,8 +1146,21 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         /** Páginas con una revisión de la IA en curso; sigue aunque salgas de la página. */
         private val reviewing = MutableStateFlow<Set<Long>>(emptySet())
 
-        /** Pausa después del último trazo antes de leer la línea para la escena viva. */
-        private const val LIVE_SCENE_DELAY_MS = 800L
+        /**
+         * Pausa después del último trazo antes de leer el renglón para la escena viva. Leerlo es una
+         * pasada del reconocedor de escritura; con menos pausa se leía el mismo renglón varias veces
+         * mientras lo ibas escribiendo.
+         */
+        private const val LIVE_SCENE_DELAY_MS = 2_000L
+
+        /** Al abrir la escena los renglones ya están leídos y guardados: no hace falta esperar tanto. */
+        private const val LIVE_SCENE_OPEN_DELAY_MS = 300L
+
+        /** Pausa después del último trazo antes de guardar la página. */
+        private const val SAVE_DELAY_MS = 2_500L
+
+        /** Si no paras de escribir, igual se guarda cada tanto. */
+        private const val SAVE_MAX_WAIT_MS = 10_000L
 
         /** Radio mínimo del borrador (px); el normal es ~18 % del alto de línea. */
         private const val MIN_ERASE_RADIUS = 24f

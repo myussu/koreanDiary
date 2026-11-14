@@ -93,13 +93,22 @@ class Updater(private val app: Application) {
         installJob = scope.launch { downloadAndInstall(info, skipBackup) }
     }
 
-    /** Con [silent], los errores de red no se muestran (chequeo automático al abrir la app). */
+    /** Cuándo respondió el último chequeo (reloj del sistema desde el arranque); 0 = todavía ninguno. */
+    private var lastCheckAt = 0L
+
+    /**
+     * Con [silent], los errores de red no se muestran (chequeo automático al abrir la app). El
+     * automático corre cada vez que se crea la pantalla, también al girar el celular o cambiar de
+     * tema: no vuelve a consultar si ya respondió uno hace menos de una hora. El botón siempre consulta.
+     */
     suspend fun check(silent: Boolean = false) {
         val busy = _state.value
         if (busy is UpdateState.Checking || busy is UpdateState.Downloading || busy is UpdateState.BackingUp || busy is UpdateState.Installing) return
+        if (silent && lastCheckAt != 0L && android.os.SystemClock.elapsedRealtime() - lastCheckAt < AUTO_CHECK_EVERY_MS) return
         _state.value = UpdateState.Checking
         _state.value = try {
             val info = fetchReleaseInfo()
+            lastCheckAt = android.os.SystemClock.elapsedRealtime()
             if (info.versionCode > currentVersionCode) UpdateState.Available(info) else UpdateState.UpToDate
         } catch (e: Exception) {
             if (silent) UpdateState.Idle else UpdateState.Error("No se pudo buscar actualizaciones: ${e.message}")
@@ -256,6 +265,9 @@ class Updater(private val app: Application) {
         private const val BASE = "https://github.com/myussu/koreanDiary/releases/download/latest"
         private const val VERSION_URL = "$BASE/version.json"
         private const val APK_URL = "$BASE/koreandiary.apk"
+
+        /** El chequeo automático no consulta más seguido que esto. */
+        private const val AUTO_CHECK_EVERY_MS = 60 * 60_000L
     }
 }
 

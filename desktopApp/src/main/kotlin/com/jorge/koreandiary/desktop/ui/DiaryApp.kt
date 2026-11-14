@@ -285,17 +285,21 @@ private fun PageDetail(database: AppDatabase, summary: PageSummary?, modifier: M
         }
         return
     }
-    val page by produceState<DiaryPage?>(null, database, summary.pageId) {
-        value = withContext(Dispatchers.IO) { database.diaryDao().page(summary.pageId) }
+    // La página y su tinta (la tinta vive en su propia tabla; null si la página no tiene trazos).
+    val loaded by produceState<Pair<DiaryPage, String?>?>(null, database, summary.pageId) {
+        value = withContext(Dispatchers.IO) {
+            val dao = database.diaryDao()
+            dao.page(summary.pageId)?.let { it to dao.ink(summary.pageId) }
+        }
     }
     Column(
         modifier.verticalScroll(rememberScrollState()).padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(dayLabel(summary.date), style = MaterialTheme.typography.titleLarge)
-        val p = page ?: return@Column
+        val (p, ink) = loaded ?: return@Column
         InkView(
-            p.inkJson,
+            ink.orEmpty(),
             Modifier
                 .widthIn(max = 900.dp)
                 .fillMaxWidth()

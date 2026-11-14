@@ -266,6 +266,13 @@ class SettingsStore(context: Context) {
 class SecretStore(context: Context) {
     private val prefs = context.getSharedPreferences("secrets", Context.MODE_PRIVATE)
 
+    /**
+     * Claves ya descifradas en esta sesión de la app. Cada pedido a la IA pide la clave, y descifrarla
+     * es una ida al Keystore (lenta, a veces en el hilo principal): con esto se hace una vez por clave.
+     * Solo vive en memoria.
+     */
+    private val decrypted = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
@@ -281,6 +288,7 @@ class SecretStore(context: Context) {
     }
 
     fun put(name: String, value: String?) {
+        decrypted.remove(name)
         if (value.isNullOrBlank()) {
             prefs.edit().remove(name).apply()
             return
@@ -290,15 +298,17 @@ class SecretStore(context: Context) {
         val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
         val blob = cipher.iv + encrypted
         prefs.edit().putString(name, Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
+        decrypted[name] = value
     }
 
     fun get(name: String): String? {
         val stored = prefs.getString(name, null) ?: return null
+        decrypted[name]?.let { return it }
         return try {
             val blob = Base64.decode(stored, Base64.NO_WRAP)
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, blob, 0, IV_SIZE))
-            String(cipher.doFinal(blob, IV_SIZE, blob.size - IV_SIZE), Charsets.UTF_8)
+            String(cipher.doFinal(blob, IV_SIZE, blob.size - IV_SIZE), Charsets.UTF_8).also { decrypted[name] = it }
         } catch (e: Exception) {
             null
         }

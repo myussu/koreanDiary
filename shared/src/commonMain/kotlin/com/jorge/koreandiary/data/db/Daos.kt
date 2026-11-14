@@ -10,11 +10,11 @@ import kotlinx.coroutines.flow.Flow
 // Room 3: toda función de DAO es suspend o devuelve Flow.
 
 /**
- * La página tiene algo escrito: al menos un trazo (en el JSON de la tinta, un trazo es un arreglo
- * dentro del arreglo: `[[`; vacía es `[]` o `{"v":2,"s":[]}`) o texto confirmado.
+ * La página tiene algo escrito: al menos un trazo (tiene fila en `page_ink`; una página sin trazos
+ * no la tiene, ver [PageInk]) o texto confirmado. No lee la tinta.
  */
 private const val HAS_CONTENT =
-    "(pages.inkJson LIKE '%[[%' OR TRIM(COALESCE(pages.confirmedText, '')) != '')"
+    "(EXISTS (SELECT 1 FROM page_ink WHERE page_ink.pageId = pages.id) OR TRIM(COALESCE(pages.confirmedText, '')) != '')"
 
 /**
  * Qué páginas cuentan para la racha, el calendario y el recordatorio: las del diario con algo escrito
@@ -50,6 +50,10 @@ interface StudyDao {
 
     @Query("SELECT * FROM grammar_points ORDER BY level, unit, id")
     fun observeGrammar(): Flow<List<GrammarPoint>>
+
+    /** ¿Hay algo en las listas de estudio? Para el inicio, que solo necesita saber eso y no las listas. */
+    @Query("SELECT EXISTS (SELECT 1 FROM words) OR EXISTS (SELECT 1 FROM grammar_points)")
+    fun observeHasItems(): Flow<Boolean>
 
     @Query("SELECT id FROM words")
     suspend fun allWordIds(): List<Long>
@@ -123,9 +127,25 @@ interface DiaryDao {
     @Update
     suspend fun updatePage(page: DiaryPage)
 
-    /** Solo la tinta: el guardado al salir de la página no debe pisar un estado que cambió mientras tanto. */
-    @Query("UPDATE pages SET inkJson = :inkJson, canvasWidth = :canvasWidth, updatedAt = :updatedAt WHERE id = :id")
-    suspend fun updateInk(id: Long, inkJson: String, canvasWidth: Int, updatedAt: Long)
+    /** La tinta de una página; null si no tiene trazos (ver [PageInk]). */
+    @Query("SELECT inkJson FROM page_ink WHERE pageId = :pageId")
+    suspend fun ink(pageId: Long): String?
+
+    @Upsert
+    suspend fun upsertInk(ink: PageInk)
+
+    @Query("DELETE FROM page_ink WHERE pageId = :pageId")
+    suspend fun deleteInk(pageId: Long)
+
+    @Query("SELECT EXISTS (SELECT 1 FROM page_ink WHERE pageId = :pageId)")
+    suspend fun hasInk(pageId: Long): Boolean
+
+    /**
+     * Lo que acompaña a un guardado de solo tinta. No toca el estado: el guardado al salir de la
+     * página no debe pisar uno que cambió mientras tanto.
+     */
+    @Query("UPDATE pages SET canvasWidth = :canvasWidth, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun touchPage(id: Long, canvasWidth: Int, updatedAt: Long)
 
     @Query("UPDATE pages SET status = :status WHERE id = :id")
     suspend fun setPageStatus(id: Long, status: String)

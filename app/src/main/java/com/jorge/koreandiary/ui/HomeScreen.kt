@@ -103,9 +103,9 @@ fun HomeScreen(
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
         BackupBanner(container, onSettings = onSettings, modifier = Modifier.padding(top = 10.dp))
-        val words by container.study.words.collectAsStateWithLifecycle(emptyList())
-        val grammar by container.study.grammar.collectAsStateWithLifecycle(emptyList())
-        val needsStudy = words.isEmpty() && grammar.isEmpty()
+        // Solo hace falta saber si hay algo en las listas, no cargarlas enteras cada vez que abres el inicio.
+        val hasStudy by container.study.hasItems.collectAsStateWithLifecycle(true)
+        val needsStudy = !hasStudy
         val needsProfile = settings.profile.isBlank()
         if (!settings.hideOnboarding && (needsStudy || needsProfile)) {
             OnboardingCard(

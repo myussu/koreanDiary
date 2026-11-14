@@ -134,7 +134,10 @@ object PageKind {
 data class DiaryPage(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val entryId: Long,
-    /** Trazos originales serializados (ver InkSerializer). Se guardan para reconocer de nuevo. */
+    /**
+     * Ya no se usa: desde la versión 4 del esquema la tinta vive en [PageInk] y esta columna queda
+     * en `[]`. Sigue aquí porque quitarla obliga a rehacer la tabla; se puede borrar más adelante.
+     */
     val inkJson: String = "[]",
     val canvasWidth: Int = 0,
     val recognizedText: String? = null,
@@ -151,6 +154,21 @@ data class DiaryPage(
     val kind: String = PageKind.DIARY,
     /** Solo escenas: `scene.SceneData` en JSON (gramáticas nuevas, ideas dichas). Versión 3 del esquema. */
     val sceneJson: String? = null,
+)
+
+/**
+ * La tinta de una página, en su propia tabla (versión 4 del esquema). Antes iba en `pages.inkJson`,
+ * y como una página llena pesa cerca de 1 MB y SQLite guarda cada fila de corrido, leer cualquier
+ * otro dato de las páginas (estado, texto, fecha: la lista del inicio, la racha) recorría la tinta
+ * de todo el diario.
+ *
+ * Una página sin trazos no tiene fila aquí: «tiene algo escrito» es ver si la fila existe, sin leerla.
+ */
+@Entity(tableName = "page_ink")
+data class PageInk(
+    @PrimaryKey val pageId: Long,
+    /** Trazos originales serializados (ver InkSerializer). Se guardan para reconocer de nuevo. */
+    val inkJson: String,
 )
 
 object CorrectionStatus {

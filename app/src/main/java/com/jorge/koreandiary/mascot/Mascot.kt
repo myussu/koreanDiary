@@ -1,13 +1,15 @@
 package com.jorge.koreandiary.mascot
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -43,22 +45,38 @@ fun Mascot(
     modifier: Modifier = Modifier,
     custom: ImageBitmap? = null,
 ) {
-    // Un reloj lento (20 cuadros por segundo): la mascota está siempre a la vista en la página y con
-    // una animación normal la pantalla quedaría a 120 Hz todo el tiempo. Vuelve a cero cada 403,2 s,
-    // múltiplo de los ciclos de 3,6, 6,4 y 1,4 s, así el movimiento no salta.
-    val clock = rememberSlowClock(fps = 20, wrapSeconds = 403.2f)
+    // Se mueve un rato al aparecer y cada vez que cambia de ánimo, y después se queda quieta: está
+    // siempre a la vista en la página y cada cuadro suyo hace que el celular redibuje toda la
+    // pantalla, también con la página abierta sin que nadie escriba. Mientras piensa (la IA está
+    // trabajando) no para: sus puntos son el aviso de que algo sigue en marcha.
+    var awake by remember { mutableStateOf(true) }
+    LaunchedEffect(mood) {
+        awake = true
+        if (mood != MascotMood.THINKING) {
+            delay(AWAKE_MS)
+            awake = false
+        }
+    }
+    // Un reloj lento (20 cuadros por segundo): con una animación normal la pantalla quedaría a
+    // 120 Hz. Vuelve a cero cada 403,2 s, múltiplo de los ciclos de 3,6, 6,4 y 1,4 s, así el
+    // movimiento no salta.
+    val clock = rememberSlowClock(fps = 20, running = awake, wrapSeconds = 403.2f)
     val period = if (mood == MascotMood.SLEEPY) 3.2f else 1.8f
     // Rebote suave de ida y vuelta; más lento si está dormida.
     fun bob() = (1f - cos(PI.toFloat() * clock.floatValue / period)) / 2f
     // Fase continua para los puntos de "pensando" y las Z de "dormida".
     fun phase() = (clock.floatValue / 1.4f) % 1f
-    val blink = remember { Animatable(0f) }
+    // Parpadeo: cierra y abre los ojos en dos pasos (dos cuadros), no con una animación de 20.
+    // Sigue cuando está quieta: es lo que la mantiene viva.
+    val blink = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(mood) {
+        blink.floatValue = 0f
         if (mood == MascotMood.SLEEPY || mood == MascotMood.HAPPY) return@LaunchedEffect
         while (true) {
             delay(Random.nextLong(2_200, 5_000))
-            blink.animateTo(1f, tween(70))
-            blink.animateTo(0f, tween(110))
+            blink.floatValue = 1f
+            delay(130)
+            blink.floatValue = 0f
         }
     }
 
@@ -77,11 +95,14 @@ fun Mascot(
         val phase = phase()
         translate(top = -bob * w * 0.04f) {
             drawDrop(body, features)
-            drawFace(mood, features, accent, blink.value, phase)
+            drawFace(mood, features, accent, blink.floatValue, phase)
         }
         drawExtras(mood, body, phase, bob)
     }
 }
+
+/** Cuánto se mueve la mascota después de aparecer o de cambiar de ánimo. */
+private const val AWAKE_MS = 10_000L
 
 private fun DrawScope.drawDrop(body: Color, features: Color) {
     val w = size.width

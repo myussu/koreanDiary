@@ -73,7 +73,22 @@ class SceneImages(
         BitmapFactory.decodeFile(f.path, bounds)
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
-        BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+        BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })?.let { fit(it, maxSide) }?.asImageBitmap()
+    }
+
+    /**
+     * Deja el lado largo en [maxSide] como mucho. El muestreo al decodificar solo divide entre 2, 4…:
+     * una imagen de 3000 px quedaba en 3000 (más de 20 MB en memoria detrás de la hoja), no en 1600.
+     */
+    private fun fit(bitmap: Bitmap, maxSide: Int): Bitmap {
+        val long = maxOf(bitmap.width, bitmap.height)
+        if (long <= maxSide) return bitmap
+        val scale = maxSide.toFloat() / long
+        val scaled = Bitmap.createScaledBitmap(
+            bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true,
+        )
+        if (scaled !== bitmap) bitmap.recycle()
+        return scaled
     }
 
     /** Pinta la escena en tu servidor con la descripción que dio la IA al revisar. */
@@ -141,6 +156,7 @@ class SceneImages(
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?.let { fit(it, MAX_SIDE) }
             ?: throw IOException("Eso no parece una imagen.")
         dir.mkdirs()
         writeJpeg(bitmap, file(pageId), 88)

@@ -24,9 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.ShaderBrush
@@ -46,7 +46,7 @@ import com.jorge.koreandiary.ui.ScenePalette
 import com.jorge.koreandiary.ui.rememberSlowClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -61,7 +61,7 @@ import kotlinx.coroutines.withContext
  * sombreador no compila en este celular, los dibujos van sin filtro y el tono es un degradado.
  * Cada elemento entra de a poco y todo se mueve solo si el sistema tiene las animaciones encendidas
  * y [active] (la página la detiene cuando no la tocas un rato: así no calienta el celular mientras
- * piensas o lees; al tocarla sigue).
+ * piensas o lees; al tocarla sigue). Los dibujos se pintan a la resolución completa de la pantalla.
  */
 @Composable
 fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolean, modifier: Modifier = Modifier, active: Boolean = true) {
@@ -104,10 +104,19 @@ fun SceneVignette(elements: List<SceneElement>, mood: MoodReading?, dark: Boolea
         delay(WAKE_ON_CHANGE_MS)
         justChanged = false
     }
-    // ~30 cuadros por segundo y solo mientras se mueve (ver rememberSlowClock).
-    val time = rememberSlowClock(fps = 30, running = motionOn && (active || justChanged), start = 3f)
+    // Pocos cuadros por segundo y solo mientras se mueve (ver rememberSlowClock).
+    val time = rememberSlowClock(fps = SCENE_FPS, running = motionOn && (active || justChanged), start = 3f)
 
-    BoxWithConstraints(modifier.fillMaxSize().clipToBounds()) {
+    // Toda la escena va en una capa que el celular guarda como imagen. Compose redibuja la ventana
+    // entera con cada cuadro de cualquier cosa (el lápiz, la mascota): sin esta capa, la luz del tono
+    // y el filtro de acuarela se recalculaban píxel por píxel en cada uno de esos cuadros, aunque la
+    // escena estuviera quieta. Así solo se recalculan cuando la escena misma cambia.
+    BoxWithConstraints(
+        modifier.fillMaxSize().graphicsLayer {
+            clip = true
+            compositingStrategy = CompositingStrategy.Offscreen
+        }
+    ) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
         if (width <= 0f || height <= 0f) return@BoxWithConstraints
@@ -138,6 +147,13 @@ private const val MOOD_FADE_MS = 2_500
 /** Cuánto se mueve la escena quieta cuando le llega algo nuevo. */
 private const val WAKE_ON_CHANGE_MS = 8_000L
 
+/**
+ * Cuadros por segundo de la escena. Todo se mueve despacio (árboles que se mecen, olas, nubes): con
+ * 15 se ve igual de tranquilo y cada cuadro cuesta calcular todas las pinceladas, rellenarlas y pasar
+ * el filtro de acuarela. Con 30 era el doble de trabajo mientras escribes.
+ */
+private const val SCENE_FPS = 15
+
 /** Cuánto se ve la capa de los dibujos: deja ver la tinta y el papel. */
 private const val ART_OPACITY = 0.72f
 
@@ -160,7 +176,10 @@ private fun ArtLayer(
     val marks = remember { mutableStateOf<List<Mark>>(emptyList()) }
     LaunchedEffect(elements, width, height) {
         // El tiempo y la entrada de cada elemento: así uno nuevo aparece aunque la escena esté quieta.
-        snapshotFlow { time.floatValue to elements.associate { it.id to (appear[it.id]?.value ?: 1f) } }.collectLatest { (t, fades) ->
+        // conflate: cada cuadro se termina de calcular y después se toma el momento más reciente. Con
+        // collectLatest, un cálculo que tardaba más que un cuadro (el celular caliente va más lento)
+        // se tiraba sin mostrarse y la escena quedaba congelada gastando igual.
+        snapshotFlow { time.floatValue to elements.associate { it.id to (appear[it.id]?.value ?: 1f) } }.conflate().collect { (t, fades) ->
             marks.value = withContext(Dispatchers.Default) { SceneArt.paint(elements, width, height, t) { fades[it] ?: 1f } }
         }
     }

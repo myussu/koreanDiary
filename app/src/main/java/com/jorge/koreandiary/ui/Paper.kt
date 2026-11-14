@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.IntSize
 import com.jorge.koreandiary.settings.DarkPaper
 import java.util.Random
 import kotlin.math.cos
@@ -63,16 +64,41 @@ fun paperFor(dark: Boolean, darkPaper: String): PaperStyle = when {
 
 val LocalPaperStyle = staticCompositionLocalOf { LightPaper }
 
-/** Fondo del papel. La textura se genera una vez por tamaño y se reutiliza en cada trazo. */
+/**
+ * Fondo del papel. La textura se genera una vez y se reutiliza: la hoja cambia de alto cada vez que
+ * se abre o se pliega un panel (sugerencias, correcciones, el teclado), y antes cada cambio la
+ * generaba de nuevo a pantalla completa en el hilo principal. Ahora se guarda la más grande que hizo
+ * falta y de ella se dibuja la parte que se ve (así tampoco "salta" el dibujo de las fibras).
+ */
 fun Modifier.paperBackground(style: PaperStyle): Modifier =
     if (style.texture == PaperTexture.NONE) {
         background(style.background)
     } else {
         drawWithCache {
-            val image = calligraphyTexture(size.width.toInt(), size.height.toInt(), style.background)
-            onDrawBehind { drawImage(image) }
+            val w = size.width.toInt().coerceAtLeast(1)
+            val h = size.height.toInt().coerceAtLeast(1)
+            val image = TextureCache.atLeast(w, h, style.background)
+            val visible = IntSize(w, h)
+            onDrawBehind { drawImage(image, srcSize = visible, dstSize = visible) }
         }
     }
+
+/** La última textura generada; sirve para cualquier hoja que no sea más grande (ver [paperBackground]). */
+private object TextureCache {
+    private var image: ImageBitmap? = null
+    private var base = Color.Unspecified
+
+    fun atLeast(width: Int, height: Int, base: Color): ImageBitmap {
+        val current = image
+        if (current != null && base == this.base && current.width >= width && current.height >= height) return current
+        // Al crecer se conserva el lado que ya era más grande: girar el celular no la rehace dos veces.
+        val keep = current?.takeIf { base == this.base }
+        val made = calligraphyTexture(maxOf(width, keep?.width ?: 0), maxOf(height, keep?.height ?: 0), base)
+        image = made
+        this.base = base
+        return made
+    }
+}
 
 /**
  * Textura de papel de caligrafía (estilo 화선지 teñido de negro): motas finas y fibras cortas

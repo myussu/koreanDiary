@@ -14,6 +14,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -294,10 +295,16 @@ private fun ZipOutputStream.putText(name: String, text: String) {
 }
 
 private fun ZipOutputStream.putFile(name: String, file: File) {
+    // Fotos, audio e imágenes ya vienen comprimidos: volver a comprimirlos no los achica y es lo que
+    // más tardaba de la copia (que se hace antes de cada actualización). Van tal cual.
+    setLevel(if (file.extension.lowercase() in ALREADY_COMPRESSED) Deflater.NO_COMPRESSION else Deflater.DEFAULT_COMPRESSION)
     putNextEntry(ZipEntry(name))
-    file.inputStream().use { it.copyTo(this) }
+    file.inputStream().use { it.copyTo(this, 64 * 1024) }
     closeEntry()
+    setLevel(Deflater.DEFAULT_COMPRESSION)
 }
+
+private val ALREADY_COMPRESSED = setOf("jpg", "jpeg", "png", "webp", "m4a", "aac", "mp3", "zip")
 
 /** Cuenta lo escrito para poder decir cuánto pesa la copia. */
 private class CountingOutputStream(private val out: OutputStream) : OutputStream() {

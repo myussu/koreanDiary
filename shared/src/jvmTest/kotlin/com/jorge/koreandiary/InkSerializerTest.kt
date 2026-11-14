@@ -1,6 +1,7 @@
 package com.jorge.koreandiary
 
 import com.jorge.koreandiary.ink.DEFAULT_PRESSURE
+import com.jorge.koreandiary.ink.InkJsonWriter
 import com.jorge.koreandiary.ink.InkOps
 import com.jorge.koreandiary.ink.InkPoint
 import com.jorge.koreandiary.ink.InkSerializer
@@ -41,6 +42,65 @@ class InkSerializerTest {
     }
 
     private fun stroke(vararg xy: Float) = InkStroke(xy.toList().chunked(2).mapIndexed { i, (x, y) -> InkPoint(x, y, i.toLong()) })
+
+    @Test
+    fun theWriterThatRemembersStrokesGivesTheSameText() {
+        val a = stroke(10f, 20f, 30f, 40f)
+        val b = InkStroke(listOf(InkPoint(500f, 60f, 1_234_567, 0.31f), InkPoint(512.5f, 61f, 1_234_575, 1f)))
+        val c = stroke(700f, 900f, 705f, 910f, 720f, 915f)
+        val writer = InkJsonWriter()
+        // Como al escribir: la página crece trazo a trazo, se borra uno y se deshace.
+        val pages = listOf(emptyList(), listOf(a), listOf(a, b), listOf(a, b, c), listOf(a, c), listOf(a, b, c), listOf(c))
+        for (page in pages) {
+            assertEquals(InkSerializer.toJson(page, 1000f), writer.toJson(page, 1000f))
+        }
+        // Con otro ancho de hoja las coordenadas guardadas cambian: lo recordado no se reutiliza.
+        assertEquals(InkSerializer.toJson(listOf(a, b), 500f), writer.toJson(listOf(a, b), 500f))
+        assertEquals(InkSerializer.toJson(listOf(a, b), 1000f), writer.toJson(listOf(a, b), 1000f))
+    }
+
+    @Test
+    fun savedInkIsReadBackWithEveryStrokeInOrder() {
+        val page = listOf(stroke(10f, 20f, 30f, 40f), stroke(100f, 50f, 300f, 80f, 310f, 90f))
+        val json = InkJsonWriter().toJson(page, 1000f)
+        // La racha busca `[[` en la tinta vieja al migrar: una página con trazos siempre lo trae.
+        assertTrue("[[" in json)
+        assertTrue("[[" !in InkSerializer.toJson(emptyList(), 1000f))
+        val back = InkSerializer.fromJson(json, 1000f)
+        assertEquals(listOf(2, 3), back.map { it.points.size })
+        assertEquals(300f, back[1].points[1].x, 0.06f)
+        assertEquals(1L, back[1].points[1].t)
+    }
+
+    @Test
+    fun aLineKeepsItsKeyUntilItsStrokesChange() {
+        val a = InkStroke(listOf(InkPoint(10f, 20f, 100), InkPoint(30f, 40f, 140), InkPoint(35f, 42f, 150)))
+        val b = InkStroke(listOf(InkPoint(60f, 20f, 900), InkPoint(80f, 25f, 930)))
+        val line = listOf(a, b)
+        val key = InkOps.lineKey(line)
+        // Guardar y volver a abrir, girar el celular (escala) o bajar el renglón no cambian la huella.
+        assertEquals(key, InkOps.lineKey(InkSerializer.fromJson(InkSerializer.toJson(line, 1000f), 1000f)))
+        assertEquals(key, InkOps.lineKey(InkOps.scale(line, 0.5f)))
+        assertEquals(key, InkOps.lineKey(line.map { s -> InkStroke(s.points.map { it.copy(y = it.y + 64f) }) }))
+        // Agregar, borrar o reescribir un trazo, sí.
+        val c = InkStroke(listOf(InkPoint(60f, 20f, 2000), InkPoint(80f, 25f, 2030)))
+        assertTrue(key != InkOps.lineKey(listOf(a)))
+        assertTrue(key != InkOps.lineKey(listOf(a, b, c)))
+        assertTrue(key != InkOps.lineKey(listOf(a, c)))
+    }
+
+    @Test
+    fun aStrokeKnowsTheBoxItOccupies() {
+        val s = stroke(100f, 50f, 300f, 80f, 20f, 65f)
+        assertEquals(20f, s.minX, 0f)
+        assertEquals(300f, s.maxX, 0f)
+        assertEquals(50f, s.minY, 0f)
+        assertEquals(80f, s.maxY, 0f)
+        assertEquals(65f, s.centerY, 0f)
+        assertEquals(1, s.lineIndex(64f))
+        // Sin puntos no hay caja: queda en el origen, como antes.
+        assertEquals(0f, InkStroke(emptyList()).centerY, 0f)
+    }
 
     @Test
     fun rotatingKeepsTheSamePageWhenTheWidthChanges() {

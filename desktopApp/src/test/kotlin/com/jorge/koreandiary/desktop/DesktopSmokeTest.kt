@@ -18,6 +18,7 @@ import com.jorge.koreandiary.backup.BackupManifest
 import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.DiaryEntry
 import com.jorge.koreandiary.data.db.DiaryPage
+import com.jorge.koreandiary.data.db.PageInk
 import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.desktop.ui.DiaryApp
 import com.jorge.koreandiary.desktop.ui.KoreanDiaryTheme
@@ -167,10 +168,9 @@ class DesktopSmokeTest {
             runBlocking {
                 val now = System.currentTimeMillis()
                 val entryId = db.diaryDao().insertEntry(DiaryEntry(date = "2026-11-11", createdAt = now))
-                db.diaryDao().insertPage(
+                val pageId = db.diaryDao().insertPage(
                     DiaryPage(
                         entryId = entryId,
-                        inkJson = InkSerializer.toJson(strokes, width),
                         canvasWidth = width.toInt(),
                         recognizedText = text,
                         confirmedText = text,
@@ -179,6 +179,7 @@ class DesktopSmokeTest {
                         updatedAt = now,
                     ),
                 )
+                db.diaryDao().upsertInk(PageInk(pageId, InkSerializer.toJson(strokes, width)))
             }
         } finally {
             db.close()
