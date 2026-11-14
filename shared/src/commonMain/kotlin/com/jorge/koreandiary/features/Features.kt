@@ -58,7 +58,7 @@ object Features {
                 phone("Describe un lugar o un momento, vivido o imaginado: mismo lienzo, Revisar y Verificar que el diario."),
                 phone("«Nueva escena» trae dos gramáticas nuevas (★), un paso por encima de tu nivel, aparte de las sugerencias."),
                 phone("«¿Cómo digo?»: «Dictar» la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase»."),
-                phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con tu escena."),
+                phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con tu escena (también después de «Revisar»)."),
                 phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste, «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
                 phone("Escena viva: mientras escribes, los bordes se llenan con lo que nombras (mar a los lados, pasto abajo, sol arriba, viento alrededor) y se mueven."),
                 phone("Cuenta para la racha cuando está revisada y sin correcciones pendientes."),

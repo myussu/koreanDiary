@@ -171,8 +171,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         SuggestionsBar(
             state.suggestions,
             newGrammar = state.newGrammar,
-            // Escenas sin revisar: sugerencias que siguen a lo que llevas escrito.
-            onRefresh = if (isScene && page?.status != PageStatus.REVIEWED) vm::refreshSuggestions else null,
+            // Escenas: sugerencias que siguen a lo que llevas escrito, también después de revisar
+            // (se sigue escribiendo).
+            onRefresh = if (isScene) vm::refreshSuggestions else null,
             refreshing = state.refreshing,
             explain = explain,
             onChip = vm::toggleExplain,

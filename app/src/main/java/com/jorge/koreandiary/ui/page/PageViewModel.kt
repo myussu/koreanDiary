@@ -624,10 +624,6 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     fun refreshSuggestions() {
         val current = _state.value
         if (current.refreshing) return
-        if (current.page?.status == PageStatus.REVIEWED) {
-            _state.update { it.copy(message = "La escena ya está revisada.") }
-            return
-        }
         if (current.strokes.isEmpty()) {
             _state.update { it.copy(message = "Escribe algo de la escena primero: las sugerencias se eligen según lo que llevas.") }
             return
@@ -775,8 +771,9 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     private suspend fun addSuggested(refs: List<ItemRef>) {
+        // También en páginas revisadas: el repaso cuenta una sola vez por página (ver
+        // StudyRepository.applyCorrection), así que solo suma sugerencias a la vista.
         val page = _state.value.page ?: return
-        if (page.status == PageStatus.REVIEWED) return
         val existing = ItemRef.decodeList(page.suggestedItems)
         val merged = (existing + refs).distinct()
         if (merged.size == existing.size) return
