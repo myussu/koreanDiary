@@ -213,6 +213,8 @@ object Prompts {
         text: String,
         candidates: List<PromptItem>,
         scene: Boolean,
+        /** Refs con prioridad (la lección reciente del workbook, lo que falló hace poco): solo si encajan. */
+        priority: Set<String> = emptySet(),
         known: Int = 4,
         extra: Int = 2,
     ): String = buildString {
@@ -223,9 +225,10 @@ object Prompts {
         appendLine("Elige de esta lista lo que le ayudaría a seguir ${if (scene) "describiendo ESA escena" else "contando ESO"} de forma coherente. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
         appendLine("CANDIDATOS (código: forma, tipo):")
-        candidates.forEach { appendLine("- ${it.ref}: ${it.label} (${it.kind})") }
+        candidates.forEach { appendLine("- ${it.ref}: ${it.label} (${it.kind})${if (it.ref in priority) " ★" else ""}") }
         appendLine()
         appendLine("- Hasta $known de su lista (códigos que empiezan con w o g) y hasta $extra que aún no conoce (códigos sv o sg).")
+        if (priority.isNotEmpty()) appendLine("- Los marcados con ★ son prioridad (lo que vio hace poco en su libro o lo que falló hace poco): elígelos antes que otros si encajan con lo que escribe; si no encajan, no los fuerces.")
         if (scene) {
             appendLine("- Prefiere sustantivos y adjetivos de lo que se ve, se oye o se siente en esa escena, y una gramática que sirva para describirla.")
         } else {

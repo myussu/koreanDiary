@@ -751,15 +751,25 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     "No pude leer lo escrito todavía."
                 } else {
                     val already = ItemRef.decodeList(page.suggestedItems).toSet()
+                    val now = System.currentTimeMillis()
                     val pool = c.suggestions.suggest(
-                        System.currentTimeMillis(), settings.grammarLevelList, settings.standardLevel,
+                        now, settings.grammarLevelList, settings.standardLevel,
                         wordCount = 30, grammarCount = 6, newWordsPerPage = 8, gapWordCount = 15, gapGrammarCount = 3,
                     )
-                    val candidates = c.study.promptItems(ItemRef.decodeList(pool.encode()).filterNot { it in already })
+                    // Con prioridad, si encajan: la lección reciente del workbook y lo que fallaste hace poco.
+                    val priority = c.study.priorityItems(now, c.workbook.recentLessonGrammar(now)).filterNot { it in already }
+                    val candidates = c.study.promptItems((priority + ItemRef.decodeList(pool.encode())).distinct().filterNot { it in already })
                     if (candidates.isEmpty()) {
                         "No hay más candidatos en tus listas por ahora."
                     } else {
-                        val raw = api.complete(CorrectionRequest(Prompts.contextSuggestions(settings.level, settings.standardLevel, text, candidates, scene = isScene)))
+                        val raw = api.complete(
+                            CorrectionRequest(
+                                Prompts.contextSuggestions(
+                                    settings.level, settings.standardLevel, text, candidates,
+                                    scene = isScene, priority = priority.map { it.code }.toSet(),
+                                )
+                            )
+                        )
                         c.settings.registerUse(providerId)
                         val picked = SceneSuggestionsParser.parse(raw, candidates.map { it.ref }.toSet()).mapNotNull { ItemRef.parse(it) }
                         refreshed += picked

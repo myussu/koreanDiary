@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import com.jorge.koreandiary.ai.WorkbookParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,21 @@ class WorkbookStore(private val context: Context) {
     suspend fun refresh() = withContext(Dispatchers.IO) {
         _sessions.value = root.listFiles()?.mapNotNull { dir -> dir.name.toLongOrNull()?.let { read(it) } }
             ?.sortedByDescending { it.createdAt } ?: emptyList()
+    }
+
+    /**
+     * La gramática de las lecciones de las últimas dos semanas: la que elegiste para las pistas o, si
+     * la detectó la IA, la que marcó como de la lección. Tiene prioridad (sin forzarla) en
+     * «Actualizar» y en los objetivos de la conversación.
+     */
+    suspend fun recentLessonGrammar(now: Long, days: Int = 14): List<String> {
+        if (_sessions.value.isEmpty()) refresh()
+        val since = now - days * 24L * 60 * 60 * 1000
+        return _sessions.value.filter { it.createdAt >= since }.flatMap { s ->
+            s.focus?.let { listOf(it) }
+                ?: s.hintsRaw?.let { raw -> runCatching { WorkbookParser.parseHints(raw).grammar.filter { it.focus }.map { it.form } }.getOrNull() }
+                ?: emptyList()
+        }.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     }
 
     suspend fun create(): WorkbookSession = withContext(Dispatchers.IO) {

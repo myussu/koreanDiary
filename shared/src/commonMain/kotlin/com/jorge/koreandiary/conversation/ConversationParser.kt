@@ -2,6 +2,7 @@ package com.jorge.koreandiary.conversation
 
 import com.jorge.koreandiary.ai.CorrectionParser
 import com.jorge.koreandiary.ai.CorrectionResponse
+import com.jorge.koreandiary.ai.UsedItemDto
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.extractJsonObject
 import org.json.JSONObject
@@ -15,7 +16,8 @@ data class ItemExplanation(val meaning: String, val usage: String, val example: 
 data class SentenceGloss(val sentence: String, val spanish: String, val simple: String?)
 
 /** Revisión final: el contrato del diario más un comentario general. */
-data class ConversationReview(val correction: CorrectionResponse, val comment: String?)
+/** La revisión de una sesión. [asked]: en una escucha, lo que preguntó en las pausas (vuelve a su repaso). */
+data class ConversationReview(val correction: CorrectionResponse, val comment: String?, val asked: List<UsedItemDto> = emptyList())
 
 object ConversationParser {
     fun hint(raw: String): Hint {
@@ -42,8 +44,14 @@ object ConversationParser {
         return ItemExplanation(meaning, o.text("uso").orEmpty(), o.text("k").orEmpty(), o.text("es").orEmpty())
     }
 
-    fun review(raw: String): ConversationReview =
-        ConversationReview(CorrectionParser.parse(raw), obj(raw).text("comentario"))
+    fun review(raw: String): ConversationReview {
+        val json = obj(raw)
+        return ConversationReview(
+            CorrectionParser.parse(raw),
+            json.text("comentario"),
+            CorrectionParser.parseUsedItems(json.optJSONArray("preguntas")).take(10),
+        )
+    }
 
     private fun obj(raw: String): JSONObject = try {
         JSONObject(extractJsonObject(raw))

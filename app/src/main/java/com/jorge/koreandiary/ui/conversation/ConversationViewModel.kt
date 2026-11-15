@@ -23,6 +23,7 @@ import com.jorge.koreandiary.conversation.Line
 import com.jorge.koreandiary.conversation.RecordMode
 import com.jorge.koreandiary.conversation.SentenceGloss
 import com.jorge.koreandiary.conversation.Speaker
+import com.jorge.koreandiary.conversation.TargetHelp
 import com.jorge.koreandiary.conversation.WordGloss
 import com.jorge.koreandiary.data.ItemRef
 import com.jorge.koreandiary.data.db.ItemType
@@ -165,6 +166,8 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private var ending = false
     private var lookups = mutableListOf<String>()
     private var askedHowTo = mutableListOf<String>()
+    /** Objetivos que salieron en una ayuda en esta sesión (usarlos después cuenta como «difícil»). */
+    private var helped = mutableSetOf<String>()
     private var hintsUsed = 0
     private var autoHints = 0
     /** Pista automática: desde cuándo la IA terminó y tú no respondes, y para qué línea ya se pidió. */
@@ -222,15 +225,19 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 .mapNotNull { it.preview?.takeIf { p -> p.isNotBlank() } }
                 .joinToString("\n")
                 .ifBlank { null }
-            // La lista de estudio solo se lee: los objetivos salen de FSRS igual que en el diario.
+            // Los objetivos salen de FSRS igual que en el diario, más hasta 2 con prioridad (la lección
+            // reciente del workbook o lo que fallaste hace poco); la IA los usa solo si encajan con el tema.
             val targets = runCatching {
+                val now = System.currentTimeMillis()
                 val sug = c.suggestions.suggest(
-                    System.currentTimeMillis(), s.grammarLevelList, s.standardLevel,
+                    now, s.grammarLevelList, s.standardLevel,
                     wordCount = 4, grammarCount = 2, newWordsPerPage = 1, gapWordCount = 0, gapGrammarCount = 1,
                 )
-                val refs = sug.words.map { ItemRef(ItemType.WORD, it.id) } +
+                val fsrs = sug.words.map { ItemRef(ItemType.WORD, it.id) } +
                     sug.grammar.map { ItemRef(ItemType.GRAMMAR, it.id) } +
                     sug.gapGrammar.map { ItemRef(ItemType.STD_GRAMMAR, it.id.toLong()) }
+                val priority = c.study.priorityItems(now, c.workbook.recentLessonGrammar(now)).filterNot { it in fsrs }.take(2)
+                val refs = priority + fsrs
                 c.study.promptItems(refs) to c.study.details(refs)
             }.getOrDefault(emptyList<PromptItem>() to emptyMap())
             _state.update {
@@ -348,6 +355,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         ending = false
         lookups = mutableListOf()
         askedHowTo = mutableListOf()
+        helped = mutableSetOf()
         hintsUsed = 0
         autoHints = 0
         quietSince = 0L
@@ -637,6 +645,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         if (recent.none { it.speaker == Speaker.AI }) return
         coach("Pensando una pista…", ConversationPrompts.hint(s.level, s.standardLevel, recent, record?.targets.orEmpty())) { raw ->
             val hint = ConversationParser.hint(raw)
+            markHelped(TargetHelp.shown(sessionTargets(), listOf(hint.half, hint.full), grammar = listOf(hint.key.substringBefore(':'))))
             hintsUsed++
             if (auto) autoHints++
             CoachPanel.HintShown(hint, level = 1, auto = auto)
@@ -676,7 +685,16 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         val item = (st.targets + record?.targets.orEmpty()).firstOrNull { it.ref == ref } ?: return
+        // Mirarlo durante la conversación es una ayuda (antes de empezar, no: ahí eliges qué practicar).
+        if (record != null && st.stage == ConvStage.Live) markHelped(setOf(ref))
         _state.update { it.copy(panel = CoachPanel.TargetShown(item, st.details[ref]?.takeIf { d -> d.isNotBlank() })) }
+    }
+
+    /** Los objetivos de la sesión en curso. */
+    private fun sessionTargets(): List<PromptItem> = record?.targets.orEmpty()
+
+    private fun markHelped(refs: Set<String>) {
+        if (refs.isNotEmpty()) helped += refs
     }
 
     /** Explicación de la IA para el objetivo abierto: significado, uso y un ejemplo. */
@@ -737,6 +755,14 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val recent = _state.value.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text) }
         coach("Buscando cómo decirlo…", ConversationPrompts.howToSay(idea, s.level, s.standardLevel, recent)) { raw ->
             val answer = HowToSayParser.parse(raw)
+            markHelped(
+                TargetHelp.shown(
+                    sessionTargets(),
+                    listOfNotNull(answer.mine.text, answer.natural?.text),
+                    grammar = answer.mine.grammar + answer.natural?.grammar.orEmpty(),
+                    words = answer.words.map { it.first },
+                )
+            )
             askedHowTo += "$idea → ${answer.mine.text}"
             session?.send(LiveProtocol.context(ConversationPrompts.askedHowTo(idea, answer.mine.text), respond = false))
             CoachPanel.HowToShown(idea, answer)
@@ -830,6 +856,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             lines = lines,
             lookups = lookups.toList(),
             askedHowTo = askedHowTo.toList(),
+            helped = helped.toList(),
             highlighted = highlighted.toList(),
             hintsUsed = hintsUsed,
             autoHints = autoHints,
@@ -893,14 +920,17 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         _state.update { it.copy(reviewing = true, reviewError = null) }
         viewModelScope.launch {
             try {
-                val prompt = ConversationPrompts.review(s.profile, s.level, s.standardLevel, r.targets, lines)
+                val prompt = ConversationPrompts.review(s.profile, s.level, s.standardLevel, r.targets, lines, listen = r.isListen)
                 val raw = provider.complete(CorrectionRequest(prompt))
                 c.settings.registerUse(providerId)
                 val review = ConversationParser.review(raw)
-                val updated = r.copy(lines = lines, reviewRaw = raw)
+                var updated = r.copy(lines = lines, reviewRaw = raw)
+                // Cuenta para el repaso una sola vez por sesión, aunque la revises otra vez.
+                val counted = if (r.fsrsApplied) null else countForReview(updated, review)
+                if (counted != null) updated = updated.copy(fsrsApplied = true)
                 c.conversations.save(updated)
                 record = updated
-                _state.update { it.copy(reviewing = false, review = review, record = updated, edits = editsFor(updated)) }
+                _state.update { it.copy(reviewing = false, review = review, record = updated, edits = editsFor(updated), message = counted ?: it.message) }
             } catch (e: ProviderException) {
                 _state.update { it.copy(reviewing = false, reviewError = if (e.offline) "Sin conexión." else e.message) }
             } catch (e: ParseException) {
@@ -911,6 +941,30 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 _state.update { it.copy(reviewing = false, reviewError = e.message ?: e.javaClass.simpleName) }
             }
         }
+    }
+
+    /**
+     * La revisión cuenta para el repaso. Conversación: los objetivos de la sesión (sin ayuda = bien,
+     * con ayuda = difícil, corregido = otra vez). Escucha: lo que preguntaste en las pausas vuelve
+     * pronto, o queda en «Por revisar» si no está en tu lista. Devuelve el aviso para la pantalla.
+     */
+    private suspend fun countForReview(r: ConversationRecord, review: ConversationReview): String {
+        val now = System.currentTimeMillis()
+        if (r.isListen) {
+            val l = c.study.applyListenQuestions(review.asked, now)
+            return when {
+                l.again == 0 && l.pending == 0 -> "No preguntaste por palabras de tu lista: tu repaso no cambia."
+                else -> listOfNotNull(
+                    l.again.takeIf { it > 0 }?.let { "$it de lo que preguntaste vuelve pronto a tu repaso" },
+                    l.pending.takeIf { it > 0 }?.let { "$it ${if (it == 1) "palabra queda" else "palabras quedan"} en «Por revisar» (Estudio)" },
+                ).joinToString(" · ") + "."
+            }
+        }
+        val corrected = review.correction.corrections.mapNotNull { it.itemRef }.toSet()
+        val u = c.study.applyConversation(r.targets, review.correction.used, corrected, r.helped.toSet(), now)
+        return if (u.reviewed == 0) "No usaste ninguno de los objetivos: tu repaso no cambia."
+        else "Cuenta para tu repaso: ${u.reviewed} ${if (u.reviewed == 1) "objetivo" else "objetivos"}" +
+            (if (u.newWords + u.newGrammar > 0) " (${u.newWords + u.newGrammar} nuevos en tu lista)" else "") + "."
     }
 
     // ---------- Práctica en voz alta ----------

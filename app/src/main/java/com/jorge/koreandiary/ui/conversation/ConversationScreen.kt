@@ -739,7 +739,8 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
             }
             st.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary) }
             Text(
-                "Por ahora la conversación no cambia tu lista de estudio: esto queda guardado para decidir después cómo debería contar.",
+                if (r.isListen) "Lo que preguntaste en las pausas vuelve pronto a tu repaso; lo que no está en tu lista queda en «Por revisar»."
+                else "Cuenta para tu repaso, solo con los objetivos: sin ayuda = bien, con pista o «¿Cómo digo?» = difícil, corregido = otra vez.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -69,7 +69,7 @@ object Features {
                 phone("«Nueva página» trae sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel."),
                 phone("Toca una sugerencia para ver su significado, cómo se usa y ejemplos."),
                 phone("«¿Cómo digo?»: «Dictar» o escribes la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase», a tu nivel y, si cambia, la natural. Igual en el diario, las escenas y la conversación."),
-                phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con lo que cuentas (también después de «Revisar»)."),
+                phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con lo que cuentas (también después de «Revisar»). Lo que viste hace poco en el workbook y lo que fallaste hace poco va primero, si encaja."),
                 phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste en «¿Cómo digo?», «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
                 phone("Herramientas: Lápiz, Borrar, «+ Línea» (inserta un renglón donde tocas), Deshacer y Rehacer."),
                 phone("«Revisar»: la app lee tu letra, confirmas el texto y la IA corrige."),
@@ -118,6 +118,8 @@ object Features {
                 phone("Pista automática si no respondes (se activa en Ajustes › Hablar y escuchar)."),
                 phone("Al terminar: confirmas lo que dijiste y recibes la revisión en tres niveles (bien, corregir y correcto pero más natural, cómo lo diría un coreano hablando)."),
                 phone("«Practicar correcciones»: dices en voz alta cada corrección y cada versión más natural."),
+                phone("La revisión cuenta para tu repaso, solo con los objetivos de la sesión: usado sin ayuda = bien; con «Pista», «¿Cómo digo?» o si lo abriste = difícil; corregido = otra vez. Una sola vez por sesión."),
+                phone("Entre los objetivos pueden venir hasta 2 con prioridad (la lección reciente del workbook o lo que fallaste hace poco); la IA los usa solo si encajan con el tema."),
                 phone("Si sales de la app o apagas la pantalla, la conversación espera un minuto; si no vuelves, termina y se guarda."),
             ),
         ),
@@ -129,6 +131,7 @@ object Features {
                 phone("«− Lento», «+ Rápido», «Repetir», «Siguiente» y ver el texto con traducción."),
                 phone("Sirve con la pantalla apagada: botones en la notificación y en los audífonos (1 toque pausa, 2 sigue, 3 repite)."),
                 phone("Al final, preguntas de comprensión."),
+                phone("Al revisar la escucha, lo que preguntaste en las pausas vuelve pronto a tu repaso; si no está en tu lista, queda en «Por revisar». Lo que solo oíste no cuenta."),
                 phone("Una pausa en la que nadie habla por 3 minutos cierra el micrófono («Hablar» lo abre de nuevo); una llamada pausa la narración sin abrirlo."),
                 phone("Con audífonos Bluetooth, en las pausas preguntas desde su micrófono (se apaga en Ajustes › Hablar y escuchar → «Micrófono de los audífonos»)."),
                 phone("En la revisión de una escucha: «Escuchar» otra vez la narración guardada, sin gastar cuota, con «‹ Anterior», «Siguiente ›» y velocidad."),
@@ -140,7 +143,7 @@ object Features {
             listOf(
                 phone("«Importar» tu lista de gramática (TXT) o vocabulario."),
                 phone("Lo que usas en el diario entra solo a tu lista, con su nivel."),
-                phone("«Por revisar»: palabras que la app no reconoció; las agregas o las descartas."),
+                phone("«Por revisar»: palabras que la app no reconoció o que preguntaste al escuchar; las agregas o las descartas."),
             ),
         ),
         FeatureGroup(
@@ -372,7 +375,7 @@ object Features {
                     listOf("Practicar correcciones", "Escuchar", "Decir"),
                 ),
             ),
-            note = "Tu lista de estudio no cambia con la conversación; los minutos hablados salen en Progreso.",
+            note = "Al revisar, los objetivos que usaste cuentan para tu repaso (sin ayuda = bien, con ayuda = difícil, corregido = otra vez). Los minutos hablados salen en Progreso.",
         ),
         FeatureFlow(
             title = "Escuchar",
@@ -402,7 +405,7 @@ object Features {
                 ),
                 FlowStep(
                     "Revisas y vuelves a escuchar",
-                    "Igual que en Conversar: corriges la transcripción, la IA revisa y practicas en voz alta. Además puedes escuchar otra vez la narración guardada sin gastar cuota.",
+                    "Igual que en Conversar: corriges la transcripción, la IA revisa y practicas en voz alta. Lo que preguntaste en las pausas vuelve a tu repaso (o a «Por revisar»). Además puedes escuchar otra vez la narración guardada sin gastar cuota.",
                     listOf("Revisar lo que dije", "Escuchar", "‹ Anterior", "Siguiente ›", "☆ Guardar"),
                 ),
             ),

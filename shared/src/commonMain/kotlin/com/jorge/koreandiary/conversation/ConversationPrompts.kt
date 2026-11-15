@@ -91,7 +91,7 @@ object ConversationPrompts {
         }
         if (targets.isNotEmpty()) {
             appendLine()
-            appendLine("PRACTICE TARGETS — vocabulary and grammar he is reviewing. Ask questions whose natural answer needs them, one at a time. Do not name them, do not quiz him, do not translate them unless he asks.")
+            appendLine("PRACTICE TARGETS — vocabulary and grammar he is reviewing. Ask questions whose natural answer needs them, one at a time. Skip any that does not fit the topic naturally. Do not name them, do not quiz him, do not translate them unless he asks.")
             appendLine("Whenever you ask such a question, call highlight_target with that target's id at the same time (the app shows it to him). Never say the id.")
             targets.forEach { appendLine("- ${it.ref}: ${it.label} (${it.kind})") }
         }
@@ -220,7 +220,8 @@ object ConversationPrompts {
     /**
      * Revisión final. Usa el mismo contrato que la corrección del diario ("oraciones", "correcciones",
      * "natural", "usados", "mejoras") para reutilizar CorrectionParser; cada línea del estudiante es una "oración".
-     * Además pide "comentario". La lista de estudio NO se modifica con esto (por ahora solo se guarda).
+     * Además pide "comentario". Con lo de "usados" y "correcciones" los objetivos cuentan para el repaso.
+     * [listen]: una escucha; pide además "preguntas", lo que preguntó en las pausas porque no lo entendía.
      */
     fun review(
         profile: String,
@@ -228,6 +229,7 @@ object ConversationPrompts {
         standardLevel: Int,
         targets: List<PromptItem>,
         lines: List<Line>,
+        listen: Boolean = false,
     ): String = buildString {
         appendLine("Eres profesor de coreano y revisas una conversación hablada entre un estudiante hispanohablante y una IA. Lo del estudiante es una transcripción automática que él ya revisó: es lenguaje hablado, no corrijas puntuación ni espacios. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
@@ -257,7 +259,7 @@ object ConversationPrompts {
                - "id": el de los objetivos si coincide; si no, null.
                - "t": n, v, a, adv, g u o. "ok": false si lo usó mal.
             5. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que encajarían donde dijo algo demasiado básico. Si no aplica, [].
-            6. "comentario": 2 o 3 frases en español sobre cómo le fue (fluidez, lo que hizo bien, qué practicar).
+            6. "comentario": 2 o 3 frases en español sobre cómo le fue (fluidez, lo que hizo bien, qué practicar).${if (listen) LISTEN_ASKED else ""}
 
             FORMATO:
             {
@@ -266,11 +268,17 @@ object ConversationPrompts {
               "natural": [{"oracion": 3, "original": "...", "sugerencia": "...", "explicacion": "..."}],
               "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}],
               "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}],
-              "comentario": "..."
+              "comentario": "..."${if (listen) ",\n              \"preguntas\": [{\"f\": \"소풍\", \"t\": \"n\", \"id\": null, \"s\": \"picnic\"}]" else ""}
             }
             """.trimIndent()
         )
     }
+
+    /**
+     * Escuchar: en las pausas pregunta por lo que no entendió («소풍이 뭐예요?», «¿qué significa…?»). Eso
+     * vuelve a su repaso, así que se pide aparte, con la forma de diccionario.
+     */
+    private const val LISTEN_ASKED = "\n            7. \"preguntas\": las palabras o gramáticas por las que PREGUNTÓ en las pausas porque no las entendía (qué significa, cómo se usa), en forma de diccionario o notación estándar. \"t\": n, v, a, adv o g; \"id\": el de los objetivos si coincide, si no null; \"s\": significado en español. [] si no preguntó por ninguna."
 
     /** Vocabulario para mejorar la transcripción: objetivos y palabras del diario de hoy. */
     fun vocabulary(targets: List<PromptItem>, diaryText: String?): List<String> {

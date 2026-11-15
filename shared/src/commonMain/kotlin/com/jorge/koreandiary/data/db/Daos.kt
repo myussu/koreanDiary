@@ -108,6 +108,13 @@ interface MemoryDao {
     /** Lo que una página ya calificó en FSRS: al revisarla otra vez no se cuenta de nuevo. */
     @Query("SELECT DISTINCT itemType, itemId FROM review_events WHERE pageId = :pageId AND rating IS NOT NULL")
     suspend fun ratedOnPage(pageId: Long): List<RatedItem>
+
+    /** Lo que usaste mal o te corrigieron desde [since], lo más reciente primero (para darle prioridad). */
+    @Query(
+        "SELECT itemType, itemId FROM review_events WHERE kind = '${EventKind.INCORRECT}' AND at >= :since " +
+            "GROUP BY itemType, itemId ORDER BY MAX(at) DESC LIMIT :limit"
+    )
+    suspend fun failedSince(since: Long, limit: Int): List<RatedItem>
 }
 
 /** Un ítem que una página ya calificó (ver [MemoryDao.ratedOnPage]). */

@@ -63,6 +63,9 @@ object ItemSource {
 
 data class UsageSummary(val reviewed: Int = 0, val newWords: Int = 0, val newGrammar: Int = 0, val pending: Int = 0)
 
+/** Escuchar: cuántas preguntas volvieron al repaso y cuántas palabras quedaron en «Por revisar». */
+data class ListenSummary(val again: Int = 0, val pending: Int = 0)
+
 /**
  * Referencia a un ítem: "w12" (palabra), "g3" (gramática) en tu base;
  * "sv465" / "sg12" en el catálogo estándar (aún no están en tu base).
@@ -331,6 +334,76 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
      */
     suspend fun applyUsage(used: List<UsedItemDto>, suggested: Set<ItemRef>, now: Long, pageId: Long?): UsageSummary =
         db.withWriteTransaction { registerUsage(used, suggested, now, pageId) }
+
+    /**
+     * La conversación cuenta para el repaso, pero solo con los objetivos de la sesión ([targets]):
+     * usado sin ayuda = bien; usado con ayuda ([helped]: salió en una pista, en «¿Cómo digo?» o lo
+     * miraste) = difícil; usado mal o corregido ([corrected]) = otra vez. Lo que no usaste no se
+     * califica. Un objetivo del catálogo que usaste entra a tu lista, como en el diario.
+     * [used] y [corrected] vienen de la revisión de la conversación (ids de los objetivos).
+     */
+    suspend fun applyConversation(
+        targets: List<PromptItem>,
+        used: List<UsedItemDto>,
+        corrected: Set<String>,
+        helped: Set<String>,
+        now: Long,
+    ): UsageSummary = db.withWriteTransaction {
+        val byRef = targets.associateBy { it.ref }
+        val fromUsed = used.filter { it.itemRef in byRef }
+            .map { u -> if (u.itemRef in corrected) u.copy(correct = false) else u }
+        // Corregido aunque la IA no lo haya puesto en "usados": igual lo intentó y falló.
+        val onlyCorrected = (corrected - fromUsed.mapNotNull { it.itemRef }.toSet()).mapNotNull { ref ->
+            byRef[ref]?.let { t -> UsedItemDto(itemRef = t.ref, form = t.label, kind = if (t.kind == "gramática") "gramatica" else t.kind, correct = false) }
+        }
+        val helpedRefs = helped.mapNotNull { ItemRef.parse(it) }.toSet()
+        registerUsage((fromUsed + onlyCorrected).distinctBy { it.itemRef }, helpedRefs, now, pageId = null, recordUnused = false)
+    }
+
+    /**
+     * Escuchar: lo que oyes no se califica (oír no prueba que lo recuerdes), pero lo que preguntaste en
+     * una pausa ([asked]) sí dice que no lo sabías. Si está en tu lista vuelve pronto al repaso (otra
+     * vez); si es una palabra que no está, queda en «Por revisar» para que decidas.
+     */
+    suspend fun applyListenQuestions(asked: List<UsedItemDto>, now: Long): ListenSummary = db.withWriteTransaction {
+        var again = 0
+        var pending = 0
+        val myGrammar = study.allGrammar()
+        for (a in asked.distinctBy { it.itemRef ?: it.form.trim() }) {
+            val form = a.form.trim()
+            if (form.isEmpty()) continue
+            val explicit = a.itemRef?.let { ItemRef.parse(it) }?.takeUnless { it.isStandard }
+            val ref = explicit ?: if (a.isGrammar) {
+                findMine(form, myGrammar)?.let { ItemRef(ItemType.GRAMMAR, it.id) }
+            } else {
+                study.findWord(form)?.let { ItemRef(ItemType.WORD, it.id) }
+            }
+            if (ref != null) {
+                review(ref, Fsrs.Rating.AGAIN, EventKind.ASKED, now, pageId = null)
+                again++
+            } else if (!a.isGrammar && study.findPendingWord(form) == null && form.all { it in '가'..'힣' }) {
+                study.insertPendingWord(PendingWord(baseForm = form, type = a.kind, meaning = a.meaning, pageId = null, createdAt = now))
+                pending++
+            }
+        }
+        ListenSummary(again, pending)
+    }
+
+    /**
+     * Lo que tiene prioridad entre los candidatos (de «Actualizar» y de los objetivos de la
+     * conversación), sin forzarlo: la gramática de las lecciones recientes del workbook
+     * ([lessonForms]) y lo que fallaste en las últimas dos semanas. Lo de la lección que no está en
+     * tu lista va como ítem del catálogo.
+     */
+    suspend fun priorityItems(now: Long, lessonForms: List<String>, limit: Int = 6): List<ItemRef> {
+        val myGrammar = study.allGrammar()
+        val lesson = lessonForms.map { it.trim() }.filter { it.isNotEmpty() }.distinct().mapNotNull { form ->
+            findMine(form, myGrammar)?.let { ItemRef(ItemType.GRAMMAR, it.id) }
+                ?: standardGrammar(form)?.let { ItemRef(ItemType.STD_GRAMMAR, it.id.toLong()) }
+        }
+        val failed = memory.failedSince(now - RECENT_ERRORS_MS, limit).map { ItemRef(it.itemType, it.itemId) }
+        return (lesson + failed).distinct().take(limit)
+    }
 
     /**
      * El trabajo de [applyUsage]. Quien llama ya abrió la transacción. [alreadyCounted]: lo que esta

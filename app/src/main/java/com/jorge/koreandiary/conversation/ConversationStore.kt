@@ -16,9 +16,10 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * Una sesión de conversación guardada. Todo queda registrado (lo que usaste, lo que tocaste para
- * traducir, las pistas, la revisión) para decidir más adelante, con datos, cómo debería afectar la
- * lista de estudio. Por ahora la conversación solo LEE la lista: no cambia FSRS ni agrega palabras.
+ * Una sesión de conversación o de escucha guardada: lo que usaste, lo que tocaste para traducir, las
+ * pistas y la revisión. Desde 2026-11-15 cuenta para el repaso al revisarla: en una conversación,
+ * los objetivos de la sesión (`StudyRepository.applyConversation`); en una escucha, lo que
+ * preguntaste en las pausas (`applyListenQuestions`). Una sola vez por sesión ([fsrsApplied]).
  */
 data class ConversationRecord(
     val id: Long,
@@ -66,6 +67,10 @@ data class ConversationRecord(
     val pauses: Int = 0,
     /** Voz del narrador: "gemini", "sistema" o "gemini+sistema". */
     val narrator: String = "",
+    /** Objetivos (refs) que salieron en una ayuda: una pista, «¿Cómo digo?» o abrirlos para verlos. */
+    val helped: List<String> = emptyList(),
+    /** Ya contó para el repaso: revisarla otra vez no califica de nuevo. */
+    val fsrsApplied: Boolean = false,
 ) {
     val userLines get() = lines.count { it.speaker == Speaker.USER }
     val isListen get() = mode == RecordMode.LISTEN
@@ -181,6 +186,8 @@ class ConversationStore(context: Context) {
             .put("repeats", r.repeats)
             .put("pauses", r.pauses)
             .put("narrator", r.narrator)
+            .put("helped", JSONArray(r.helped))
+            .put("fsrsApplied", r.fsrsApplied)
 
         fun decode(o: JSONObject): ConversationRecord {
             val lines = o.optJSONArray("lines")
@@ -191,6 +198,7 @@ class ConversationStore(context: Context) {
             val notes = o.optJSONArray("notes")
             val comprehension = o.optJSONArray("comprehension")
             val heard = o.optJSONObject("heard")
+            val helped = o.optJSONArray("helped")
             return ConversationRecord(
                 id = o.getLong("id"),
                 startedAt = o.optLong("startedAt", o.getLong("id")),
@@ -227,6 +235,8 @@ class ConversationStore(context: Context) {
                 repeats = o.optInt("repeats"),
                 pauses = o.optInt("pauses"),
                 narrator = o.optString("narrator"),
+                helped = (0 until (helped?.length() ?: 0)).map { helped!!.optString(it) },
+                fsrsApplied = o.optBoolean("fsrsApplied"),
             )
         }
     }

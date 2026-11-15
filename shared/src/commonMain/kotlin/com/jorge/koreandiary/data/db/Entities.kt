@@ -88,6 +88,8 @@ object EventKind {
     const val SUGGESTED_UNUSED = "sugerido_no_usado"
     /** Palabra nueva descubierta en el diario. */
     const val DISCOVERED = "descubierta"
+    /** Escuchar: preguntaste qué significaba en una pausa, así que no la recordabas (cuenta como «otra vez»). */
+    const val ASKED = "preguntada"
 }
 
 @Entity(
