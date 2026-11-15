@@ -5,6 +5,7 @@ import com.jorge.koreandiary.scene.SceneImages
 import android.app.Application
 import com.jorge.koreandiary.ai.AzureOpenAIProvider
 import com.jorge.koreandiary.ai.CorrectionProvider
+import com.jorge.koreandiary.ai.FixedProvider
 import com.jorge.koreandiary.ai.GeminiProvider
 import com.jorge.koreandiary.backup.BackupManager
 import com.jorge.koreandiary.backup.StartupRestore
@@ -73,6 +74,8 @@ class AppContainer(val app: Application) {
     /** Proveedor por API listo para usar, o null si le falta configuración. */
     fun apiProvider(id: String): CorrectionProvider? {
         val s = settings.state.value
+        // Versión de prueba: Gemini y Azure contestan con respuestas fijas, sin red ni claves.
+        if (fixedAi(id)) return FixedProvider()
         return when (id) {
             ProviderId.GEMINI -> secrets.get(SecretStore.GEMINI_KEY)?.let { GeminiProvider(it, s.geminiModel) }
             ProviderId.AZURE -> {
@@ -95,9 +98,14 @@ class AppContainer(val app: Application) {
         return apiProvider(id)?.let { id to it }
     }
 
+    /** ¿Este proveedor contesta con respuestas fijas? Solo en la versión de prueba y con el ajuste puesto. */
+    private fun fixedAi(id: String): Boolean =
+        BuildConfig.PRUEBA && settings.state.value.fixedAi && (id == ProviderId.GEMINI || id == ProviderId.AZURE)
+
     /** Chequeo barato para la UI (no descifra la clave). */
     fun isConfigured(id: String): Boolean {
         val s = settings.state.value
+        if (fixedAi(id)) return true
         return when (id) {
             ProviderId.SHARE -> true
             ProviderId.GEMINI -> secrets.has(SecretStore.GEMINI_KEY)
@@ -113,6 +121,8 @@ class KoreanDiaryApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Primero: si algo cierra la app, queda anotado para avisarlo en el inicio.
+        CrashLog.install(this)
         // Antes de abrir la base o leer ajustes: si hay una copia importada esperando, se pone en su lugar.
         StartupRestore.run(this)
         container = AppContainer(this)

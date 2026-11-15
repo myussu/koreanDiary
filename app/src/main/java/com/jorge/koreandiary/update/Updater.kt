@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.update
 
+import com.jorge.koreandiary.BuildConfig
 import android.app.Application
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -102,6 +103,11 @@ class Updater(private val app: Application) {
      * tema: no vuelve a consultar si ya respondió uno hace menos de una hora. El botón siempre consulta.
      */
     suspend fun check(silent: Boolean = false) {
+        // La versión de prueba es otra app (otro applicationId): el APK publicado no la actualiza.
+        if (BuildConfig.PRUEBA) {
+            _state.value = if (silent) UpdateState.Idle else UpdateState.Error("La versión de prueba no se actualiza sola: se compila e instala de nuevo (docs/PRUEBAS.md).")
+            return
+        }
         val busy = _state.value
         if (busy is UpdateState.Checking || busy is UpdateState.Downloading || busy is UpdateState.BackingUp || busy is UpdateState.Installing) return
         if (silent && lastCheckAt != 0L && android.os.SystemClock.elapsedRealtime() - lastCheckAt < AUTO_CHECK_EVERY_MS) return

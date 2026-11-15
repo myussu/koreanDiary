@@ -33,6 +33,14 @@ android {
     }
 
     buildTypes {
+        // La de depuración es la versión de prueba: otro applicationId y otro nombre («Diario prueba»,
+        // en src/debug/res), así se instala al lado de la tuya sin tocar tus diarios, y la IA contesta
+        // con respuestas fijas (BuildConfig.PRUEBA). Ver docs/PRUEBAS.md.
+        debug {
+            applicationIdSuffix = ".prueba"
+            versionNameSuffix = "-prueba"
+            buildConfigField("boolean", "PRUEBA", "true")
+        }
         // Es la variante que publica GitHub Actions: sin depuración y con R8, que es como Compose
         // rinde de verdad (la de depuración corre mucho más lenta y gasta más batería).
         release {
@@ -41,6 +49,7 @@ android {
             // La misma llave de siempre: Android solo instala una actualización encima de la app si
             // la firma coincide. Con otra llave habría que desinstalar y se perderían los diarios.
             signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "PRUEBA", "false")
         }
     }
 
@@ -51,6 +60,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

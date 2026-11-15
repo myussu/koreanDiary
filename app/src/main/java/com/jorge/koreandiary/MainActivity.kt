@@ -24,7 +24,10 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -50,6 +53,7 @@ import com.jorge.koreandiary.ui.workbook.WorkbookListScreen
 import com.jorge.koreandiary.ui.workbook.WorkbookSessionScreen
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -72,7 +76,9 @@ class MainActivity : ComponentActivity() {
                 // Surface (no Box) para que todo el texto herede el color del tema: sin esto,
                 // Text usa negro por defecto y en modo oscuro queda casi invisible.
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    // testTagsAsResourceId: los testTag salen como resource-id en `uiautomator dump`,
+                    // para probar desde el emulador con adb (docs/PRUEBAS.md).
+                    modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true },
                     color = MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.onBackground,
                 ) {

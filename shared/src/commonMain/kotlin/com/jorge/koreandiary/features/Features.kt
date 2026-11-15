@@ -61,6 +61,8 @@ object Features {
             listOf(
                 both("«?»: esta lista, con buscador. Lo que no funciona en esta versión sale en gris."),
                 both("«Cómo se usa» (en «?»): cada pantalla paso a paso, dibujada, con sus botones. Desde la lista, «Ver cómo se usa ›» salta a la de ese grupo."),
+                phone("Si la app se cerró por un error, el inicio lo avisa: «Copiar detalle» para pasarlo y «Descartar»."),
+                phone("Versión de prueba («Diario prueba»): se instala al lado de la tuya, con sus propios datos; la IA contesta con respuestas fijas (Ajustes › IA › «Respuestas fijas»). Trae «Usar texto de prueba», «Prueba: bien» y «Forzar un cierre» para probar sin escribir coreano."),
             ),
         ),
         FeatureGroup(

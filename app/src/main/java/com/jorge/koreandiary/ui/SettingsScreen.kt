@@ -49,6 +49,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.BuildConfig
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.jorge.koreandiary.ai.CorrectionRequest
@@ -243,6 +244,22 @@ fun SettingsScreen(
             }
 
             if (group == SettingsGroup.AI) {
+                if (BuildConfig.PRUEBA) {
+                    Section("Versión de prueba") {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Respuestas fijas")
+                                Text(
+                                    "Gemini y Azure contestan siempre lo mismo, sin red ni claves: para probar Revisar, «¿Cómo digo?», «Actualizar», el repaso rápido y el workbook. Hablar y Escuchar necesitan la IA real.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Switch(checked = s.fixedAi, onCheckedChange = { v -> container.settings.update { it.copy(fixedAi = v) } })
+                        }
+                        // Para probar el aviso de cierre del inicio.
+                        AppOutlinedButton(onClick = { throw IllegalStateException("Cierre de prueba desde Ajustes") }) { Text("Forzar un cierre") }
+                    }
+                }
                 Section("Corrección") {
                     Text("Proveedor por defecto", style = MaterialTheme.typography.labelLarge)
                     Row(

@@ -53,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -77,6 +78,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.data.AnnotatedItem
 import com.jorge.koreandiary.data.db.Correction
 import com.jorge.koreandiary.data.db.CorrectionStatus
@@ -308,7 +310,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 scroll = inkScroll,
                 // Ancho fijo de hoja (centrada si sobra espacio). clipToBounds: si el lienzo se achica
                 // (panel abierto), los trazos no se dibujan encima de los botones.
-                modifier = Modifier.align(Alignment.TopCenter).width(paperWidth).fillMaxHeight().clipToBounds().onSizeChanged {
+                modifier = Modifier.align(Alignment.TopCenter).width(paperWidth).fillMaxHeight().clipToBounds().testTag("hoja").onSizeChanged {
                     vm.onCanvasSized(it.width.toFloat(), it.height.toFloat(), lineHeightPx)
                 },
             )
@@ -864,7 +866,11 @@ private fun ConfirmDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Corrige lo que se haya leído mal antes de enviarlo.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth().testTag("confirmar_texto"), minLines = 3)
+                // Versión de prueba: un texto con los errores fijos (docs/PRUEBAS.md), sin escribir coreano.
+                if (BuildConfig.PRUEBA) {
+                    AppTextButton(onClick = { text = TEST_TEXT }, modifier = Modifier.testTag("texto_de_prueba")) { Text("Usar texto de prueba") }
+                }
                 Text("REVISAR CON", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
                 options.forEachIndexed { i, (id, label) ->
                     if (i == 0) AppButton(onClick = { onConfirm(text, id) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
@@ -876,6 +882,9 @@ private fun ConfirmDialog(
         dismissButton = { AppTextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }
+
+/** El texto de prueba: dos errores fijos en la primera oración y la segunda vuelve como «más natural». */
+private const val TEST_TEXT = "어제 친구을 만나요. 공원에 갔어요."
 
 @Composable
 private fun PasteDialog(onSubmit: (String) -> Unit, onDismiss: () -> Unit) {

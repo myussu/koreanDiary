@@ -25,13 +25,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.BuildConfig
+import com.jorge.koreandiary.CrashLog
 import com.jorge.koreandiary.data.db.ItemType
 import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
@@ -96,14 +103,23 @@ fun HomeScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("일기", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-            AppOutlinedButton(onClick = onStudy) { Text("Estudio") }
-            AppOutlinedButton(onClick = { onSettings(SettingsGroup.GENERAL) }, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
+            AppOutlinedButton(onClick = onStudy, modifier = Modifier.testTag("inicio_estudio")) { Text("Estudio") }
+            AppOutlinedButton(onClick = { onSettings(SettingsGroup.GENERAL) }, modifier = Modifier.padding(start = 6.dp).testTag("inicio_ajustes")) { Text("Ajustes") }
             // Botón chico en la esquina: la lista de todo lo que la app ya sabe hacer.
             AppOutlinedButton(
                 onClick = onFeatures,
                 modifier = Modifier.padding(start = 6.dp).semantics { contentDescription = "Qué puede hacer la app" },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
             ) { Text("?") }
+        }
+        CrashCard(modifier = Modifier.padding(top = 10.dp))
+        if (BuildConfig.PRUEBA) {
+            Text(
+                "Versión de prueba: va aparte de tu diario. " + if (settings.fixedAi) "La IA contesta con respuestas fijas." else "La IA es la real.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 6.dp).testTag("version_prueba"),
+            )
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
         BackupBanner(container, onSettings = { onSettings(SettingsGroup.BACKUP) }, modifier = Modifier.padding(top = 10.dp))
@@ -153,7 +169,7 @@ fun HomeScreen(
                 }
             },
             enabled = !creating,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp).testTag("inicio_nueva_pagina"),
             contentPadding = PaddingValues(vertical = 14.dp),
         ) { Text("Nueva página") }
         // Misma altura para los tres aunque «Hablar y escuchar» ocupe dos renglones.
@@ -164,11 +180,11 @@ fun HomeScreen(
             val padding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
             val cell = Modifier.weight(1f).fillMaxHeight()
             // Describir un lugar o un momento, vivido o imaginado.
-            AppOutlinedButton(onClick = onScenes, modifier = cell, contentPadding = padding) { Text("Escenas") }
+            AppOutlinedButton(onClick = onScenes, modifier = cell.testTag("inicio_escenas"), contentPadding = padding) { Text("Escenas") }
             // Pistas y revisión para ejercicios del workbook, con foto.
-            AppOutlinedButton(onClick = onWorkbook, modifier = cell, contentPadding = padding) { Text("Workbook") }
+            AppOutlinedButton(onClick = onWorkbook, modifier = cell.testTag("inicio_workbook"), contentPadding = padding) { Text("Workbook") }
             // Conversación por voz con Gemini y el pódcast de Escuchar.
-            AppOutlinedButton(onClick = onConversation, modifier = cell, contentPadding = padding) {
+            AppOutlinedButton(onClick = onConversation, modifier = cell.testTag("inicio_hablar"), contentPadding = padding) {
                 Text("Hablar y escuchar", textAlign = TextAlign.Center)
             }
         }
@@ -260,6 +276,38 @@ private fun MascotGreeting(container: AppContainer, dates: List<LocalDate>) {
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
+        }
+    }
+}
+
+/**
+ * Si la app se cerró por un error la vez anterior: un aviso con «Copiar detalle» (para pegarlo en un
+ * chat o en un issue) y «Descartar».
+ */
+@Composable
+private fun CrashCard(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var detail by remember { mutableStateOf(CrashLog.read(context)) }
+    var copied by remember { mutableStateOf(false) }
+    val text = detail ?: return
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier.fillMaxWidth().border(1.dp, scheme.error).padding(12.dp).testTag("aviso_cierre"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("LA APP SE CERRÓ POR UN ERROR", style = MaterialTheme.typography.labelMedium, color = scheme.error)
+        Text(
+            text.lineSequence().firstOrNull { it.startsWith("Fecha:") }?.removePrefix("Fecha: ")?.let { "La última vez, el $it. " }.orEmpty() +
+                "Copia el detalle y pásalo para arreglarlo.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppButton(onClick = {
+                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("Cierre de la app", text))
+                copied = true
+            }) { Text(if (copied) "Copiado" else "Copiar detalle") }
+            AppTextButton(onClick = { CrashLog.clear(context); detail = null }) { Text("Descartar") }
         }
     }
 }

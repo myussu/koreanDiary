@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.jorge.koreandiary.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +76,8 @@ data class AppSettings(
     val hideOnboarding: Boolean = false,
     /** La prueba corta de vocabulario de Estudio (JSON de `progress.VocabTest`); "" si no la hiciste. */
     val vocabTest: String = "",
+    /** Solo en la versión de prueba: la IA contesta con respuestas fijas (`ai.FixedResponses`), sin red ni claves. */
+    val fixedAi: Boolean = true,
     /** Recordatorio diario para escribir, solo si ese día aún no hay página. */
     val reminderEnabled: Boolean = false,
     val reminderHour: Int = 20,
@@ -149,7 +152,8 @@ class SettingsStore(context: Context) {
         profile = prefs.getString("profile", "") ?: "",
         level = prefs.getString("level", "3A") ?: "3A",
         grammarLevels = prefs.getString("grammarLevels", "base,3A") ?: "base,3A",
-        defaultProvider = prefs.getString("defaultProvider", ProviderId.SHARE) ?: ProviderId.SHARE,
+        // En la versión de prueba arranca con Gemini (que ahí contesta con respuestas fijas).
+        defaultProvider = prefs.getString("defaultProvider", null) ?: if (BuildConfig.PRUEBA) ProviderId.GEMINI else ProviderId.SHARE,
         geminiModel = prefs.getString("geminiModel", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite",
         geminiDailyLimit = prefs.getInt("geminiDailyLimit", 30),
         stylusOnly = prefs.getBoolean("stylusOnly", true),
@@ -171,6 +175,7 @@ class SettingsStore(context: Context) {
         sceneDrawAuto = prefs.getBoolean("sceneDrawAuto", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
         vocabTest = prefs.getString("vocabTest", "") ?: "",
+        fixedAi = prefs.getBoolean("fixedAi", true),
         reminderEnabled = prefs.getBoolean("reminderEnabled", false),
         reminderHour = prefs.getInt("reminderHour", 20),
         reminderMinute = prefs.getInt("reminderMinute", 0),
@@ -224,6 +229,7 @@ class SettingsStore(context: Context) {
             .putBoolean("sceneDrawAuto", s.sceneDrawAuto)
             .putBoolean("hideOnboarding", s.hideOnboarding)
             .putString("vocabTest", s.vocabTest)
+            .putBoolean("fixedAi", s.fixedAi)
             .putBoolean("reminderEnabled", s.reminderEnabled)
             .putInt("reminderHour", s.reminderHour)
             .putInt("reminderMinute", s.reminderMinute)

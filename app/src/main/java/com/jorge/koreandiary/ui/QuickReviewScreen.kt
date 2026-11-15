@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
+import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.ai.CorrectionRequest
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.ProviderException
@@ -355,7 +357,7 @@ private fun CardView(
                 } else {
                     Box(
                         Modifier.fillMaxWidth().height(120.dp).border(1.dp, scheme.outlineVariant)
-                            .paperBackground(paper).clipToBounds().onSizeChanged { padWidth = it.width.toFloat() },
+                            .paperBackground(paper).clipToBounds().testTag("repaso_recuadro").onSizeChanged { padWidth = it.width.toFloat() },
                     ) {
                         InkCanvas(
                             strokes = state.strokes,
@@ -399,7 +401,13 @@ private fun CardView(
                     AppOutlinedButton(onClick = vm::hint, enabled = state.hints < 3) { Text("Pista") }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                // Versión de prueba: responder sin escribir coreano (docs/PRUEBAS.md).
+                if (BuildConfig.PRUEBA && answering) {
+                    AppTextButton(onClick = { vm.checkTyped(card.answer) }, modifier = Modifier.testTag("repaso_prueba_bien")) { Text("Prueba: bien") }
+                    AppTextButton(onClick = { vm.checkTyped("x") }, modifier = Modifier.testTag("repaso_prueba_mal")) { Text("Prueba: mal") }
+                    Box(Modifier.weight(1f))
+                }
                 AppTextButton(onClick = vm::reveal) { Text("Ver respuesta") }
             }
         } else {
