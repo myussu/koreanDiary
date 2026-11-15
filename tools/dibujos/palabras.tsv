@@ -1,0 +1,109 @@
+# Lo que se puede dibujar. Columnas: palabras (la primera es la principal; separadas por coma)	nombre en español	zona	tamaño	idea
+고양이	gato	GROUND	SMALL	sentado o caminando; cola que se mece
+개,강아지,멍멍이	perro	GROUND	SMALL	de pie, de perfil
+토끼	conejo	GROUND	SMALL	orejas largas
+다람쥐	ardilla	GROUND	SMALL	cola grande y esponjosa
+비둘기	paloma	GROUND	SMALL	en el suelo, picoteando
+참새	gorrión	GROUND	SMALL	pequeño y redondo
+새	pájaro	SKY	SMALL	volando, count 3, alas FLAP
+갈매기	gaviota	SKY	SMALL	alas en M, count 3, DRIFT
+까마귀	cuervo	SKY	SMALL	negro azulado, DRIFT
+오리	pato	HORIZON	SMALL	nadando, BOB
+백조	cisne	HORIZON	MEDIUM	cuello curvo, BOB
+물고기	pez	HORIZON	SMALL	saltando del agua
+고래	ballena	HORIZON	LARGE	lomo y chorro de agua
+거북이	tortuga	GROUND	SMALL	caparazón con dibujo
+나비	mariposa	AIR	SMALL	count 3, alas FLAP
+벌	abeja	AIR	SMALL	rayas amarillas, count 3
+잠자리	libélula	AIR	SMALL	alas largas, count 2
+반딧불이	luciérnaga	AIR	SMALL	luz TWINKLE, count 5
+개구리	rana	GROUND	SMALL	verde, sentada
+달팽이	caracol	GROUND	SMALL	espiral en la concha
+말	caballo	GROUND	MEDIUM	de pie, de perfil
+소	vaca	GROUND	MEDIUM	manchas
+양	oveja	GROUND	SMALL	lana como nube
+닭	gallina	GROUND	SMALL	cresta roja
+사슴	ciervo	GROUND	MEDIUM	cuernos ramificados
+곰	oso	GROUND	MEDIUM	pardo, de cuatro patas
+여우	zorro	GROUND	SMALL	naranja, cola con punta blanca
+펭귄	pingüino	GROUND	SMALL	de pie
+부엉이	búho	GROUND	SMALL	en una rama, ojos grandes
+해바라기	girasol	GROUND	MEDIUM	alto, SWAY
+선인장	cactus	GROUND	SMALL	con brazos
+소나무	pino	HORIZON	LARGE	verde oscuro, copa en capas
+벚나무	cerezo	HORIZON	LARGE	copa rosa
+단풍나무	arce	HORIZON	LARGE	copa roja y naranja
+야자수	palmera	HORIZON	LARGE	hojas que se mecen
+대나무	bambú	HORIZON	MEDIUM	cañas verdes, SWAY
+버섯	hongo	GROUND	SMALL	sombrero rojo con puntos
+갈대	juncos	GROUND	MEDIUM	SWAY
+연꽃	flor de loto	HORIZON	SMALL	sobre el agua
+화분	maceta	GROUND	SMALL	con una planta
+허수아비	espantapájaros	GROUND	MEDIUM	sombrero de paja
+집	casa	HORIZON	LARGE	techo a dos aguas, ventana con luz
+한옥	casa tradicional coreana	HORIZON	LARGE	techo curvo de tejas
+학교	escuela	HORIZON	LARGE	edificio con reloj
+교회	iglesia	HORIZON	LARGE	campanario con cruz
+절	templo	HORIZON	LARGE	templo budista coreano, techo curvo
+탑	pagoda	HORIZON	LARGE	pagoda de piedra de varios pisos
+성	castillo	HORIZON	LARGE	torres con banderas
+등대	faro	HORIZON	LARGE	(ya hay ejemplo; hazlo distinto)
+풍차	molino de viento	HORIZON	LARGE	aspas SWAY
+텐트	carpa	GROUND	MEDIUM	triangular
+벤치	banca	GROUND	MEDIUM	de madera en el parque
+우체통	buzón	GROUND	SMALL	rojo, coreano
+가로등	farola	GROUND	MEDIUM	luz TWINKLE
+신호등	semáforo	GROUND	MEDIUM	luces de colores
+정자	pabellón	HORIZON	LARGE	pabellón coreano de madera
+우물	pozo	GROUND	MEDIUM	de piedra con techito
+울타리	cerca	GROUND	MEDIUM	tablas de madera
+그네	columpio	GROUND	MEDIUM	SWAY
+미끄럼틀	tobogán	GROUND	MEDIUM	de parque
+분수	fuente	GROUND	MEDIUM	agua que salta, TWINKLE
+카페	café	HORIZON	LARGE	fachada con toldo
+편의점	tienda	HORIZON	LARGE	fachada iluminada
+자전거	bicicleta	GROUND	MEDIUM	de perfil
+자동차	auto	GROUND	MEDIUM	de perfil
+버스	bus	GROUND	LARGE	de perfil, ventanas
+택시	taxi	GROUND	MEDIUM	amarillo o naranja
+트럭	camión	GROUND	LARGE	de perfil
+오토바이	moto	GROUND	MEDIUM	de perfil
+기차	tren	HORIZON	LARGE	locomotora y vagones, DRIFT
+보트,돛단배	velero	HORIZON	LARGE	vela blanca, BOB
+유람선	barco	HORIZON	LARGE	crucero, BOB
+비행기	avión	SKY	MEDIUM	DRIFT
+헬리콥터	helicóptero	SKY	MEDIUM	DRIFT
+열기구	globo aerostático	SKY	MEDIUM	BOB
+연	cometa	SKY	SMALL	con cola, SWAY
+풍선	globo	SKY	SMALL	count 3, BOB, con hilo
+우산	paraguas	GROUND	SMALL	abierto
+눈사람	muñeco de nieve	GROUND	MEDIUM	bufanda
+모래성	castillo de arena	GROUND	SMALL	con banderita
+모닥불	fogata	GROUND	SMALL	llamas TWINKLE
+촛불	vela	GROUND	SMALL	llama TWINKLE
+등불,랜턴	farol	GROUND	SMALL	luz TWINKLE
+연등	farol de papel	AIR	SMALL	farolitos de colores, count 4, TWINKLE
+불꽃놀이	fuegos artificiales	SKY	LARGE	estallidos, TWINKLE
+깃발	bandera	GROUND	MEDIUM	tela que se mece (SWAY)
+바구니	canasta	GROUND	SMALL	de mimbre
+크리스마스트리	árbol de navidad	GROUND	MEDIUM	luces TWINKLE
+번개	rayo	SKY	LARGE	zigzag amarillo, TWINKLE
+오로라	aurora	SKY	LARGE	cintas verdes
+별똥별	estrella fugaz	SKY	SMALL	con estela, DRIFT
+섬	isla	HORIZON	LARGE	con una palmera
+폭포	cascada	HORIZON	LARGE	agua que cae
+사막	desierto	HORIZON	LARGE	dunas
+바위	roca	GROUND	MEDIUM	gris, con musgo
+동굴	cueva	HORIZON	LARGE	boca oscura
+화산	volcán	HORIZON	LARGE	humo
+얼음	hielo	GROUND	SMALL	bloques
+돌고래	delfín	HORIZON	MEDIUM	saltando del agua
+게	cangrejo	GROUND	SMALL	rojo, de frente
+조개	concha	GROUND	SMALL	en la arena
+불가사리	estrella de mar	GROUND	SMALL	naranja
+해파리	medusa	HORIZON	SMALL	tentáculos, BOB
+관람차	noria	HORIZON	LARGE	rueda con cabinas
+돗자리	manta de picnic	GROUND	MEDIUM	a cuadros, con canasta
+원숭이	mono	GROUND	SMALL	sentado
+판다	panda	GROUND	MEDIUM	blanco y negro, comiendo bambú
+코끼리	elefante	GROUND	LARGE	trompa

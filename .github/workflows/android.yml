@@ -10,6 +10,8 @@ on:
       - "desktopApp/**"
       - ".github/workflows/prueba-reconocedor.yml"
       - ".github/workflows/escritorio.yml"
+      # Herramientas fuera de la app (kit de dibujos para agentes).
+      - "tools/**"
   pull_request:
   workflow_dispatch:
 
