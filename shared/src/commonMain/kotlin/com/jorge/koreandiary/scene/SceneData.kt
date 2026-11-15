@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.scene
 
+import com.jorge.koreandiary.scene.art.CustomDrawing
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -99,9 +100,12 @@ data class SceneData(
     fun withMood(reading: MoodReading?): SceneData =
         if (reading == null || reading == mood) this else copy(mood = reading)
 
-    /** Suma elementos sin repetir, manteniendo el orden en que aparecieron. */
+    /**
+     * Suma elementos sin repetir, manteniendo el orden en que aparecieron. También los de los dibujos
+     * de fábrica y los de Claude: si uno ya no existe, la escena lo salta al pintar.
+     */
     fun withElements(ids: List<String>): SceneData {
-        val merged = (elements + ids.filter { SceneDictionary.element(it) != null }).distinct().takeLast(MAX_ELEMENTS)
+        val merged = (elements + ids.filter { SceneDictionary.element(it) != null || CustomDrawing.isCustomId(it) }).distinct().takeLast(MAX_ELEMENTS)
         return if (merged == elements) this else copy(elements = merged)
     }
 

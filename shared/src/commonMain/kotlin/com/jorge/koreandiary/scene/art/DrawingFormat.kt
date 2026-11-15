@@ -20,8 +20,11 @@ object DrawingFormat {
     private val hex = Regex("^#[0-9a-fA-F]{6}$")
     private val hangul = Regex("^[\\p{IsHangul}]{1,8}$")
 
-    /** Lee un dibujo; [ko] y [es] completan lo que falte (lo que se pidió dibujar). Lanza si no hay nada que pintar. */
-    fun parse(json: JSONObject, ko: String = "", es: String = ""): CustomDrawing {
+    /**
+     * Lee un dibujo; [ko] y [es] completan lo que falte (lo que se pidió dibujar). [prefix] va delante
+     * del id: el de Claude o el de fábrica. Lanza si no hay nada que pintar.
+     */
+    fun parse(json: JSONObject, ko: String = "", es: String = "", prefix: String = CustomDrawing.PREFIX): CustomDrawing {
         val colors = json.optJSONArray("colors").objects().mapNotNull { o ->
             val key = o.optString("key").trim()
             val light = o.optString("light").trim()
@@ -38,7 +41,8 @@ object DrawingFormat {
             .distinct()
             .take(MAX_KEYS)
         val slug = json.optString("id").lowercase().replace(Regex("[^a-z0-9_]"), "_").trim('_').take(24)
-        val id = CustomDrawing.PREFIX + slug.removePrefix(CustomDrawing.PREFIX).ifEmpty { "d" + (ko.ifEmpty { es }).hashCode().toUInt().toString(16) }
+        val bare = slug.removePrefix(CustomDrawing.PREFIX).removePrefix(CustomDrawing.FACTORY_PREFIX)
+        val id = prefix + bare.ifEmpty { "d" + (ko.ifEmpty { es }).hashCode().toUInt().toString(16) }
         return CustomDrawing(
             id = id,
             name = json.optString("name").trim().ifEmpty { es.trim() }.ifEmpty { ko }.take(40),
@@ -51,6 +55,9 @@ object DrawingFormat {
             shapes = shapes,
         )
     }
+
+    /** Un dibujo de fábrica (un JSON de `assets/dibujos/` de la app). */
+    fun parseFactory(text: String): CustomDrawing = parse(JSONObject(text), prefix = CustomDrawing.FACTORY_PREFIX)
 
     private fun shape(o: JSONObject, colors: Set<String>): DrawingShape? {
         val c = o.optString("c").trim()

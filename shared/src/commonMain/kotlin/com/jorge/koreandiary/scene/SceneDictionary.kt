@@ -28,8 +28,12 @@ data class SceneElement(
  * Coincidencia:
  * - Claves de dos sílabas o más: al inicio de la palabra (바다를, 바닷가… → 바다 por su clave 바닷).
  * - Claves de una sílaba (해, 비, 눈, 별…): solo la palabra sola o con una partícula (해가, 비를,
- *   별처럼), porque al inicio de otra palabra significan otra cosa (해요, 비싸요, 별로).
+ *   별처럼), porque al inicio de otra palabra significan otra cosa (해요, 비싸요, 별로). Las de
+ *   [needsParticle], solo con partícula.
  * Una lectura errónea suma o quita un elemento: es inofensivo; Revisar corrige el texto.
+ *
+ * A estas palabras se suman las de los dibujos de pinceladas ([withCustom]): los de fábrica y los que
+ * hizo Claude.
  */
 object SceneDictionary {
 
@@ -113,6 +117,12 @@ object SceneDictionary {
     internal val stems = setOf("맑", "밝")
 
     /**
+     * Sílabas que solas casi siempre son otra cosa: cuentan solo con partícula. 게 (먹는 게 좋아요:
+     * 것이), 새 (새 옷: nuevo), 절 (절 도와주세요: 저를). 게가, 새들이 y 절에 sí traen su dibujo.
+     */
+    internal val needsParticle = setOf("게", "새", "절")
+
+    /**
      * Partículas que pueden seguir a un sustantivo de una sílaba. Sin 로: «별로» (no mucho) no son
      * estrellas.
      */
@@ -122,7 +132,7 @@ object SceneDictionary {
     )
 
     /** Las palabras de la app, sin dibujos nuevos. */
-    private val builtIn = SceneLexicon(keys.entries.map { it.key to it.value }, stems, particles) { byId[it] }
+    private val builtIn = SceneLexicon(keys.entries.map { it.key to it.value }, stems, particles, needsParticle) { byId[it] }
 
     /**
      * Elementos que aparecen en [text], en el orden en que se escribieron, sin repetir: la escena
@@ -140,14 +150,15 @@ object SceneDictionary {
     fun isSingleSyllable(key: String): Boolean = ' ' !in key && key.length == 1 && key !in stems
 
     /**
-     * El diccionario con los dibujos nuevos sumados: sus palabras se reconocen con las mismas reglas.
-     * Si una palabra nueva ya es de la app, gana la de la app.
+     * El diccionario con los dibujos de pinceladas sumados: sus palabras se reconocen con las mismas
+     * reglas. Si una palabra es de dos, gana la de la app y después el primero de [custom] (por eso
+     * van primero los que hizo Claude para ti y al final los de fábrica).
      */
     fun withCustom(custom: List<com.jorge.koreandiary.scene.art.CustomDrawing>): SceneLexicon {
         if (custom.isEmpty()) return builtIn
-        val extra = custom.flatMap { d -> d.keys.map { it to d.id } }.filter { (k, _) -> k !in keys }
+        val all = (keys.entries.map { it.key to it.value } + custom.flatMap { d -> d.keys.map { it to d.id } }).distinctBy { it.first }
         val elements = custom.associate { it.id to it.element }
-        return SceneLexicon(keys.entries.map { it.key to it.value } + extra, stems, particles) { byId[it] ?: elements[it] }
+        return SceneLexicon(all, stems, particles, needsParticle) { byId[it] ?: elements[it] }
     }
 
     /** Ids de la lista para el prompt: «id (nombre)», con los dibujos nuevos al final. */
@@ -163,6 +174,7 @@ class SceneLexicon internal constructor(
     keys: List<Pair<String, String>>,
     stems: Set<String>,
     private val particles: List<String>,
+    private val needsParticle: Set<String>,
     private val elementOf: (String) -> SceneElement?,
 ) {
     /** Claves de varias palabras ("해가 지"): se buscan en el texto tal cual. */
@@ -172,7 +184,16 @@ class SceneLexicon internal constructor(
 
     private val wordSplit = Regex("[^\\p{IsHangul}]+")
 
+    /** Palabra exacta → id (para saber de quién es una clave aunque sola no cuente, como 게). */
+    private val owners = keys.toMap()
+
     fun element(id: String): SceneElement? = elementOf(id)
+
+    /** El dibujo de una clave exacta, cuente sola o no. */
+    fun owner(key: String): SceneElement? = owners[key]?.let(elementOf)
+
+    /** ¿Este sustantivo ya trae un dibujo? (게 sí, aunque solo cuente con partícula.) */
+    fun knows(noun: String): Boolean = owner(noun) != null || detect(noun).isNotEmpty()
 
     fun detect(text: String): List<SceneElement> = detectWithKeys(text).map { it.first }
 
@@ -200,7 +221,8 @@ class SceneLexicon internal constructor(
             }
             val head = word.substring(0, 1)
             val single = singleSyllable[head] ?: continue
-            if (word.substring(1) in particles) add(single, at, head)
+            val rest = word.substring(1)
+            if (rest in particles && (rest.isNotEmpty() || head !in needsParticle)) add(single, at, head)
         }
         return found.entries.sortedBy { it.value.first }.mapNotNull { (id, v) -> elementOf(id)?.let { it to v.second } }
     }

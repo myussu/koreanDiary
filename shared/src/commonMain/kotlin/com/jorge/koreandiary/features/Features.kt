@@ -87,10 +87,10 @@ object Features {
                 phone("«¿Cómo digo?»: «Dictar» la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase»."),
                 phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con tu escena (también después de «Revisar»)."),
                 phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste, «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
-                phone("Escena viva: mientras escribes, lo que nombras aparece pintado a pincel en acuarela en una franja abajo de la hoja (el mar, un árbol que se mece, el pasto, el sol, la lluvia…), sin tapar donde escribes. Lo que pides en «¿Cómo digo?» aparece recién cuando lo escribes. Si no tocas la hoja por 30 segundos se queda quieta para no gastar batería; al tocarla sigue."),
+                phone("Escena viva: mientras escribes, lo que nombras aparece pintado a pincel en acuarela en una franja abajo de la hoja (el mar, un árbol que se mece, el sol, la lluvia, un gato, un faro, un templo… unas 135 cosas), sin tapar donde escribes. Lo que pides en «¿Cómo digo?» aparece recién cuando lo escribes. Si no tocas la hoja por 30 segundos se queda quieta para no gastar batería; al tocarla sigue."),
                 phone("Tono de la escena: al «Revisar» o con «¿Cómo digo?», la IA lee lo que se siente (amor, calma, nostalgia, tristeza…) y una luz de ese color sube desde abajo. No gasta pedidos extra."),
-                phone("Dibujos nuevos con Claude: al «Revisar» una escena, lo que se ve y la escena viva no sabía pintar (un gato, un faro) lo dibuja Claude en acuarela, hasta 2 por página: dibuja, mira cómo quedó y lo corrige; desde entonces aparece al escribir su palabra. Sin clave de Claude queda en espera."),
-                phone("«Dibujos» (en Escenas): todo lo que la escena sabe pintar y las palabras que lo traen, «Prueba una palabra», lo que espera («Dibujar», «Quitar») y en los nuevos «Dibujar otra vez» y «Borrar»."),
+                phone("Dibujos nuevos con Claude: al «Revisar» una escena, lo que se ve y la escena viva no sabía pintar (un camello, un robot) lo dibuja Claude en acuarela, hasta 2 por página: dibuja, mira cómo quedó y lo corrige; desde entonces aparece al escribir su palabra. Sin clave de Claude queda en espera."),
+                phone("«Dibujos» (en Escenas): todo lo que la escena sabe pintar, por zona, y las palabras que lo traen, «Prueba una palabra», lo que espera («Dibujar», «Quitar») y en los nuevos «Dibujar otra vez» y «Borrar». Si una palabra es de un dibujo de la app y de uno tuyo, sale el tuyo."),
                 phone("«Imagen»: la escena pintada en acuarela. Con tu servidor ComfyUI (por Tailscale) se pinta sola al terminarla; sin servidor, «Copiar prompt para Gemini» y «Elegir imagen». Sale muy suave de fondo y como miniatura en la lista de escenas."),
                 phone("Cuenta para la racha cuando está revisada y sin correcciones pendientes."),
                 desktop("En la lista de páginas de la PC, las escenas salen marcadas «Escena»."),
@@ -265,7 +265,7 @@ object Features {
                 ),
                 FlowStep(
                     "Describes lo que ves",
-                    "Lo que nombras aparece pintado en acuarela abajo de la hoja: el mar, un árbol que se mece, la lluvia.",
+                    "Lo que nombras aparece pintado en acuarela abajo de la hoja: el mar, un árbol que se mece, la lluvia, un gato, un faro.",
                     aside = FlowAside(
                         "Si te trabas",
                         listOf("¿Cómo digo?", "Dictar", "Más ayuda", "Ver la frase"),
@@ -293,7 +293,7 @@ object Features {
                     listOf("Imagen", "Copiar prompt para Gemini", "Elegir imagen"),
                 ),
             ),
-            note = "En Escenas, «Dibujos» muestra todo lo que la escena sabe pintar y las palabras que lo traen.",
+            note = "En Escenas, «Dibujos» muestra lo que la escena sabe pintar (unas 135 cosas) y las palabras que lo traen; «Prueba una palabra» te dice si una trae dibujo.",
         ),
         FeatureFlow(
             title = "Workbook",

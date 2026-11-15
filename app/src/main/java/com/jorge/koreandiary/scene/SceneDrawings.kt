@@ -15,8 +15,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -25,6 +28,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.Collator
+import java.util.Locale
 
 /** Un dibujo nuevo guardado: el dibujo y de dónde salió (qué modelo, cuánto gastó, en qué frase apareció). */
 data class SavedDrawing(
@@ -46,13 +51,17 @@ sealed interface DrawJob {
 data class PendingThing(val thing: NewSceneThing, val context: String)
 
 /**
- * Los dibujos nuevos de la escena: lo que apareció al revisar y la app no sabía pintar, dibujado por
- * Claude en dos vueltas (dibuja; mira la imagen de su dibujo y lo corrige). Un archivo por dibujo en `filesDir/scene_drawings/<id>.json` (el mismo JSON que devolvió
- * Claude, más `meta`) y lo que espera en `pending.json`. Vive en el `AppContainer`: dibujar tarda unos
- * segundos y sigue aunque salgas de la página. La carpeta entra en la copia de seguridad.
+ * Los dibujos de pinceladas de la escena, aparte de los 27 de código:
+ * - De fábrica: vienen con la app, un JSON por dibujo en `assets/dibujos/` (ver `tools/dibujos`). No
+ *   se borran ni van a la copia.
+ * - Nuevos: lo que apareció al revisar y la escena no sabía pintar, dibujado por Claude en dos vueltas
+ *   (dibuja; mira la imagen de su dibujo y lo corrige). Un archivo por dibujo en
+ *   `filesDir/scene_drawings/<id>.json` (el mismo JSON que devolvió Claude, más `meta`) y lo que
+ *   espera en `pending.json`. La carpeta entra en la copia de seguridad.
+ * Vive en el `AppContainer`: dibujar tarda unos segundos y sigue aunque salgas de la página.
  */
 class SceneDrawings(
-    app: Application,
+    private val app: Application,
     private val scope: CoroutineScope,
     private val settings: SettingsStore,
     private val secrets: SecretStore,
@@ -64,6 +73,14 @@ class SceneDrawings(
     private val _saved = MutableStateFlow<List<SavedDrawing>>(emptyList())
     val saved: StateFlow<List<SavedDrawing>> = _saved.asStateFlow()
 
+    private val _factory = MutableStateFlow<List<CustomDrawing>>(emptyList())
+    /** Los que vienen con la app, por nombre. */
+    val factory: StateFlow<List<CustomDrawing>> = _factory.asStateFlow()
+
+    /** Todos, para la escena y el diccionario: primero los tuyos (si una palabra es de los dos, gana el tuyo). */
+    val all: StateFlow<List<CustomDrawing>> = combine(_saved, _factory) { own, f -> own.map { it.drawing } + f }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
     private val _pending = MutableStateFlow<List<PendingThing>>(emptyList())
     val pending: StateFlow<List<PendingThing>> = _pending.asStateFlow()
 
@@ -72,16 +89,29 @@ class SceneDrawings(
     val jobs: StateFlow<Map<String, DrawJob>> = _jobs.asStateFlow()
 
     init {
-        scope.launch(Dispatchers.IO) { load() }
+        scope.launch(Dispatchers.IO) {
+            loadFactory()
+            load()
+        }
     }
 
-    /** Los dibujos, sin lo demás (para la escena y el diccionario). */
-    fun drawings(): List<CustomDrawing> = _saved.value.map { it.drawing }
+    /** Todos los dibujos, sin lo demás (para la escena y el diccionario), en el orden de [all]. */
+    fun drawings(): List<CustomDrawing> = _saved.value.map { it.drawing } + _factory.value
 
     /** Hay clave de Claude (no la descifra). */
     fun ready(): Boolean = secrets.has(SecretStore.CLAUDE_KEY)
 
     fun usedToday(): Int = settings.usageToday(USAGE)
+
+    /** Los de fábrica: uno roto se salta (lo cuida `FactoryDrawingsTest` antes de publicar). */
+    private fun loadFactory() {
+        val names = runCatching { app.assets.list(FACTORY_DIR) }.getOrNull().orEmpty().filter { it.endsWith(".json") }
+        _factory.value = names.mapNotNull { name ->
+            runCatching {
+                DrawingFormat.parseFactory(app.assets.open("$FACTORY_DIR/$name").bufferedReader().use { it.readText() })
+            }.onFailure { Log.w("SceneDrawings", "Dibujo de fábrica roto: $name", it) }.getOrNull()
+        }.distinctBy { it.id }.sortedWith(compareBy(Collator.getInstance(Locale.forLanguageTag("es"))) { it.name })
+    }
 
     private fun load() {
         val list = dir.listFiles { f -> f.name.endsWith(".json") && f.name != PENDING }.orEmpty().mapNotNull { f ->
@@ -108,8 +138,8 @@ class SceneDrawings(
         }.getOrDefault(emptyList())
     }
 
-    /** ¿Ya hay dibujo (de la app o nuevo) para esta palabra? */
-    private fun known(ko: String): Boolean = SceneDictionary.withCustom(drawings()).detect(ko).isNotEmpty()
+    /** ¿Ya hay dibujo (de código, de fábrica o nuevo) para esta palabra? */
+    private fun known(ko: String): Boolean = SceneDictionary.withCustom(drawings()).knows(ko)
 
     /**
      * Tras revisar una escena: lo que se ve y no tiene dibujo. Con la opción encendida y la clave
@@ -186,7 +216,7 @@ class SceneDrawings(
     private suspend fun create(thing: NewSceneThing, context: String, replace: SavedDrawing?) {
         val client = client() ?: throw IllegalStateException("Falta la clave de Claude: ponla en Ajustes → «Dibujos nuevos (Claude)».")
         if (usedToday() >= DAILY_LIMIT) throw IllegalStateException("Ya se hicieron $DAILY_LIMIT dibujos hoy (el límite cuida tus créditos). Mañana sigue.")
-        val existing = (SceneDictionary.elements.map { it.name } + _saved.value.map { it.drawing.name }).distinct()
+        val existing = (SceneDictionary.elements.map { it.name } + drawings().map { it.name }).distinct()
         // Primera vuelta, un borrador: con poco esfuerzo piensa lo justo (con el de fábrica, high, llegó a
         // gastar los 16 000 tokens pensando y no terminó). La revisión, que mira la imagen, piensa más.
         val first = try {
@@ -279,6 +309,9 @@ class SceneDrawings(
     companion object {
         /** Carpeta en `filesDir`; está en `BackupFormat.MANAGED_DIRS` y en las reglas de `res/xml`. */
         const val DIR = "scene_drawings"
+
+        /** Carpeta de los de fábrica en los assets de la app. */
+        const val FACTORY_DIR = "dibujos"
         private const val PENDING = "pending.json"
         private const val USAGE = "claude"
 

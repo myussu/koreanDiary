@@ -1,7 +1,8 @@
 """
-Revisa que los dibujos de salida/ cumplan el formato y las reglas antes de agregarlos a la app.
+Revisa que los dibujos cumplan el formato y las reglas: los nuevos de salida/ y los que ya están en la
+app (app/src/main/assets/dibujos/). Las palabras y los ids no pueden repetirse entre unos y otros.
 
-    python validar.py            (todos)
+    python validar.py            (todos: salida/ y la app)
     python validar.py salida/gato.json
 
 Sale con código 1 si algún dibujo tiene errores. Los avisos no frenan, pero conviene mirarlos.
@@ -13,6 +14,8 @@ import re
 import sys
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
+# Los dibujos de fábrica que ya trae la app.
+APP = os.path.normpath(os.path.join(AQUI, "..", "..", "app", "src", "main", "assets", "dibujos"))
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 HANGUL = re.compile(r"^[가-힣ᄀ-ᇿ㄰-㆏]{1,8}$")
 SLUG = re.compile(r"^[a-z][a-z0-9_]{1,23}$")
@@ -127,21 +130,41 @@ def check(d, name):
     return errors, warnings
 
 
+def load(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 def main(args):
-    files = args or sorted(glob.glob(os.path.join(AQUI, "salida", "*.json")))
+    everything = sorted(glob.glob(os.path.join(AQUI, "salida", "*.json"))) + sorted(glob.glob(os.path.join(APP, "*.json")))
+    files = args or everything
     taken_keys = app_keys()
     seen_ids, seen_keys = {}, {}
+    # Con archivos sueltos, los demás (los de la app y el resto de salida/) cuentan como ocupados.
+    chosen = {os.path.abspath(f) for f in files}
+    for f in everything:
+        if os.path.abspath(f) in chosen:
+            continue
+        try:
+            d = load(f)
+        except Exception:  # noqa: BLE001
+            continue
+        where = os.path.relpath(f, AQUI)
+        seen_ids.setdefault(d.get("id"), where)
+        for k in d.get("keys", []):
+            seen_keys.setdefault(k, where)
     bad = 0
     for f in files:
-        name = os.path.basename(f)
+        name = os.path.relpath(f, AQUI)
         try:
-            with open(f, encoding="utf-8") as fh:
-                d = json.load(fh)
+            d = load(f)
         except Exception as e:  # noqa: BLE001
             print(f"✗ {name}: no es JSON ({e})")
             bad += 1
             continue
         errors, warnings = check(d, name)
+        if os.path.basename(f) != f"{d.get('id')}.json":
+            errors.append(f"el archivo se llama distinto que su id («{d.get('id')}.json»)")
         for k in d.get("keys", []):
             if k in taken_keys:
                 errors.append(f"«{k}» ya trae un dibujo de la app: {taken_keys[k]}")

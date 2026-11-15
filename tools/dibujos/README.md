@@ -2,25 +2,27 @@
 
 Kit para que un agente (Codex, Claude Code u otro) dibuje por adelantado cosas para la escena viva, en el mismo formato que usa la app. Después se agregan a la app como dibujos de fábrica: sus palabras los traen mientras escribes, igual que los 27 de siempre.
 
+**Ya hay 108 en la app** (`app/src/main/assets/dibujos/`, la primera tanda, de Codex; su revisión está en `revision-codex.md`). Una tanda nueva se dibuja en `salida/` y, cuando está lista, se mueve a esa carpeta.
+
 **No son imágenes:** cada dibujo es un JSON de pinceladas (aguadas, toques y pinceladas en una caja de 100 × 100) que la app pinta con su pincel y su filtro de acuarela. Por eso se mueven, cambian de color en papel oscuro y pesan ~1,5 KB cada uno: 100 dibujos son ~150 KB. Con imágenes, en cambio, 100 PNG serían 10–30 MB y quedarían quietos y con otro estilo.
 
 ## Qué hay aquí
 
 | Archivo | Para qué |
 |---|---|
-| `palabras.tsv` | Lo que hay que dibujar (108): palabras coreanas, nombre en español, zona, tamaño e idea |
+| `palabras.tsv` | Lo que hay que dibujar: palabras coreanas, nombre en español, zona, tamaño e idea (las 108 de la primera tanda ya están en la app) |
 | `ejemplos/` | Tres dibujos bien hechos: `gato.json`, `perro.json`, `faro.json` |
-| `claves_de_la_app.txt` | Palabras que ya traen un dibujo de la app: no se pueden usar en `keys` |
+| `claves_de_la_app.txt` | Palabras que ya traen uno de los 27 dibujos de código: no se pueden usar en `keys` (las de los dibujos de fábrica las revisa `validar.py` leyendo la carpeta de la app) |
 | `dibujo.py` | Pinta un dibujo con la misma geometría de pincel que la app |
-| `ver.py` | `python ver.py salida/x.json` deja `salida/x.png` con tres vistas; `python ver.py --hoja` las junta todas |
-| `validar.py` | `python validar.py` revisa formato y reglas de todo `salida/` |
+| `ver.py` | `python ver.py salida/x.json` deja `salida/x.png` con tres vistas; `python ver.py --hoja` junta las de `salida/` y `python ver.py --hoja app` las que ya trae la app |
+| `validar.py` | `python validar.py` revisa formato y reglas de `salida/` y de la carpeta de la app, y que ninguna palabra ni id se repita entre ellas |
 | `salida/` | Aquí van los dibujos terminados, uno por archivo: `salida/<id>.json` |
 
 Solo hace falta Python 3 con Pillow: `pip install pillow`.
 
 ## Cómo trabajar (para el agente)
 
-Por cada fila de `palabras.tsv`, en orden, salvo que ya exista `salida/<id>.json`:
+Por cada fila de `palabras.tsv`, en orden, salvo que ya exista `salida/<id>.json` o `app/src/main/assets/dibujos/<id>.json`:
 
 1. **Mira los ejemplos** (`ejemplos/`) antes del primero: muestran cómo se arma una silueta por partes.
 2. **Si tienes una herramienta para generar imágenes**, puedes pedir una referencia simple (ilustración plana, de perfil, fondo liso) y guardarla en `referencias/` (no se sube al repo). Úsala solo para proporciones; el dibujo lo haces tú en JSON.
@@ -41,7 +43,7 @@ Al terminar: `python validar.py` (todo) y `python ver.py --hoja`, y deja en `sal
 
 - **`id`:** slug corto en inglés, minúsculas y guion bajo (`cat`, `hot_air_balloon`). También es el nombre del archivo.
 - **`name`:** nombre en español, en minúsculas (`gato`).
-- **`keys`:** los sustantivos coreanos que lo traen al escribir: primero el de diccionario (`고양이`), luego hasta 3 variantes o sinónimos comunes (`냥이`). Solo hangul, sin partículas ni verbos, y ninguno de `claves_de_la_app.txt`. Toma las de la primera columna de `palabras.tsv` y suma variantes si las hay. Evita palabras con otro sentido muy común (배 es barco, pero también barriga y pera).
+- **`keys`:** los sustantivos coreanos que lo traen al escribir: primero el de diccionario (`고양이`), luego hasta 3 variantes o sinónimos comunes (`냥이`). Solo hangul, sin partículas ni verbos, y ninguno de `claves_de_la_app.txt`. Toma las de la primera columna de `palabras.tsv` y suma variantes si las hay. Evita palabras con otro sentido muy común (배 es barco, pero también barriga y pera). Una clave de una sílaba solo cuenta sola o con partícula (곰이, 곰을); 게, 새 y 절 solo con partícula, porque solas casi siempre son otra cosa (먹는 게, 새 옷, 절 도와주세요).
 - **`zone`:** `GROUND` (adelante, se apoya en el suelo: animales, objetos, plantas chicas), `HORIZON` (atrás, en tierra o agua: edificios, barcos, árboles grandes, rocas), `SKY` (arriba: pájaros, cometas, globos, aviones), `AIR` (cosas chicas que flotan por toda la franja: mariposas, luciérnagas).
 - **`size`:** `SMALL` (gato, pájaro, flor), `MEDIUM` (bicicleta, banca, perro), `LARGE` (faro, casa, barco).
 - **`motion`** (todo el dibujo): `NONE`, `SWAY` (se mece; plantas), `BOB` (sube y baja; barcos, globos), `DRIFT` (cruza la escena despacio; pájaros, aviones).
@@ -72,4 +74,4 @@ En el celular se ve chico (~250 px de ancho) y con un filtro que suaviza y mueve
 
 ## Después
 
-Cuando estén listos, se agregan a la app como dibujos de fábrica (se leen de los assets al abrir, con sus palabras en el diccionario de la escena). Si alguno no convence, se borra su JSON y listo.
+Cuando la tanda esté lista y `python validar.py` no dé errores, se mueven los JSON de `salida/` a `app/src/main/assets/dibujos/` (con `git mv`). La app los lee al abrir y suma sus palabras al diccionario de la escena; si una palabra también es de un dibujo que hizo Claude para ti, gana el tuyo. El test `FactoryDrawingsTest` (en `shared/src/jvmTest`) revisa en cada compilación que todos se lean y que cada palabra traiga su dibujo. Si alguno no convence, se borra su JSON y listo.

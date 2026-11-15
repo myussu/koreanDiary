@@ -48,8 +48,9 @@ sealed class DrawingShape(val color: String, val alpha: Float, val move: PartMot
 }
 
 /**
- * Un dibujo hecho por Claude para algo que la escena no sabía pintar (un gato, un faro). Se guarda
- * con sus palabras coreanas: desde entonces aparece al escribirlas, igual que los dibujos de la app.
+ * Un dibujo de pinceladas en una caja (un gato, un faro), con sus palabras coreanas: aparece al
+ * escribirlas, igual que los 27 dibujos de código de la app. Puede ser de fábrica (viene en los assets
+ * de la app, id `f_…`) o hecho por Claude para algo que la escena no sabía pintar (id `x_…`).
  */
 class CustomDrawing(
     val id: String,
@@ -75,14 +76,21 @@ class CustomDrawing(
         SceneElement(id, name, zone, PALETTE, motion)
     }
 
+    /** ¿Viene con la app (no lo hizo Claude para ti)? */
+    val isFactory: Boolean get() = id.startsWith(FACTORY_PREFIX)
+
     companion object {
-        /** Los ids de los dibujos nuevos empiezan así: nunca chocan con los de la app. */
+        /** Los ids de los dibujos que hace Claude empiezan así: nunca chocan con los de la app. */
         const val PREFIX = "x_"
 
-        /** Clave de paleta de los elementos nuevos: sus colores vienen en cada mancha. */
+        /** Y los de los dibujos de fábrica, así: tampoco chocan con los que hizo Claude. */
+        const val FACTORY_PREFIX = "f_"
+
+        /** Clave de paleta de estos elementos: sus colores vienen en cada mancha. */
         const val PALETTE = "custom"
 
-        fun isCustomId(id: String): Boolean = id.startsWith(PREFIX) && id.length > PREFIX.length
+        fun isCustomId(id: String): Boolean =
+            (id.startsWith(PREFIX) && id.length > PREFIX.length) || (id.startsWith(FACTORY_PREFIX) && id.length > FACTORY_PREFIX.length)
     }
 
     /** En qué capa va: con lo lejano, con el agua y los árboles, en el suelo o en el aire. */

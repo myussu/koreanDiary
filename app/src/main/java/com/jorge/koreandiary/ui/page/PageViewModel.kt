@@ -143,7 +143,7 @@ data class PageUiState(
 class PageViewModel(private val c: AppContainer, private val pageId: Long) : ViewModel() {
 
     private val _state = MutableStateFlow(PageUiState())
-    /** El diccionario de la escena con los dibujos nuevos sumados. */
+    /** El diccionario de la escena con los dibujos de fábrica y los nuevos sumados. */
     private var lexicon = SceneDictionary.withCustom(c.sceneDrawings.drawings())
     val state: StateFlow<PageUiState> = _state.asStateFlow()
 
@@ -195,11 +195,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private var saveJob: Job? = null
 
     init {
-        // Los dibujos nuevos entran al diccionario de la escena: uno que llega mientras la página está
-        // abierta (Claude terminó de dibujar) aparece enseguida si su palabra ya está escrita.
+        // Los dibujos de fábrica y los nuevos entran al diccionario de la escena: uno que llega mientras
+        // la página está abierta (se terminaron de leer al abrir la app, o Claude terminó de dibujar)
+        // aparece enseguida si su palabra ya está escrita.
         viewModelScope.launch {
-            c.sceneDrawings.saved.collect { list ->
-                lexicon = SceneDictionary.withCustom(list.map { it.drawing })
+            c.sceneDrawings.all.collect { list ->
+                lexicon = SceneDictionary.withCustom(list)
                 if (isScene) {
                     val text = if (lineTexts.isEmpty()) _state.value.page?.confirmedText.orEmpty() else liveText()
                     detected = withContext(Dispatchers.Default) { lexicon.detect(text) }

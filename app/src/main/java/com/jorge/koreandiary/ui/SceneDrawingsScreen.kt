@@ -41,6 +41,7 @@ import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneDrawings
 import com.jorge.koreandiary.scene.SceneLexicon
 import com.jorge.koreandiary.scene.SceneZone
+import com.jorge.koreandiary.scene.art.CustomDrawing
 import com.jorge.koreandiary.scene.art.Mark
 import com.jorge.koreandiary.scene.art.NewSceneThing
 import com.jorge.koreandiary.scene.art.SceneArt
@@ -53,20 +54,22 @@ import java.time.format.DateTimeFormatter
 
 /**
  * «Dibujos de la escena»: todo lo que la escena viva sabe pintar y las palabras que lo traen. Los de
- * la app y los nuevos que dibujó Claude (con «Dibujar otra vez» y «Borrar»), lo que espera su
- * dibujo y un campo para probar una palabra con la misma regla que usa la hoja.
+ * la app (los de código y los de fábrica, por zona) y los nuevos que dibujó Claude (con «Dibujar otra
+ * vez» y «Borrar»), lo que espera su dibujo y un campo para probar una palabra con la misma regla que
+ * usa la hoja.
  */
 @Composable
 fun SceneDrawingsScreen(container: AppContainer, onBack: () -> Unit, onSettings: () -> Unit) {
     val store = container.sceneDrawings
     val saved by store.saved.collectAsStateWithLifecycle()
+    val factory by store.factory.collectAsStateWithLifecycle()
     val pending by store.pending.collectAsStateWithLifecycle()
     val jobs by store.jobs.collectAsStateWithLifecycle()
     val scheme = MaterialTheme.colorScheme
     val paper = LocalPaperStyle.current
     val dark = paper.background.luminance() < 0.5f
     var probe by rememberSaveable { mutableStateOf("") }
-    val lexicon = remember(saved) { SceneDictionary.withCustom(saved.map { it.drawing }) }
+    val lexicon = remember(saved, factory) { SceneDictionary.withCustom(saved.map { it.drawing } + factory) }
     val ready = store.ready()
     // Lo que se está dibujando y no está en espera (pedido desde la revisión o desde la prueba).
     val drawingNow = jobs.filter { (k, j) -> j == DrawJob.Drawing && pending.none { it.thing.ko == k } && saved.none { it.drawing.id == k } }.keys
@@ -86,7 +89,7 @@ fun SceneDrawingsScreen(container: AppContainer, onBack: () -> Unit, onSettings:
             full("intro") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Lo que nombras en una escena aparece pintado abajo de la hoja. Estas son las cosas que la escena sabe dibujar y las palabras que las traen mientras escribes.",
+                        "Lo que nombras en una escena aparece pintado abajo de la hoja. Estas son las ${SceneDictionary.elements.size + factory.size + saved.size} cosas que la escena sabe dibujar y las palabras que las traen mientras escribes.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
@@ -128,7 +131,8 @@ fun SceneDrawingsScreen(container: AppContainer, onBack: () -> Unit, onSettings:
                 SceneZone.AIR to "Aire",
             ).forEach { (zone, title) ->
                 val list = SceneDictionary.elements.filter { it.zone == zone }
-                header("z:$zone", title, "De la app: ${list.size} dibujos.")
+                val boxed = factory.filter { it.zone == zone }
+                header("z:$zone", title, "De la app: ${list.size + boxed.size} dibujos.")
                 items(list, key = { "a:" + it.id }) { e ->
                     DrawingCard(
                         title = e.name.replaceFirstChar { it.uppercase() },
@@ -139,6 +143,7 @@ fun SceneDrawingsScreen(container: AppContainer, onBack: () -> Unit, onSettings:
                         key = e.id,
                     )
                 }
+                items(boxed, key = { "f:" + it.id }) { d -> FactoryCard(d, lexicon, dark, paper) }
             }
         }
     }
@@ -189,6 +194,12 @@ private fun Probe(
             hits.forEach { (e, key) ->
                 Text("→ ${e.name} (por «$key»)", style = MaterialTheme.typography.bodyMedium)
             }
+        } else if (lexicon.owner(text.trim()) != null) {
+            val word = text.trim()
+            Text(
+                "«$word» trae ${lexicon.owner(word)?.name} con una partícula (${word}가, ${word}를): sola casi siempre es otra cosa.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         } else {
             Text("No trae ningún dibujo mientras escribes.", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             val word = text.trim()
@@ -244,12 +255,7 @@ private fun NewDrawingCard(
         words = d.keys,
         dark = dark,
         paper = paper,
-        // El dibujo solo, en su caja y llenando la tarjeta: en la franja entera se vería chiquito.
-        paint = { w, _ ->
-            val stage = w * STAGE
-            val side = stage * 0.92f
-            d.boxMarks(side, (w - side) / 2, stage * 0.04f, PREVIEW_TIME)
-        },
+        paint = { w, _ -> boxPreview(d, w) },
         key = d.id + d.shapes.hashCode(),
     ) {
         Text(
@@ -275,6 +281,39 @@ private fun NewDrawingCard(
             }
         }
     }
+}
+
+/**
+ * Un dibujo de fábrica. Muestra las palabras que de verdad lo traen: si una también es de un dibujo
+ * tuyo, gana el tuyo y se avisa.
+ */
+@Composable
+private fun FactoryCard(d: CustomDrawing, lexicon: SceneLexicon, dark: Boolean, paper: PaperStyle) {
+    val scheme = MaterialTheme.colorScheme
+    val (mine, taken) = remember(d, lexicon) { d.keys.partition { lexicon.owner(it)?.id == d.id } }
+    DrawingCard(
+        title = d.name.replaceFirstChar { it.uppercase() },
+        words = mine,
+        dark = dark,
+        paper = paper,
+        paint = { w, _ -> boxPreview(d, w) },
+        key = d.id,
+    ) {
+        if (taken.isNotEmpty()) {
+            Text(
+                "Con " + taken.joinToString(", ") { "«$it»" } + " sale tu dibujo de Claude.",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** El dibujo solo, en su caja y llenando la tarjeta: en la franja entera se vería chiquito. */
+private fun boxPreview(d: CustomDrawing, w: Float): List<Mark> {
+    val stage = w * STAGE
+    val side = stage * 0.92f
+    return d.boxMarks(side, (w - side) / 2, stage * 0.04f, PREVIEW_TIME)
 }
 
 /** Tarjeta de un dibujo: la miniatura en el papel de la hoja, el nombre y sus palabras. */
