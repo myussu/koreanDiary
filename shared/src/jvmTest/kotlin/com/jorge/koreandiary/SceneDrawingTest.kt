@@ -157,7 +157,7 @@ class SceneDrawingTest {
     fun theReviewAsksForWhatHasNoDrawing() {
         val custom = listOf(drawing(cat))
         val prompt = Prompts.correction("", "3A", 3, emptyList(), "고양이가 있어요.", hasImage = false, scene = true, customScene = custom)
-        assertTrue(prompt.lines().any { it.trim().startsWith("8. \"nuevos\"") })
+        assertTrue(prompt.lines().any { it.trim().startsWith("7. \"nuevos\"") })
         assertTrue(prompt.contains("x_cat (gato)"))
         assertTrue(prompt.contains("\"nuevos\": [{\"ko\": \"고양이\", \"es\": \"gato\"}]"))
         assertFalse(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false).contains("nuevos"))

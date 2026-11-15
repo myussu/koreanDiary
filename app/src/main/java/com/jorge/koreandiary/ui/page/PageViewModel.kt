@@ -41,6 +41,7 @@ import com.jorge.koreandiary.scene.art.CustomDrawing
 import com.jorge.koreandiary.scene.SceneElement
 import com.jorge.koreandiary.scene.SceneIdea
 import com.jorge.koreandiary.scene.SceneImage
+import com.jorge.koreandiary.scene.SceneImages
 import com.jorge.koreandiary.voice.KoreanSpeech
 import com.jorge.koreandiary.ink.strokesNear
 import com.jorge.koreandiary.settings.ProviderId
@@ -548,7 +549,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
             val api = providerId?.let { c.apiProvider(it) }
             if (providerId == null || api == null) {
-                updateExplain { it.copy(note = "Para ver el significado con ejemplos naturales, configura Gemini (es gratis) en Ajustes.") }
+                updateExplain { it.copy(note = "Para ver el significado con ejemplos naturales, configura Gemini (es gratis) en Ajustes › IA.") }
                 return@launch
             }
             if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
@@ -726,7 +727,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
             val api = providerId?.let { c.apiProvider(it) }
             if (providerId == null || api == null) {
-                _state.update { it.copy(message = "Para actualizar las sugerencias según tu escena, configura Gemini (es gratis) en Ajustes.") }
+                _state.update { it.copy(message = "Para actualizar las sugerencias según tu escena, configura Gemini (es gratis) en Ajustes › IA.") }
                 return@launch
             }
             if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
@@ -919,7 +920,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 val name = providerName(provider)
                 val api = c.apiProvider(provider)
                 if (api == null) {
-                    setPhase(Phase.Writing, "Falta configurar $name en Ajustes. La página quedó pendiente.")
+                    setPhase(Phase.Writing, "Falta configurar $name en Ajustes › IA. La página quedó pendiente.")
                     return@launch
                 }
                 val limit = settings.dailyLimit(provider)
@@ -1094,7 +1095,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
      * tiene imagen, se pinta sola. Sin servidor no pasa nada: queda el botón «Imagen».
      */
     private fun maybePaintSceneImage() {
-        if (!isScene) return
+        if (!isScene || SceneImages.PAUSED) return
         val s = c.settings.state.value
         if (!s.sceneImageAuto || !c.sceneImages.serverReady() || c.sceneImages.has(pageId)) return
         val description = SceneData.parse(_state.value.page?.sceneJson).imagePrompt

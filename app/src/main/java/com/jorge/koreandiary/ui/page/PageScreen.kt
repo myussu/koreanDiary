@@ -87,6 +87,7 @@ import com.jorge.koreandiary.ink.InkTool
 import com.jorge.koreandiary.ink.rememberInkScrollState
 import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.scene.SceneImageJob
+import com.jorge.koreandiary.scene.SceneImages
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppMascot
@@ -201,7 +202,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             page?.let { AppTag(pageStatusLabel(it.status), accent = it.status == PageStatus.PENDING, fontSize = 12.sp) }
-            if (isScene) {
+            if (isScene && !SceneImages.PAUSED) {
                 val painting = page?.let { imageJobs[it.id] } == SceneImageJob.Painting
                 AppTextButton(onClick = { imageDialog = true }) { Text(if (painting) "Pintando…" else "Imagen") }
             }

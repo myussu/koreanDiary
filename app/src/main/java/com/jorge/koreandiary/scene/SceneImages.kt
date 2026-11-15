@@ -38,6 +38,10 @@ sealed interface SceneImageJob {
  * La pinta tu servidor de ComfyUI (por Tailscale) o la eliges tú (la que trajiste del chat de Gemini).
  * Vive en el `AppContainer`: pintar tarda medio minuto o más y sigue aunque salgas de la página.
  * La carpeta entra en la copia exportada y en el paso de celular a celular, no en la nube de Google.
+ *
+ * **En pausa** ([PAUSED], decidido con Jorge el 2026-11-15): sin ComfyUI montado la función queda a
+ * medias, y la escena viva ya hace ese trabajo. No se muestran «Imagen» ni su sección de Ajustes, no
+ * se pinta sola y la revisión no pide la descripción. Las imágenes que ya existan se siguen viendo.
  */
 class SceneImages(
     private val app: Application,
@@ -176,6 +180,9 @@ class SceneImages(
     }
 
     companion object {
+        /** La función está en pausa (ver arriba). Para retomarla, `false`, y sumarla otra vez a «?». */
+        const val PAUSED = true
+
         const val DIR = "scene_images"
         private const val MAX_SIDE = 1600
         private const val THUMB_WIDTH = 240

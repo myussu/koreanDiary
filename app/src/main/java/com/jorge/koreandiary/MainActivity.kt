@@ -39,6 +39,7 @@ import com.jorge.koreandiary.ui.KoreanDiaryTheme
 import com.jorge.koreandiary.ui.ProgressScreen
 import com.jorge.koreandiary.ui.SceneDrawingsScreen
 import com.jorge.koreandiary.ui.ScenesScreen
+import com.jorge.koreandiary.ui.SettingsGroup
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
 import com.jorge.koreandiary.ui.conversation.ConversationScreen
@@ -145,8 +146,13 @@ private fun AppNavigation(container: AppContainer) {
             }
             route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
             route == "import" -> ImportScreen(container, onBack = ::pop)
-            route == "settings" -> SettingsScreen(container, onBack = ::pop, onOpenDrawings = { push("drawings") })
-            route == "drawings" -> SceneDrawingsScreen(container, onBack = ::pop, onSettings = { push("settings") })
+            route.startsWith("settings") -> SettingsScreen(
+                container,
+                onBack = ::pop,
+                onOpenDrawings = { push("drawings") },
+                initialGroup = SettingsGroup.entries.firstOrNull { it.name == route.substringAfter(':', "") } ?: SettingsGroup.GENERAL,
+            )
+            route == "drawings" -> SceneDrawingsScreen(container, onBack = ::pop, onSettings = { push("settings:${SettingsGroup.SCENES.name}") })
             route == "progress" -> ProgressScreen(container, onBack = ::pop)
             route == "features" -> FeaturesScreen(onBack = ::pop)
             route == "conversation" -> ConversationScreen(container, onBack = ::pop)
@@ -157,7 +163,7 @@ private fun AppNavigation(container: AppContainer) {
                 container,
                 onOpenPage = { push("page:$it") },
                 onStudy = { push("study") },
-                onSettings = { push("settings") },
+                onSettings = { group -> push("settings:${group.name}") },
                 onWorkbook = { push("workbook") },
                 onProgress = { push("progress") },
                 onConversation = { push("conversation") },

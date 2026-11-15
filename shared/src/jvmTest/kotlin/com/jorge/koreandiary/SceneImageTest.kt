@@ -94,9 +94,13 @@ class SceneImageTest {
         assertEquals(d, SceneData.parse(d.toJson()))
         // Una revisión sin descripción no borra la que había.
         assertEquals(d, d.withImagePrompt(""))
-        val withIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true, ideas = listOf("x"))
+        val withIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true, ideas = listOf("x"), sceneImage = true)
         assertTrue(withIdeas.lines().any { it.startsWith("8. \"imagen\"") })
-        assertTrue(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true).lines().any { it.startsWith("7. \"imagen\"") })
+        assertTrue(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true, sceneImage = true).lines().any { it.startsWith("7. \"imagen\"") })
         assertFalse(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false).contains("\"imagen\""))
+        // En pausa (lo que pide la app hoy): la escena no pide la descripción y "nuevos" sube un lugar.
+        val paused = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true)
+        assertFalse(paused.contains("\"imagen\""))
+        assertTrue(paused.lines().any { it.startsWith("7. \"nuevos\"") })
     }
 }

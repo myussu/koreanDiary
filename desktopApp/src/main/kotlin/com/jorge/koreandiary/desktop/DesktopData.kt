@@ -44,7 +44,7 @@ private val SIDE_FILES = listOf("-wal", "-shm", "-journal")
 data class ImportResult(val manifest: BackupManifest, val pages: Int)
 
 /**
- * Importa la copia `.zip` que exporta el celular (Ajustes → Copia de seguridad → Exportar copia).
+ * Importa la copia `.zip` que exporta el celular (Ajustes › Copia y actualizaciones → Exportar copia).
  * Se usa el mismo formato y las mismas validaciones que en Android ([BackupFormat]). Los ajustes
  * (`settings.json`) no se importan: las claves de API van cifradas con el Keystore del celular.
  */

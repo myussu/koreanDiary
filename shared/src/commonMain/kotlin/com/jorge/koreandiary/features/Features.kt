@@ -91,7 +91,6 @@ object Features {
                 phone("Tono de la escena: al «Revisar» o con «¿Cómo digo?», la IA lee lo que se siente (amor, calma, nostalgia, tristeza…) y una luz de ese color sube desde abajo. No gasta pedidos extra."),
                 phone("Dibujos nuevos con Claude: al «Revisar» una escena, lo que se ve y la escena viva no sabía pintar (un camello, un robot) lo dibuja Claude en acuarela, hasta 2 por página: dibuja, mira cómo quedó y lo corrige; desde entonces aparece al escribir su palabra. Sin clave de Claude queda en espera."),
                 phone("«Dibujos» (en Escenas): todo lo que la escena sabe pintar, por zona, y las palabras que lo traen, «Prueba una palabra», lo que espera («Dibujar», «Quitar») y en los nuevos «Dibujar otra vez» y «Borrar». Si una palabra es de un dibujo de la app y de uno tuyo, sale el tuyo."),
-                phone("«Imagen»: la escena pintada en acuarela. Con tu servidor ComfyUI (por Tailscale) se pinta sola al terminarla; sin servidor, «Copiar prompt para Gemini» y «Elegir imagen». Sale muy suave de fondo y como miniatura en la lista de escenas."),
                 phone("Cuenta para la racha cuando está revisada y sin correcciones pendientes."),
                 desktop("En la lista de páginas de la PC, las escenas salen marcadas «Escena»."),
             ),
@@ -106,20 +105,20 @@ object Features {
             ),
         ),
         FeatureGroup(
-            "Hablar",
+            "Conversar",
             listOf(
                 phone("Conversación por voz con Gemini sobre el tema que elijas."),
                 phone("«Pulsar para hablar» (no te corta aunque pienses) o «Automático»."),
                 phone("«Pista» en tres niveles con «Más ayuda», «¿Cómo digo?» con «Dictar», «Traducir» la última frase y «Lento»."),
                 phone("Toca una palabra de la IA para traducirla."),
-                phone("El texto de la IA sale borroso hasta que lo tocas, para practicar escuchar (se apaga en Ajustes)."),
-                phone("Pista automática si no respondes (se activa en Ajustes)."),
+                phone("El texto de la IA sale borroso hasta que lo tocas, para practicar escuchar (se apaga en Ajustes › Hablar y escuchar)."),
+                phone("Pista automática si no respondes (se activa en Ajustes › Hablar y escuchar)."),
                 phone("Al terminar: confirmas lo que dijiste, recibes la revisión y «Practicar correcciones» en voz alta."),
                 phone("Si sales de la app o apagas la pantalla, la conversación espera un minuto; si no vuelves, termina y se guarda."),
             ),
         ),
         FeatureGroup(
-            "Escuchar (en Hablar)",
+            "Escuchar",
             listOf(
                 phone("Pódcast corto a tu nivel sobre lo que elijas; «Tema actual» busca en Google."),
                 phone("En las pausas preguntas por voz, en coreano o en español."),
@@ -127,7 +126,7 @@ object Features {
                 phone("Sirve con la pantalla apagada: botones en la notificación y en los audífonos (1 toque pausa, 2 sigue, 3 repite)."),
                 phone("Al final, preguntas de comprensión."),
                 phone("Una pausa en la que nadie habla por 3 minutos cierra el micrófono («Hablar» lo abre de nuevo); una llamada pausa la narración sin abrirlo."),
-                phone("Con audífonos Bluetooth, en las pausas preguntas desde su micrófono (se apaga en Ajustes → «Micrófono de los audífonos»)."),
+                phone("Con audífonos Bluetooth, en las pausas preguntas desde su micrófono (se apaga en Ajustes › Hablar y escuchar → «Micrófono de los audífonos»)."),
                 phone("En la revisión de una escucha: «Escuchar» otra vez la narración guardada, sin gastar cuota, con «‹ Anterior», «Siguiente ›» y velocidad."),
                 phone("Quedan las últimas 5 escuchas; «☆ Guardar» conserva una para siempre."),
             ),
@@ -150,18 +149,13 @@ object Features {
         FeatureGroup(
             "Ajustes",
             listOf(
-                phone("Perfil, nivel y niveles de gramática a sugerir."),
-                phone("IA: Gemini o Azure, con «Probar conexión»."),
-                phone("«Descargar modelo de escritura coreana» (una sola vez)."),
-                phone("«Solo el S Pen dibuja» (el dedo desplaza) y presión del S Pen."),
-                phone("«Escena viva»: encender o apagar los dibujos en acuarela de abajo de las escenas."),
-                phone("«Imagen de la escena»: la dirección de tu servidor ComfyUI, «Probar conexión» y el modelo; «Pintar al terminar una escena» e «Imagen de fondo en la escena»."),
-                phone("«Dibujos nuevos (Claude)»: tu clave de la API de Claude, el modelo, «Probar conexión», «Dibujar al revisar una escena» y «Ver dibujos». Como mucho 12 dibujos por día."),
-                phone("Recordatorio diario: solo avisa si ese día no escribiste."),
-                phone("Copia de seguridad: «Exportar copia» e «Importar copia» (.zip). Las claves de API no viajan."),
-                phone("Tema claro u oscuro y papel en modo oscuro."),
-                phone("Mascota: mostrarla u ocultarla, o importar la tuya. En el inicio, toca su globo para traducir."),
-                phone("La app se actualiza sola cuando hay una versión nueva."),
+                phone("Por grupos, uno a la vez: «General», «Escritura», «IA», «Escenas», «Hablar y escuchar» y «Copia y actualizaciones»."),
+                phone("General: perfil, nivel y niveles de gramática a sugerir; tema claro u oscuro y papel en modo oscuro; mascota (mostrarla u ocultarla, o importar la tuya; en el inicio, toca su globo para traducir); recordatorio diario, que solo avisa si ese día no escribiste."),
+                phone("Escritura: grosor del lápiz, presión del S Pen, «Solo el S Pen dibuja» (el dedo desplaza) y «Descargar modelo de escritura coreana» (una sola vez)."),
+                phone("IA: proveedor por defecto, Gemini o Azure, con «Probar conexión»."),
+                phone("Escenas: «Escena viva» (encender o apagar los dibujos en acuarela de abajo) y «Dibujos nuevos (Claude)»: tu clave de la API de Claude, el modelo, «Probar conexión», «Dibujar al revisar una escena» y «Ver dibujos». Como mucho 12 dibujos por día."),
+                phone("Hablar y escuchar: turnos, corrección durante la conversación, pista automática, texto borroso, voz y modelos; en Escuchar, narrador, velocidad, pausas y micrófono de los audífonos."),
+                phone("Copia y actualizaciones: «Exportar copia» e «Importar copia» (.zip; las claves de API no viajan). La app se actualiza sola cuando hay una versión nueva."),
                 phone("Copia antes de actualizar: guarda todo antes de instalar cada versión (quedan las 3 últimas). «Elegir carpeta» para que sobreviva aunque desinstales; sin carpeta queda dentro de la app, con «Restaurar»."),
                 phone("Si esa copia falla, no instala: «Reintentar» o «Actualizar sin copia»."),
                 desktop("«Importar copia del celular…»: trae el .zip exportado en el celular. Si la PC ya tenía páginas, pide confirmación y guarda lo anterior."),
@@ -189,7 +183,7 @@ object Features {
                 ),
                 FlowStep(
                     "Escribes tu perfil y tu nivel",
-                    "En «Ajustes» › Perfil: quién eres, tu nivel y qué niveles de gramática sugerir. La IA corrige con ese contexto.",
+                    "En «Ajustes» › General › Perfil: quién eres, tu nivel y qué niveles de gramática sugerir. La IA corrige con ese contexto.",
                     listOf("Ajustes"),
                 ),
                 FlowStep(
@@ -204,7 +198,7 @@ object Features {
                 ),
                 FlowStep(
                     "Guardas una copia",
-                    "En Ajustes › Copia de seguridad: «Exportar copia» y guárdala fuera del celular; «Elegir carpeta» para la copia automática antes de cada actualización.",
+                    "En Ajustes › Copia y actualizaciones: «Exportar copia» y guárdala fuera del celular; «Elegir carpeta» para la copia automática antes de cada actualización.",
                     listOf("Exportar copia", "Elegir carpeta"),
                 ),
             ),
@@ -287,11 +281,6 @@ object Features {
                     "Reescribes las correcciones. La escena cuenta para la racha cuando no le quedan pendientes.",
                     listOf("Verificar", "Hecho"),
                 ),
-                FlowStep(
-                    "La pintas",
-                    "Con tu servidor ComfyUI se pinta sola al terminarla; si no, copias el prompt en Gemini y eliges la imagen.",
-                    listOf("Imagen", "Copiar prompt para Gemini", "Elegir imagen"),
-                ),
             ),
             note = "En Escenas, «Dibujos» muestra lo que la escena sabe pintar (unas 135 cosas) y las palabras que lo traen; «Prueba una palabra» te dice si una trae dibujo.",
         ),
@@ -331,8 +320,8 @@ object Features {
         ),
         FeatureFlow(
             title = "Conversar",
-            group = "Hablar",
-            where = "Inicio › Hablar › Conversar",
+            group = "Conversar",
+            where = "Inicio › Hablar y escuchar › Conversar",
             platforms = setOf(Platform.PHONE),
             steps = listOf(
                 FlowStep(
@@ -342,7 +331,7 @@ object Features {
                 ),
                 FlowStep(
                     "Hablas con la IA",
-                    "Con «Pulsar para hablar» tocas «Hablar», dices tu frase y tocas «Listo»: no te corta aunque te quedes pensando. En «Automático» solo hablas (se elige en Ajustes).",
+                    "Con «Pulsar para hablar» tocas «Hablar», dices tu frase y tocas «Listo»: no te corta aunque te quedes pensando. En «Automático» solo hablas (se elige en Ajustes › Hablar y escuchar).",
                     listOf("Hablar", "Listo"),
                     FlowAside(
                         "Si te trabas",
@@ -374,8 +363,8 @@ object Features {
         ),
         FeatureFlow(
             title = "Escuchar",
-            group = "Escuchar (en Hablar)",
-            where = "Inicio › Hablar › Escuchar",
+            group = "Escuchar",
+            where = "Inicio › Hablar y escuchar › Escuchar",
             platforms = setOf(Platform.PHONE),
             steps = listOf(
                 FlowStep(
@@ -437,7 +426,7 @@ object Features {
         FeatureFlow(
             title = "Copia de seguridad",
             group = "Ajustes",
-            where = "Inicio › Ajustes › Copia de seguridad",
+            where = "Inicio › Ajustes › Copia y actualizaciones",
             platforms = setOf(Platform.PHONE),
             steps = listOf(
                 FlowStep(
@@ -471,7 +460,7 @@ object Features {
             steps = listOf(
                 FlowStep(
                     "Exportas en el celular",
-                    "Ajustes › Copia de seguridad.",
+                    "Ajustes › Copia y actualizaciones.",
                     listOf("Exportar copia"),
                 ),
                 FlowStep(

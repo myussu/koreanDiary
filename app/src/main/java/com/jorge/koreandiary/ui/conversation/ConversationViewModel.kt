@@ -316,12 +316,12 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val st = _state.value
         val key = c.secrets.get(SecretStore.GEMINI_KEY)
         if (key == null) {
-            _state.update { it.copy(message = "Falta tu clave de Gemini: pégala en Ajustes (es la misma del diario).") }
+            _state.update { it.copy(message = "Falta tu clave de Gemini: pégala en Ajustes › IA (es la misma del diario).") }
             return
         }
         val remaining = s.voiceDailyMinutes * 60 - st.secondsToday
         if (remaining < 60) {
-            _state.update { it.copy(message = "Llegaste a tu límite de ${s.voiceDailyMinutes} min por hoy. Puedes subirlo en Ajustes.") }
+            _state.update { it.copy(message = "Llegaste a tu límite de ${s.voiceDailyMinutes} min por hoy. Puedes subirlo en Ajustes › Hablar y escuchar.") }
             return
         }
         val total = minOf(st.minutes * 60, remaining)
@@ -756,7 +756,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     private fun coach(loading: String, prompt: String, onResult: (String) -> CoachPanel) {
         val (providerId, provider) = c.coachProvider() ?: run {
-            _state.update { it.copy(panel = CoachPanel.Error("Configura Gemini o Azure en Ajustes para usar pistas y traducciones.")) }
+            _state.update { it.copy(panel = CoachPanel.Error("Configura Gemini o Azure en Ajustes › IA para usar pistas y traducciones.")) }
             return
         }
         val s = c.settings.state.value
@@ -868,7 +868,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val st = _state.value
         val r = st.record ?: return
         val (providerId, provider) = c.coachProvider() ?: run {
-            _state.update { it.copy(reviewError = "Configura Gemini o Azure en Ajustes para revisar la conversación.") }
+            _state.update { it.copy(reviewError = "Configura Gemini o Azure en Ajustes › IA para revisar la conversación.") }
             return
         }
         val s = c.settings.state.value

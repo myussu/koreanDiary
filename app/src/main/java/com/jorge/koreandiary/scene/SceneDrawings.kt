@@ -214,7 +214,7 @@ class SceneDrawings(
     }
 
     private suspend fun create(thing: NewSceneThing, context: String, replace: SavedDrawing?) {
-        val client = client() ?: throw IllegalStateException("Falta la clave de Claude: ponla en Ajustes → «Dibujos nuevos (Claude)».")
+        val client = client() ?: throw IllegalStateException("Falta la clave de Claude: ponla en Ajustes › Escenas → «Dibujos nuevos (Claude)».")
         if (usedToday() >= DAILY_LIMIT) throw IllegalStateException("Ya se hicieron $DAILY_LIMIT dibujos hoy (el límite cuida tus créditos). Mañana sigue.")
         val existing = (SceneDictionary.elements.map { it.name } + drawings().map { it.name }).distinct()
         // Primera vuelta, un borrador: con poco esfuerzo piensa lo justo (con el de fábrica, high, llegó a
@@ -300,7 +300,7 @@ class SceneDrawings(
     }
 
     private fun message(e: Throwable): String = when {
-        e is HttpProviderException && e.code == 401 -> "La clave de Claude no sirve (401). Revísala en Ajustes."
+        e is HttpProviderException && e.code == 401 -> "La clave de Claude no sirve (401). Revísala en Ajustes › Escenas."
         e is HttpProviderException && e.code == 429 -> "Claude pide esperar un poco (429). Prueba «Dibujar» en un rato."
         e is HttpProviderException && e.code == 529 -> "Claude está saturado (529). Prueba en un rato."
         else -> e.message ?: e.javaClass.simpleName

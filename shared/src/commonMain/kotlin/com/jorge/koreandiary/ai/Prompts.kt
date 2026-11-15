@@ -48,6 +48,8 @@ object Prompts {
         ideas: List<String> = emptyList(),
         /** Escenas: los dibujos nuevos que ya existen (entran a la lista de "escena"). */
         customScene: List<CustomDrawing> = emptyList(),
+        /** Escenas: pedir la descripción para pintar la imagen (en pausa: no se pide). */
+        sceneImage: Boolean = false,
     ): String = buildString {
         appendLine("Eres profesor de coreano y corriges el diario manuscrito de un estudiante hispanohablante. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
@@ -68,28 +70,55 @@ object Prompts {
         appendLine(text)
         if (hasImage) appendLine("(Hay una imagen de la página manuscrita: es la fuente principal; el texto es referencia.)")
         appendLine()
-        appendLine(
-            """
-            TAREAS:
-            1. "oraciones": divide en oraciones y da el tiempo principal: "pasado", "presente" o "futuro".
-            2. "correcciones": ortografía, partículas, conjugación, gramática y naturalidad. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases.
-            3. "usados": TODO lo que usó, una vez cada cosa:
-               - Palabras de contenido en forma de diccionario (먹었어요 → 먹다).
-               - Gramática (terminaciones, partículas y expresiones) en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -으니까, -을 것 같다, -는 바람에); partículas sin guion (이라도, 처럼).
-               - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
-               - "id": el de la lista de sugeridos si coincide; si no, null.
-               - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
-            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, [].${if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""}${if (ideas.isNotEmpty()) "\n            5. \"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, []." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 6 else 5}. \"escena\": qué elementos de esta lista aparecen en la página, de lo más importante a lo menos (solo ids; [] si ninguno): ${SceneDictionary.promptList(customScene)}." else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 7 else 6}. \"tono\": $MOOD_TASK" else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 8 else 7}. \"imagen\": $IMAGE_TASK" else ""}${if (scene) "\n            ${if (ideas.isNotEmpty()) 9 else 8}. \"nuevos\": $NEW_TASK" else ""}
 
-            FORMATO:
-            {
-              "oraciones": [{"n": 1, "texto": "...", "tiempo": "pasado"}],
-              "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "ortografia|particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": null}],
-              "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}, {"f": "-어서", "t": "g", "ok": true, "id": null}],
-              "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}]${if (ideas.isNotEmpty()) ",\n              \"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]" else ""}${if (scene) ",\n              \"escena\": [\"sea\", \"sand\"],\n              \"tono\": {\"id\": \"love\", \"n\": 2},\n              \"imagen\": \"...\",\n              \"nuevos\": [{\"ko\": \"고양이\", \"es\": \"gato\"}]" else ""}
+        // Las tareas se numeran solas: cada una aparece solo si aplica.
+        val tasks = buildList {
+            add("\"oraciones\": divide en oraciones y da el tiempo principal: \"pasado\", \"presente\" o \"futuro\".")
+            add("\"correcciones\": ortografía, partículas, conjugación, gramática y naturalidad. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases.")
+            add(
+                """
+                "usados": TODO lo que usó, una vez cada cosa:
+                   - Palabras de contenido en forma de diccionario (먹었어요 → 먹다).
+                   - Gramática (terminaciones, partículas y expresiones) en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -으니까, -을 것 같다, -는 바람에); partículas sin guion (이라도, 처럼).
+                   - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
+                   - "id": el de la lista de sugeridos si coincide; si no, null.
+                   - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
+                """.trimIndent()
+            )
+            add(
+                "\"mejoras\": como máximo 2 estructuras de nivel $standardLevel o menor que el estudiante debería saber y que encajarían mejor donde escribió algo demasiado básico. Solo si de verdad aplica; si no, []." +
+                    if (scene) " Prefiere estructuras para describir lo que se ve, se oye y se siente (-아/어 보이다, -는 것 같다, 의성어 y 의태어)." else ""
+            )
+            if (ideas.isNotEmpty()) {
+                add("\"notas\": si una oración correcta dice algo distinto de lo que quiso decir según la lista de arriba (p. ej., \"golpea\" cuando quería \"acariciar\"), anótalo aquí y NO en correcciones: no es un error. \"explicacion\": 1 frase en español con lo que dice y lo que quería decir. Solo si es claro; si cambió de idea o no tiene que ver, [].")
             }
-            """.trimIndent()
-        )
+            if (scene) {
+                add("\"escena\": qué elementos de esta lista aparecen en la página, de lo más importante a lo menos (solo ids; [] si ninguno): ${SceneDictionary.promptList(customScene)}.")
+                add("\"tono\": $MOOD_TASK")
+                if (sceneImage) add("\"imagen\": $IMAGE_TASK")
+                add("\"nuevos\": $NEW_TASK")
+            }
+        }
+        appendLine("TAREAS:")
+        tasks.forEachIndexed { i, task -> appendLine("${i + 1}. $task") }
+        appendLine()
+        appendLine("FORMATO:")
+        appendLine("{")
+        val format = buildList {
+            add("\"oraciones\": [{\"n\": 1, \"texto\": \"...\", \"tiempo\": \"pasado\"}]")
+            add("\"correcciones\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"tipo\": \"ortografia|particula|conjugacion|gramatica|naturalidad\", \"explicacion\": \"...\", \"item_id\": null}]")
+            add("\"usados\": [{\"f\": \"자다\", \"t\": \"v\", \"ok\": true, \"id\": \"w42\"}, {\"f\": \"-어서\", \"t\": \"g\", \"ok\": true, \"id\": null}]")
+            add("\"mejoras\": [{\"oracion\": 2, \"estructura\": \"-는 바람에\", \"ejemplo\": \"...\", \"explicacion\": \"...\"}]")
+            if (ideas.isNotEmpty()) add("\"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]")
+            if (scene) {
+                add("\"escena\": [\"sea\", \"sand\"]")
+                add("\"tono\": {\"id\": \"love\", \"n\": 2}")
+                if (sceneImage) add("\"imagen\": \"...\"")
+                add("\"nuevos\": [{\"ko\": \"고양이\", \"es\": \"gato\"}]")
+            }
+        }
+        appendLine(format.joinToString(",\n") { "  $it" })
+        appendLine("}")
     }
 
     /**

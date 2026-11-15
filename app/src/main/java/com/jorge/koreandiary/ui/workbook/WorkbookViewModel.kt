@@ -227,7 +227,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 return@launch
             }
             val api = c.apiProvider(st.provider) ?: run {
-                _state.update { it.copy(message = "Falta configurar ese proveedor en Ajustes.") }
+                _state.update { it.copy(message = "Falta configurar ese proveedor en Ajustes › IA.") }
                 return@launch
             }
             val limit = settings.dailyLimit(st.provider)

@@ -4,10 +4,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,7 +78,7 @@ fun HomeScreen(
     container: AppContainer,
     onOpenPage: (Long) -> Unit,
     onStudy: () -> Unit,
-    onSettings: () -> Unit,
+    onSettings: (SettingsGroup) -> Unit,
     onWorkbook: () -> Unit,
     onProgress: () -> Unit,
     onConversation: () -> Unit,
@@ -93,7 +97,7 @@ fun HomeScreen(
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("일기", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
             AppOutlinedButton(onClick = onStudy) { Text("Estudio") }
-            AppOutlinedButton(onClick = onSettings, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
+            AppOutlinedButton(onClick = { onSettings(SettingsGroup.GENERAL) }, modifier = Modifier.padding(start = 6.dp)) { Text("Ajustes") }
             // Botón chico en la esquina: la lista de todo lo que la app ya sabe hacer.
             AppOutlinedButton(
                 onClick = onFeatures,
@@ -102,7 +106,7 @@ fun HomeScreen(
             ) { Text("?") }
         }
         UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
-        BackupBanner(container, onSettings = onSettings, modifier = Modifier.padding(top = 10.dp))
+        BackupBanner(container, onSettings = { onSettings(SettingsGroup.BACKUP) }, modifier = Modifier.padding(top = 10.dp))
         // Solo hace falta saber si hay algo en las listas, no cargarlas enteras cada vez que abres el inicio.
         val hasStudy by container.study.hasItems.collectAsStateWithLifecycle(true)
         val needsStudy = !hasStudy
@@ -152,14 +156,21 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             contentPadding = PaddingValues(vertical = 14.dp),
         ) { Text("Nueva página") }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Misma altura para los tres aunque «Hablar y escuchar» ocupe dos renglones.
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 8.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             val padding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+            val cell = Modifier.weight(1f).fillMaxHeight()
             // Describir un lugar o un momento, vivido o imaginado.
-            AppOutlinedButton(onClick = onScenes, modifier = Modifier.weight(1f), contentPadding = padding) { Text("Escenas") }
+            AppOutlinedButton(onClick = onScenes, modifier = cell, contentPadding = padding) { Text("Escenas") }
             // Pistas y revisión para ejercicios del workbook, con foto.
-            AppOutlinedButton(onClick = onWorkbook, modifier = Modifier.weight(1f), contentPadding = padding) { Text("Workbook") }
-            // Conversación por voz con Gemini (speaking).
-            AppOutlinedButton(onClick = onConversation, modifier = Modifier.weight(1f), contentPadding = padding) { Text("Hablar") }
+            AppOutlinedButton(onClick = onWorkbook, modifier = cell, contentPadding = padding) { Text("Workbook") }
+            // Conversación por voz con Gemini y el pódcast de Escuchar.
+            AppOutlinedButton(onClick = onConversation, modifier = cell, contentPadding = padding) {
+                Text("Hablar y escuchar", textAlign = TextAlign.Center)
+            }
         }
 
         if (pages.isEmpty()) {
@@ -260,7 +271,7 @@ private fun OnboardingCard(
     needsProfile: Boolean,
     hasApi: Boolean,
     onStudy: () -> Unit,
-    onSettings: () -> Unit,
+    onSettings: (SettingsGroup) -> Unit,
     onHide: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -282,13 +293,13 @@ private fun OnboardingCard(
             done = !needsProfile,
             text = "Escribe tu perfil y tu nivel: la IA corrige con ese contexto.",
             action = "Ajustes",
-            onClick = onSettings,
+            onClick = { onSettings(SettingsGroup.GENERAL) },
         )
         OnboardingItem(
             done = hasApi,
             text = "Opcional: configura Gemini o Azure. Sin API también puedes usar “Compartir con un chat”.",
             action = "Ajustes",
-            onClick = onSettings,
+            onClick = { onSettings(SettingsGroup.AI) },
         )
     }
 }

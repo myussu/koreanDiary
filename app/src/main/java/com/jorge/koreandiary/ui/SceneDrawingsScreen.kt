@@ -96,7 +96,7 @@ fun SceneDrawingsScreen(container: AppContainer, onBack: () -> Unit, onSettings:
                         if (ready) {
                             "Al revisar una escena, lo que se ve y no tiene dibujo lo dibuja Claude (hasta 2 por página). Hoy: ${store.usedToday()} de ${SceneDrawings.DAILY_LIMIT}."
                         } else {
-                            "Para que Claude dibuje lo que todavía no tiene dibujo, pon tu clave en Ajustes → «Dibujos nuevos (Claude)». Mientras tanto, lo nuevo queda en espera aquí."
+                            "Para que Claude dibuje lo que todavía no tiene dibujo, pon tu clave en Ajustes › Escenas → «Dibujos nuevos (Claude)». Mientras tanto, lo nuevo queda en espera aquí."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,

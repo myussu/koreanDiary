@@ -211,7 +211,7 @@ private fun EmptyState(modifier: Modifier) {
     Column(modifier.padding(48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("El diario de esta computadora está vacío.", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Para traer el del celular: en la app, Ajustes → Copia de seguridad → Exportar copia. " +
+            "Para traer el del celular: en la app, Ajustes › Copia y actualizaciones → Exportar copia. " +
                 "Pasa el .zip a esta computadora e impórtalo con el botón de arriba.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

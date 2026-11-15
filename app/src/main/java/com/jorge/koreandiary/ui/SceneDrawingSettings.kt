@@ -23,7 +23,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
- * Ajustes → «Dibujos nuevos (Claude)»: la clave de la API de Claude, el modelo, si dibuja solo al
+ * Ajustes › Escenas → «Dibujos nuevos (Claude)»: la clave de la API de Claude, el modelo, si dibuja solo al
  * revisar una escena y el acceso a la ventana de dibujos.
  */
 @Composable

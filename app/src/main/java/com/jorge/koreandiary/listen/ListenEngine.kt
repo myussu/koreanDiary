@@ -129,7 +129,7 @@ class ListenEngine(private val c: AppContainer) {
     private var liveDead = false
     private var closing = false
     private var mic: Microphone? = null
-    /** Micrófono de los audífonos Bluetooth, solo en las pausas (Ajustes → Escuchar). */
+    /** Micrófono de los audífonos Bluetooth, solo en las pausas (Ajustes › Hablar y escuchar). */
     private val headsetMic by lazy { HeadsetMic(c.app) }
     private var voice: VoiceOut? = null
     private var player: NarrationPlayer? = null
@@ -187,10 +187,10 @@ class ListenEngine(private val c: AppContainer) {
     fun start(topic: String, topicLabel: String, minutes: Int, search: Boolean, targets: List<PromptItem>): String? {
         if (_state.value.phase.active) return null
         val s = c.settings.state.value
-        val key = c.secrets.get(SecretStore.GEMINI_KEY) ?: return "Falta tu clave de Gemini: pégala en Ajustes (es la misma del diario)."
+        val key = c.secrets.get(SecretStore.GEMINI_KEY) ?: return "Falta tu clave de Gemini: pégala en Ajustes › IA (es la misma del diario)."
         val today = ConversationMath.stats(c.conversations.sessions.value, LocalDate.now()).secondsToday
         val remaining = s.voiceDailyMinutes * 60 - today
-        if (remaining < 120) return "Llegaste a tu límite de ${s.voiceDailyMinutes} min por hoy (conversación y escucha). Puedes subirlo en Ajustes."
+        if (remaining < 120) return "Llegaste a tu límite de ${s.voiceDailyMinutes} min por hoy (conversación y escucha). Puedes subirlo en Ajustes › Hablar y escuchar."
         val total = minOf(minutes * 60, remaining)
         val out = try {
             VoiceOut(scope)

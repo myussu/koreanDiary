@@ -194,10 +194,10 @@ private fun SetupContent(
     ) {
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             AppTextButton(onClick = onBack) { Text("‹ Diario") }
-            Text("Conversación", style = MaterialTheme.typography.titleLarge)
+            Text("Hablar y escuchar", style = MaterialTheme.typography.titleLarge)
         }
         if (!st.hasVoiceKey) {
-            Note("Necesitas tu clave de Gemini en Ajustes: la conversación usa la misma clave gratuita que el diario.")
+            Note("Necesitas tu clave de Gemini en Ajustes › IA: la conversación usa la misma clave gratuita que el diario.")
         }
         if (!st.hasCoach) {
             Note("Sin Gemini o Azure configurado no habrá pistas, traducciones ni revisión.")
@@ -235,7 +235,7 @@ private fun SetupContent(
             }
         }
         Text(
-            "Hoy: ${ConversationMath.format(st.secondsToday)} de $dailyMinutes min · Turnos: $turnModeLabel (cámbialo en Ajustes)",
+            "Hoy: ${ConversationMath.format(st.secondsToday)} de $dailyMinutes min · Turnos: $turnModeLabel (cámbialo en Ajustes › Hablar y escuchar)",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
