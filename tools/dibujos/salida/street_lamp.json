@@ -1,0 +1,11 @@
+{
+ "id": "street_lamp",
+ "name": "farola",
+ "keys": ["가로등"],
+ "zone": "GROUND",
+ "size": "MEDIUM",
+ "motion": "NONE",
+ "count": 1,
+ "colors": [{"key":"gray","light":"#818d99","dark":"#adb9c4"},{"key":"ink","light":"#3f494d","dark":"#45494e"},{"key":"gold","light":"#cfaa4e","dark":"#edd080"},{"key":"cream","light":"#d4c5a5","dark":"#e6d8b8"}],
+ "shapes": [{"k":"blob","x":50,"y":28,"r":23,"sq":1,"ang":0,"c":"gold","a":0.13,"move":"TWINKLE"},{"k":"blob","x":50,"y":28,"r":16,"sq":1,"ang":0,"c":"gold","a":0.2,"move":"TWINKLE"},{"k":"stroke","pts":[[50,100],[50,66],[50,39]],"w":7,"c":"gray","a":0.85},{"k":"wash","pts":[[30,17],[50,5],[70,17],[67,21],[33,21]],"c":"gray","a":0.85},{"k":"wash","pts":[[35,21],[65,21],[61,40],[39,40]],"c":"gold","a":0.87,"move":"TWINKLE"},{"k":"stroke","pts":[[35,21],[37,31],[39,40]],"w":4,"c":"gray","a":0.85},{"k":"stroke","pts":[[65,21],[63,31],[61,40]],"w":4,"c":"gray","a":0.85},{"k":"stroke","pts":[[35,40],[50,42],[65,40]],"w":5,"c":"gray","a":0.85},{"k":"wash","pts":[[40,100],[44,94],[45,87],[55,87],[56,94],[60,100]],"c":"gray","a":0.85},{"k":"stroke","pts":[[47,51],[47,68],[47,82]],"w":3,"c":"cream","a":0.4}]
+}
