@@ -27,7 +27,10 @@ import com.jorge.koreandiary.data.standard.GrammarKeys
 import com.jorge.koreandiary.data.standard.StandardCatalog
 import com.jorge.koreandiary.data.standard.StdGrammar
 import com.jorge.koreandiary.data.standard.StdWord
+import com.jorge.koreandiary.progress.LevelCoverage
+import com.jorge.koreandiary.progress.LevelEstimate
 import com.jorge.koreandiary.srs.Fsrs
+import com.jorge.koreandiary.conversation.TargetHelp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -59,7 +62,19 @@ object ItemSource {
     const val GAP = "laguna"
     /** Del workbook: vocabulario impreso o gramática que elegiste agregar (aún no practicado). */
     const val WORKBOOK = "workbook"
+    /** Del estándar, desde «Para agregar» («Agregar» o «Ya lo sé»). */
+    const val STANDARD = "estandar"
 }
+
+/** «Tu nivel»: cuánto cubres de cada nivel del estándar y la gramática que te falta. */
+data class LevelReport(
+    val grammar: List<LevelCoverage>,
+    val words: List<LevelCoverage>,
+    val missingGrammar: List<StdGrammar>,
+)
+
+/** Tus oraciones con un ítem (de las páginas donde lo usaste) y las correcciones que tuvo. */
+data class ItemUsage(val sentences: List<String>, val corrections: List<String>)
 
 data class UsageSummary(val reviewed: Int = 0, val newWords: Int = 0, val newGrammar: Int = 0, val pending: Int = 0)
 
@@ -403,6 +418,88 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         }
         val failed = memory.failedSince(now - RECENT_ERRORS_MS, limit).map { ItemRef(it.itemType, it.itemId) }
         return (lesson + failed).distinct().take(limit)
+    }
+
+    /**
+     * «Tu nivel»: cobertura de cada nivel del estándar en gramática y vocabulario, y la gramática que
+     * te falta hasta [maxLevel]. «Usado bien» = al menos un acierto en el repaso.
+     */
+    suspend fun levelReport(maxLevel: Int): LevelReport {
+        val grammar = study.allGrammar()
+        val words = study.allWords()
+        val wellGrammar = memory.allOfType(ItemType.GRAMMAR).filter { it.reps > it.lapses }.map { it.itemId }.toSet()
+        val wellWords = memory.allOfType(ItemType.WORD).filter { it.reps > it.lapses }.map { it.itemId }.toSet()
+        return withContext(Dispatchers.Default) {
+            LevelReport(
+                LevelEstimate.grammarCoverage(catalog.grammar, grammar, wellGrammar),
+                LevelEstimate.wordCoverage(catalog.words, words, wellWords),
+                LevelEstimate.missingGrammar(catalog.grammar, grammar, maxLevel.coerceIn(1, 6)),
+            )
+        }
+    }
+
+    /** La muestra de la prueba corta de vocabulario (palabras que no están en tu lista). */
+    suspend fun vocabSample(): Map<Int, List<StdWord>> {
+        val mine = study.allWordForms().toSet()
+        return withContext(Dispatchers.Default) { LevelEstimate.sample(catalog.words, mine) }
+    }
+
+    /** Las palabras del estándar con esas formas, sin las que ya están en tu lista (para «Para agregar»). */
+    suspend fun missingWords(forms: List<String>): List<StdWord> {
+        val mine = study.allWordForms().toSet()
+        return withContext(Dispatchers.Default) {
+            forms.distinct().filter { it !in mine }.mapNotNull { catalog.word(it) }.sortedWith(compareBy({ it.level }, { it.id }))
+        }
+    }
+
+    /**
+     * «Para agregar»: suma un ítem del estándar a tu lista. Con [known] («Ya lo sé») cuenta como
+     * «fácil» y vuelve mucho después; sin él es nuevo y la app te lo va a sugerir. Si ya estaba (o
+     * una tuya comparte la clave), usa esa.
+     */
+    suspend fun addStandard(ref: ItemRef, known: Boolean, now: Long): ItemRef? = db.withWriteTransaction {
+        val added: ItemRef? = when (ref.type) {
+            ItemType.STD_GRAMMAR -> standardGrammarById(ref.id)?.let { std ->
+                findMine(std.form, study.allGrammar())?.let { ItemRef(ItemType.GRAMMAR, it.id) }
+                    ?: ItemRef(
+                        ItemType.GRAMMAR,
+                        study.insertGrammar(
+                            GrammarPoint(
+                                unit = null, level = "${std.level}급", pattern = std.form,
+                                variants = (listOf(std.form) + std.related).distinct().joinToString(" | "),
+                                appliesTo = "", meaning = std.meaning.takeIf { it.isNotBlank() }, source = ItemSource.STANDARD,
+                            )
+                        ),
+                    )
+            }
+            ItemType.STD_WORD -> standardWordById(ref.id)?.let { std ->
+                study.findWord(std.word)?.let { ItemRef(ItemType.WORD, it.id) }
+                    ?: ItemRef(
+                        ItemType.WORD,
+                        study.insertWord(Word(baseForm = std.word, type = std.type, level = "${std.level}급", source = ItemSource.STANDARD)),
+                    )
+            }
+            else -> ref
+        }
+        if (added != null && known) review(added, Fsrs.Rating.EASY, EventKind.DECLARED, now, pageId = null)
+        added
+    }
+
+    /**
+     * Tus oraciones con un ítem, de las páginas (diario y escenas) donde lo usaste: las que lo traen
+     * (la raíz de la palabra o la gramática) y, si ninguna lo muestra tal cual, las primeras de esas
+     * páginas. Y las correcciones que tuvo («원래 → 수정»).
+     */
+    suspend fun itemUsage(ref: ItemRef, label: String, limit: Int = 3): ItemUsage {
+        val diary = db.diaryDao()
+        val pages = memory.pagesUsing(ref.type, ref.id, 6)
+        val sentences = if (pages.isEmpty()) emptyList() else diary.sentencesOf(pages).map { it.text.trim() }.filter { it.isNotEmpty() }
+        val keys = if (ref.type == ItemType.GRAMMAR) GrammarKeys.keys(label).map { it.substringAfter(':') } else emptyList()
+        val matching = sentences.filter { s ->
+            if (ref.type == ItemType.GRAMMAR) keys.any { k -> k.length >= 2 && s.replace(" ", "").contains(k) } else TargetHelp.stemIn(label, s)
+        }
+        val corrections = diary.correctionsForItem(ref.type, ref.id, limit).map { "${it.original.trim()} → ${it.suggestion.trim()}" }
+        return ItemUsage((matching.ifEmpty { sentences }).distinct().take(limit), corrections)
     }
 
     /**

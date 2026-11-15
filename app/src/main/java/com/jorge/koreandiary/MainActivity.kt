@@ -36,12 +36,12 @@ import com.jorge.koreandiary.ui.FeaturesScreen
 import com.jorge.koreandiary.ui.HomeScreen
 import com.jorge.koreandiary.ui.ImportScreen
 import com.jorge.koreandiary.ui.KoreanDiaryTheme
-import com.jorge.koreandiary.ui.ProgressScreen
 import com.jorge.koreandiary.ui.SceneDrawingsScreen
 import com.jorge.koreandiary.ui.ScenesScreen
 import com.jorge.koreandiary.ui.SettingsGroup
 import com.jorge.koreandiary.ui.SettingsScreen
 import com.jorge.koreandiary.ui.StudyScreen
+import com.jorge.koreandiary.ui.StudyTab
 import com.jorge.koreandiary.ui.conversation.ConversationScreen
 import com.jorge.koreandiary.ui.conversation.ListenMiniBar
 import com.jorge.koreandiary.ui.page.PageScreen
@@ -144,7 +144,14 @@ private fun AppNavigation(container: AppContainer) {
                     PageScreen(container, route.removePrefix("page:").toLong(), onBack = ::pop)
                 }
             }
-            route == "study" -> StudyScreen(container, onBack = ::pop, onImport = { push("import") })
+            // "study:<pestaña>" abre Estudio en esa pestaña (Resumen si no dice).
+            route.startsWith("study") -> StudyScreen(
+                container,
+                onBack = ::pop,
+                onImport = { push("import") },
+                onSettings = { push("settings:${SettingsGroup.GENERAL.name}") },
+                initialTab = StudyTab.entries.firstOrNull { it.name == route.substringAfter(':', "") } ?: StudyTab.SUMMARY,
+            )
             route == "import" -> ImportScreen(container, onBack = ::pop)
             route.startsWith("settings") -> SettingsScreen(
                 container,
@@ -153,7 +160,6 @@ private fun AppNavigation(container: AppContainer) {
                 initialGroup = SettingsGroup.entries.firstOrNull { it.name == route.substringAfter(':', "") } ?: SettingsGroup.GENERAL,
             )
             route == "drawings" -> SceneDrawingsScreen(container, onBack = ::pop, onSettings = { push("settings:${SettingsGroup.SCENES.name}") })
-            route == "progress" -> ProgressScreen(container, onBack = ::pop)
             route == "features" -> FeaturesScreen(onBack = ::pop)
             route == "conversation" -> ConversationScreen(container, onBack = ::pop)
             route == "scenes" -> ScenesScreen(container, onBack = ::pop, onOpenPage = { push("page:$it") }, onDrawings = { push("drawings") })
@@ -165,7 +171,7 @@ private fun AppNavigation(container: AppContainer) {
                 onStudy = { push("study") },
                 onSettings = { group -> push("settings:${group.name}") },
                 onWorkbook = { push("workbook") },
-                onProgress = { push("progress") },
+                onProgress = { push("study:${StudyTab.SUMMARY.name}") },
                 onConversation = { push("conversation") },
                 onScenes = { push("scenes") },
                 onFeatures = { push("features") },

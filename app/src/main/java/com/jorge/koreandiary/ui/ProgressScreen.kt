@@ -44,9 +44,12 @@ import java.util.Locale
 private const val WEEKS = 14
 private val shortDate = DateTimeFormatter.ofPattern("d MMM", Locale.forLanguageTag("es"))
 
-/** Constancia, memoria y lo que más cuesta, todo calculado en el celular (sin IA). */
+/**
+ * Constancia, memoria y lo que más cuesta, todo calculado en el celular (sin IA). Va en Estudio ›
+ * «Resumen», debajo de «Tu nivel» (antes era la pantalla Progreso).
+ */
 @Composable
-fun ProgressScreen(container: AppContainer, onBack: () -> Unit) {
+fun ProgressSummary(container: AppContainer) {
     val days by container.diary.pagesPerDay.collectAsStateWithLifecycle(emptyList())
     val states by container.study.memoryStates.collectAsStateWithLifecycle(emptyList())
     val tenses by container.diary.tenseCounts.collectAsStateWithLifecycle(emptyList())
@@ -69,15 +72,7 @@ fun ProgressScreen(container: AppContainer, onBack: () -> Unit) {
         value = container.study.labels(hardest)
     }
 
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AppTextButton(onClick = onBack) { Text("‹ Diario") }
-            Text("Progreso", style = MaterialTheme.typography.titleLarge)
-        }
-
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatBox("Racha", streak, if (streak == 1) "día" else "días", Modifier.weight(1f))
             StatBox("Mejor racha", best, if (best == 1) "día" else "días", Modifier.weight(1f))
@@ -85,7 +80,7 @@ fun ProgressScreen(container: AppContainer, onBack: () -> Unit) {
         }
 
         if (conversations.isNotEmpty()) {
-            // La conversación no suma a la racha (por ahora): solo se muestra el tiempo hablado.
+            // La conversación no suma a la racha: solo se muestra el tiempo hablado.
             val talk = remember(conversations, today) { ConversationMath.stats(conversations, today) }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SectionLabel("Conversación")

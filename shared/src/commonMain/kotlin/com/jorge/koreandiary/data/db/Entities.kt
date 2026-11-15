@@ -90,6 +90,8 @@ object EventKind {
     const val DISCOVERED = "descubierta"
     /** Escuchar: preguntaste qué significaba en una pausa, así que no la recordabas (cuenta como «otra vez»). */
     const val ASKED = "preguntada"
+    /** «Ya lo sé» en «Para agregar»: dijiste que la conocías (cuenta como «fácil»; vuelve mucho después). */
+    const val DECLARED = "declarada"
 }
 
 @Entity(

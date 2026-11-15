@@ -78,9 +78,10 @@ class FeaturesTest {
         // El diario tiene el recorrido del celular y el de la PC: cada versión salta al suyo.
         assertEquals("Diario", Features.flowFor("Diario", Platform.PHONE)?.title)
         assertEquals("En la PC", Features.flowFor("Diario", Platform.DESKTOP)?.title)
-        // Cada grupo de la lista con algo del celular tiene su recorrido (salvo Progreso, que es una sola pantalla).
+        // Cada grupo de la lista tiene su recorrido (Progreso ya no es un grupo: está en Estudio › «Resumen»).
         val withFlow = Features.flows.map { it.group }.toSet()
-        assertEquals(Features.groups.map { it.title }.toSet() - "Progreso", withFlow)
+        assertEquals(Features.groups.map { it.title }.toSet(), withFlow)
+        assertTrue(Features.groups.none { it.title == "Progreso" })
         // Un recorrido solo del celular sale en gris en la PC, igual que la lista.
         val phoneOnly = Features.flows.first { it.platforms == setOf(Platform.PHONE) }
         assertNull(phoneOnly.missingLabel(Platform.PHONE))

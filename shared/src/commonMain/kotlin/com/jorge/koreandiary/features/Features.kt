@@ -141,16 +141,15 @@ object Features {
         FeatureGroup(
             "Estudio",
             listOf(
+                phone("Tu lista y tu progreso en una pantalla, por pestañas: «Resumen», «Vocabulario», «Gramática», «Por revisar» y «Para agregar». Se abre con «Estudio» o tocando el resumen del inicio."),
+                phone("«Resumen»: «Tu nivel» y abajo racha, calendario, memoria del repaso, tiempos verbales, lo que más te cuesta y minutos hablados."),
+                phone("«Tu nivel»: cuánto tienes de la gramática de cada nivel del estándar (y cuánto ya usaste bien) y el nivel que eso indica. Si no coincide con el de Ajustes, lo propone; no lo cambia solo."),
+                phone("«Prueba de vocabulario»: unas 15 palabras al azar por nivel, tocas las que conoces; suma su resultado a «Tu nivel». «Repetir la prueba» cuando quieras."),
+                phone("«Para agregar»: la gramática del estándar que te falta hasta tu nivel y uno más, y las palabras que no conociste en la prueba, de lo más básico arriba. «Agregar» la suma como nueva (te la va a sugerir); «Ya lo sé», como conocida (vuelve mucho después)."),
+                phone("En «Vocabulario» y «Gramática», buscador; al tocar un ítem, su memoria, tus oraciones con él y lo que te corrigieron."),
                 phone("«Importar» tu lista de gramática (TXT) o vocabulario."),
                 phone("Lo que usas en el diario entra solo a tu lista, con su nivel."),
                 phone("«Por revisar»: palabras que la app no reconoció o que preguntaste al escuchar; las agregas o las descartas."),
-            ),
-        ),
-        FeatureGroup(
-            "Progreso",
-            listOf(
-                phone("Racha, calendario, memoria del repaso, tiempos verbales, lo que más te cuesta y minutos hablados."),
-                phone("Se abre tocando el resumen del inicio."),
             ),
         ),
         FeatureGroup(
@@ -375,7 +374,7 @@ object Features {
                     listOf("Practicar correcciones", "Escuchar", "Decir"),
                 ),
             ),
-            note = "Al revisar, los objetivos que usaste cuentan para tu repaso (sin ayuda = bien, con ayuda = difícil, corregido = otra vez). Los minutos hablados salen en Progreso.",
+            note = "Al revisar, los objetivos que usaste cuentan para tu repaso (sin ayuda = bien, con ayuda = difícil, corregido = otra vez). Los minutos hablados salen en Estudio › «Resumen».",
         ),
         FeatureFlow(
             title = "Escuchar",
@@ -436,8 +435,18 @@ object Features {
                     "En «Por revisar» quedan las palabras que la app no conocía: las agregas o las descartas.",
                     listOf("Por revisar", "Agregar", "Descartar"),
                 ),
+                FlowStep(
+                    "Ves tu nivel",
+                    "«Resumen» compara tu lista con el estándar, nivel por nivel. La prueba corta de vocabulario afina el cálculo. Si no coincide con tu nivel de Ajustes, te lo propone.",
+                    listOf("Resumen", "Prueba de vocabulario", "Ajustes"),
+                ),
+                FlowStep(
+                    "Agregas lo que falta",
+                    "«Para agregar» trae la gramática que te falta y las palabras que no conociste en la prueba. Lo nuevo te lo va a sugerir; lo que ya sabes vuelve mucho después.",
+                    listOf("Para agregar", "Agregar", "Ya lo sé"),
+                ),
             ),
-            note = "«Vocabulario» y «Gramática» tienen buscador. Tu avance está en Progreso (toca el resumen del inicio).",
+            note = "«Vocabulario» y «Gramática» tienen buscador; toca un ítem para ver tus oraciones con él. Debajo de «Tu nivel» están la racha, el calendario y la memoria.",
         ),
         FeatureFlow(
             title = "Copia de seguridad",

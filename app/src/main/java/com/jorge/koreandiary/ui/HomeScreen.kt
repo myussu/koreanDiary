@@ -125,7 +125,7 @@ fun HomeScreen(
             MascotGreeting(container, counted.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
         }
         if (pages.isNotEmpty()) {
-            // Resumen corto; el detalle (calendario, memoria, lo que más cuesta) está en Progreso.
+            // Resumen corto; el detalle (tu nivel, calendario, memoria, lo que más cuesta) está en Estudio › Resumen.
             val byTense = tenses.associate { it.tense to it.total }
             Row(
                 Modifier.fillMaxWidth().padding(top = 10.dp)
@@ -140,7 +140,7 @@ fun HomeScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f),
                 )
-                Text("Progreso ›", style = MaterialTheme.typography.labelLarge)
+                Text("Resumen ›", style = MaterialTheme.typography.labelLarge)
             }
         }
         AppButton(

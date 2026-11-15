@@ -61,14 +61,18 @@ interface StudyDao {
     @Query("SELECT baseForm FROM words")
     suspend fun allWordForms(): List<String>
 
+    @Query("SELECT * FROM words")
+    suspend fun allWords(): List<Word>
+
     @Query("SELECT * FROM grammar_points")
     suspend fun allGrammar(): List<GrammarPoint>
 
     /**
      * Gramática a sugerir: la de los niveles elegidos (p. ej. base y 3A) más toda la que
-     * detectaste en tus diarios, que ya sabes que usas, y la que elegiste agregar desde el workbook.
+     * detectaste en tus diarios, que ya sabes que usas, y la que elegiste agregar desde el workbook o
+     * desde «Para agregar» (estándar).
      */
-    @Query("SELECT id FROM grammar_points WHERE level IN (:levels) OR source IN ('diario', 'laguna', 'workbook')")
+    @Query("SELECT id FROM grammar_points WHERE level IN (:levels) OR source IN ('diario', 'laguna', 'workbook', 'estandar')")
     suspend fun grammarIdsForLevels(levels: List<String>): List<Long>
 
     @Insert
@@ -115,6 +119,13 @@ interface MemoryDao {
             "GROUP BY itemType, itemId ORDER BY MAX(at) DESC LIMIT :limit"
     )
     suspend fun failedSince(since: Long, limit: Int): List<RatedItem>
+
+    /** Las páginas donde usaste un ítem, la más reciente primero (para mostrar tus oraciones con él). */
+    @Query(
+        "SELECT pageId FROM review_events WHERE itemType = :itemType AND itemId = :itemId AND pageId IS NOT NULL " +
+            "AND rating IS NOT NULL GROUP BY pageId ORDER BY MAX(at) DESC LIMIT :limit"
+    )
+    suspend fun pagesUsing(itemType: String, itemId: Long, limit: Int): List<Long>
 }
 
 /** Un ítem que una página ya calificó (ver [MemoryDao.ratedOnPage]). */
@@ -214,6 +225,13 @@ interface DiaryDao {
             "ORDER BY pages.createdAt DESC, corrections.id DESC LIMIT :limit"
     )
     suspend fun recentErrors(since: Long, exceptPage: Long, limit: Int): List<Correction>
+
+    @Query("SELECT * FROM sentences WHERE pageId IN (:pageIds) ORDER BY pageId DESC, number")
+    suspend fun sentencesOf(pageIds: List<Long>): List<Sentence>
+
+    /** Correcciones atadas a un ítem de tu lista (la IA puso su id), las más recientes primero. */
+    @Query("SELECT * FROM corrections WHERE itemType = :itemType AND itemId = :itemId AND status IN ('${CorrectionStatus.PENDING}', '${CorrectionStatus.REWRITTEN}') ORDER BY id DESC LIMIT :limit")
+    suspend fun correctionsForItem(itemType: String, itemId: Long, limit: Int): List<Correction>
 
     /** Los números de las oraciones de una página (para el resumen bien / corregir / más natural). */
     @Query("SELECT number FROM sentences WHERE pageId = :pageId")

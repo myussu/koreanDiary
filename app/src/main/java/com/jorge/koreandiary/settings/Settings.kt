@@ -73,6 +73,8 @@ data class AppSettings(
     val sceneDrawAuto: Boolean = true,
     /** Ocultar la tarjeta "Primeros pasos" del inicio. */
     val hideOnboarding: Boolean = false,
+    /** La prueba corta de vocabulario de Estudio (JSON de `progress.VocabTest`); "" si no la hiciste. */
+    val vocabTest: String = "",
     /** Recordatorio diario para escribir, solo si ese día aún no hay página. */
     val reminderEnabled: Boolean = false,
     val reminderHour: Int = 20,
@@ -168,6 +170,7 @@ class SettingsStore(context: Context) {
         claudeModel = prefs.getString("claudeModel", "claude-sonnet-5-5") ?: "claude-sonnet-5-5",
         sceneDrawAuto = prefs.getBoolean("sceneDrawAuto", true),
         hideOnboarding = prefs.getBoolean("hideOnboarding", false),
+        vocabTest = prefs.getString("vocabTest", "") ?: "",
         reminderEnabled = prefs.getBoolean("reminderEnabled", false),
         reminderHour = prefs.getInt("reminderHour", 20),
         reminderMinute = prefs.getInt("reminderMinute", 0),
@@ -220,6 +223,7 @@ class SettingsStore(context: Context) {
             .putString("claudeModel", s.claudeModel)
             .putBoolean("sceneDrawAuto", s.sceneDrawAuto)
             .putBoolean("hideOnboarding", s.hideOnboarding)
+            .putString("vocabTest", s.vocabTest)
             .putBoolean("reminderEnabled", s.reminderEnabled)
             .putInt("reminderHour", s.reminderHour)
             .putInt("reminderMinute", s.reminderMinute)
