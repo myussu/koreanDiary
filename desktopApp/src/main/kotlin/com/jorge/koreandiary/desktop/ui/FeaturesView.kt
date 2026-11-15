@@ -19,12 +19,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jorge.koreandiary.features.Features
 import com.jorge.koreandiary.features.Platform
+import kotlinx.coroutines.launch
 
 /**
  * «Qué puede hacer la app» en la PC: lo mismo que el celular (`shared`, `features/Features.kt`), en
@@ -39,13 +41,15 @@ fun FeaturesView(onBack: () -> Unit, modifier: Modifier = Modifier) {
     // El recorrido al que se saltó desde la lista: se busca cuando la vista ya está armada.
     var jumpTo by remember { mutableStateOf<String?>(null) }
     val flowsState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val groups = remember(query) { Features.search(query) }
 
     LaunchedEffect(showFlows, jumpTo) {
         val target = jumpTo ?: return@LaunchedEffect
         if (!showFlows) return@LaunchedEffect
         val index = Features.flows.indexOfFirst { it.title == target }
-        if (index >= 0) flowsState.scrollToItem(index)
+        // + 1: el primer renglón es el índice.
+        if (index >= 0) flowsState.scrollToItem(index + 1)
         jumpTo = null
     }
 
@@ -88,6 +92,7 @@ fun FeaturesView(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 state = flowsState,
                 contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
             ) {
+                item(key = "indice") { FlowIndex { i -> scope.launch { flowsState.animateScrollToItem(i + 1) } } }
                 items(Features.flows, key = { it.title }) { flow -> FeatureFlowCard(flow, Platform.DESKTOP) }
             }
         } else LazyColumn(
@@ -97,7 +102,7 @@ fun FeaturesView(onBack: () -> Unit, modifier: Modifier = Modifier) {
         ) {
             groups.forEach { group ->
                 item(key = group.title) {
-                    val flow = Features.flowFor(group.title)
+                    val flow = Features.flowFor(group.title, Platform.DESKTOP)
                     Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(

@@ -184,7 +184,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenDrawings: 
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Escena viva en los bordes")
+                    Text("Escena viva")
                     Text(
                         "En las escenas, lo que escribes aparece pintado en acuarela abajo de la hoja: mar, árboles, pasto, sol… Lee tu letra mientras escribes, sin gastar cuota de la IA.",
                         style = MaterialTheme.typography.bodySmall,

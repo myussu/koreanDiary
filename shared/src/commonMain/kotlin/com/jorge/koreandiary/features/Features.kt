@@ -154,7 +154,7 @@ object Features {
                 phone("IA: Gemini o Azure, con «Probar conexión»."),
                 phone("«Descargar modelo de escritura coreana» (una sola vez)."),
                 phone("«Solo el S Pen dibuja» (el dedo desplaza) y presión del S Pen."),
-                phone("«Escena viva en los bordes»: encender o apagar la escena viva (los dibujos en acuarela de abajo) de las escenas."),
+                phone("«Escena viva»: encender o apagar los dibujos en acuarela de abajo de las escenas."),
                 phone("«Imagen de la escena»: la dirección de tu servidor ComfyUI, «Probar conexión» y el modelo; «Pintar al terminar una escena» e «Imagen de fondo en la escena»."),
                 phone("«Dibujos nuevos (Claude)»: tu clave de la API de Claude, el modelo, «Probar conexión», «Dibujar al revisar una escena» y «Ver dibujos». Como mucho 12 dibujos por día."),
                 phone("Recordatorio diario: solo avisa si ese día no escribiste."),
@@ -176,6 +176,159 @@ object Features {
      * mismo commit que la función.
      */
     val flows: List<FeatureFlow> = listOf(
+        FeatureFlow(
+            title = "Primeros pasos",
+            group = "Inicio",
+            where = "Inicio",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Importas tu lista",
+                    "En «Estudio» › «Importar»: tu lista de gramática en TXT o cualquier lista con un chat. Con ella llegan las sugerencias de cada página.",
+                    listOf("Estudio", "Importar"),
+                ),
+                FlowStep(
+                    "Escribes tu perfil y tu nivel",
+                    "En «Ajustes» › Perfil: quién eres, tu nivel y qué niveles de gramática sugerir. La IA corrige con ese contexto.",
+                    listOf("Ajustes"),
+                ),
+                FlowStep(
+                    "Descargas el modelo de escritura",
+                    "Una sola vez, en Ajustes › Escritura. Con él la app lee tu letra, sin internet.",
+                    listOf("Descargar modelo de escritura coreana"),
+                ),
+                FlowStep(
+                    "Eliges con qué corregir",
+                    "Gemini o Azure con tu clave y «Probar conexión». Sin clave, cada página se corrige igual con «Compartir con un chat».",
+                    listOf("Probar conexión", "Compartir con un chat"),
+                ),
+                FlowStep(
+                    "Guardas una copia",
+                    "En Ajustes › Copia de seguridad: «Exportar copia» y guárdala fuera del celular; «Elegir carpeta» para la copia automática antes de cada actualización.",
+                    listOf("Exportar copia", "Elegir carpeta"),
+                ),
+            ),
+            note = "En el inicio, «Primeros pasos» marca lo que ya hiciste; «Ocultar» lo quita.",
+        ),
+        FeatureFlow(
+            title = "Diario",
+            group = "Diario",
+            where = "Inicio › Nueva página",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Abres una página",
+                    "Llega con sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel. Toca una para ver su significado y ejemplos.",
+                    listOf("Nueva página"),
+                ),
+                FlowStep(
+                    "Escribes con el S Pen",
+                    "«+ Línea» abre un renglón donde tocas. La pantalla no se apaga mientras escribes.",
+                    listOf("Lápiz", "Borrar", "+ Línea", "Deshacer", "Rehacer"),
+                    FlowAside("Si no sabes cómo decirlo", listOf("¿Cómo digo?"), "Escribes la idea en español y te da la frase a tu nivel; la escribes tú, a mano."),
+                ),
+                FlowStep(
+                    "Pides la revisión",
+                    "La app lee tu letra; en «¿Esto es lo que escribiste?» corriges lo que leyó mal y eliges con qué revisar.",
+                    listOf("Revisar"),
+                    FlowAside(
+                        "Sin API",
+                        listOf("Compartir con un chat", "Pegar", "Pegar del portapapeles", "Procesar"),
+                        "Manda la página a Claude o ChatGPT; copias su respuesta y la pegas.",
+                    ),
+                ),
+                FlowStep(
+                    "Lees las correcciones",
+                    "Cada error con su corrección y el porqué. Las «mejoras» proponen estructuras de tu nivel: no hace falta reescribirlas.",
+                ),
+                FlowStep(
+                    "Reescribes y verificas",
+                    "Escribes cada corrección debajo y tocas «Verificar». Si una no la detecta, «Hecho» la marca a mano.",
+                    listOf("Verificar", "Hecho"),
+                ),
+                FlowStep(
+                    "Queda en tu repaso",
+                    "Lo que usaste entra a tu lista y al repaso; la página cuenta para la racha.",
+                ),
+            ),
+        ),
+        FeatureFlow(
+            title = "Escenas",
+            group = "Escenas",
+            where = "Inicio › Escenas › Nueva escena",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Abres una escena",
+                    "Llega con dos gramáticas nuevas (★), un paso por encima de tu nivel, además de las sugerencias.",
+                    listOf("Escenas", "Nueva escena"),
+                ),
+                FlowStep(
+                    "Describes lo que ves",
+                    "Lo que nombras aparece pintado en acuarela abajo de la hoja: el mar, un árbol que se mece, la lluvia.",
+                    aside = FlowAside(
+                        "Si te trabas",
+                        listOf("¿Cómo digo?", "Dictar", "Más ayuda", "Ver la frase"),
+                        "La ayuda llega por partes: palabras, cómo unirlas y la frase. Lo que dibuja aparece cuando lo escribes.",
+                    ),
+                ),
+                FlowStep(
+                    "Sumas sugerencias",
+                    "Lee lo que llevas escrito y suma palabras y gramática que encajan con tu escena.",
+                    listOf("Actualizar"),
+                ),
+                FlowStep(
+                    "Revisas",
+                    "Como en el diario. Además la IA lee el tono (sube una luz de ese color), avisa con ≈ si escribiste otra cosa que lo que querías decir, y lo que se ve sin dibujo lo dibuja Claude.",
+                    listOf("Revisar", "Descartar"),
+                ),
+                FlowStep(
+                    "Verificas",
+                    "Reescribes las correcciones. La escena cuenta para la racha cuando no le quedan pendientes.",
+                    listOf("Verificar", "Hecho"),
+                ),
+                FlowStep(
+                    "La pintas",
+                    "Con tu servidor ComfyUI se pinta sola al terminarla; si no, copias el prompt en Gemini y eliges la imagen.",
+                    listOf("Imagen", "Copiar prompt para Gemini", "Elegir imagen"),
+                ),
+            ),
+            note = "En Escenas, «Dibujos» muestra todo lo que la escena sabe pintar y las palabras que lo traen.",
+        ),
+        FeatureFlow(
+            title = "Workbook",
+            group = "Workbook",
+            where = "Inicio › Workbook › Nueva página",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Abres una página del libro",
+                    "Arriba eliges con qué revisar (Gemini, Azure o un chat).",
+                    listOf("Workbook", "Nueva página"),
+                ),
+                FlowStep(
+                    "Le tomas una foto",
+                    "La gramática de la lección la eliges tú o la detecta la IA.",
+                    listOf("Tomar foto", "Galería", "Cambiar"),
+                ),
+                FlowStep(
+                    "Pides pistas",
+                    "Para cada ejercicio, pistas para combinar esa gramática con otras y una respuesta modelo escondida.",
+                    listOf("Pedir pistas", "Ver respuesta"),
+                    FlowAside("Con un chat", listOf("Pegar respuesta del chat")),
+                ),
+                FlowStep(
+                    "Sumas la gramática impresa",
+                    "Marcas las gramáticas de la página que quieres en tu lista; ★ es la de la lección.",
+                    listOf("Agregar N a mi lista"),
+                ),
+                FlowStep(
+                    "Revisas tus respuestas",
+                    "Resuelves en el libro y les tomas foto: cada una sale bien, a corregir o correcta pero más natural. Cuenta para tu repaso.",
+                    listOf("Foto de mis respuestas", "Revisar otra vez"),
+                ),
+            ),
+        ),
         FeatureFlow(
             title = "Conversar",
             group = "Hablar",
@@ -253,10 +406,97 @@ object Features {
             ),
             note = "Quedan las últimas 5 escuchas; «☆ Guardar» conserva una para siempre.",
         ),
+        FeatureFlow(
+            title = "Estudio",
+            group = "Estudio",
+            where = "Inicio › Estudio",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Importas una lista",
+                    "Gramática en TXT («Unit N: patrón | patrón», sin IA): pones el nivel de las unidades y eliges el archivo, o pegas el texto.",
+                    listOf("Importar", "Elegir archivo TXT", "Leer texto pegado"),
+                ),
+                FlowStep(
+                    "O cualquier lista, con un chat",
+                    "Copias el prompt, lo pegas en Claude o ChatGPT con tu lista (texto o fotos) y pegas su respuesta.",
+                    listOf("Copiar prompt de importación", "Leer respuesta"),
+                ),
+                FlowStep(
+                    "Lo que usas entra solo",
+                    "Lo que escribes en el diario, las escenas y el workbook entra a tu lista con su nivel.",
+                ),
+                FlowStep(
+                    "Revisas lo que no reconoció",
+                    "En «Por revisar» quedan las palabras que la app no conocía: las agregas o las descartas.",
+                    listOf("Por revisar", "Agregar", "Descartar"),
+                ),
+            ),
+            note = "«Vocabulario» y «Gramática» tienen buscador. Tu avance está en Progreso (toca el resumen del inicio).",
+        ),
+        FeatureFlow(
+            title = "Copia de seguridad",
+            group = "Ajustes",
+            where = "Inicio › Ajustes › Copia de seguridad",
+            platforms = setOf(Platform.PHONE),
+            steps = listOf(
+                FlowStep(
+                    "Exportas",
+                    "Un .zip con todo menos las claves de API. Guárdalo fuera del celular (Drive, la PC).",
+                    listOf("Exportar copia"),
+                ),
+                FlowStep(
+                    "Antes de cada actualización, sola",
+                    "La app guarda una copia antes de instalar cada versión (quedan las 3 últimas). Con una carpeta elegida, sobrevive aunque desinstales.",
+                    listOf("Elegir carpeta"),
+                ),
+                FlowStep(
+                    "Restauras",
+                    "Eliges el .zip y confirmas: la app se reinicia con esos datos. Las copias guardadas dentro de la app se recuperan con «Restaurar».",
+                    listOf("Importar copia", "Reemplazar", "Restaurar"),
+                ),
+                FlowStep(
+                    "Te arrepientes",
+                    "Vuelve a los datos que había antes de importar.",
+                    listOf("Deshacer la última importación"),
+                ),
+            ),
+            note = "Si la copia antes de actualizar falla, no instala: «Reintentar» o «Actualizar sin copia».",
+        ),
+        FeatureFlow(
+            title = "En la PC",
+            group = "Diario",
+            where = "Celular › Ajustes, y la app de escritorio",
+            platforms = setOf(Platform.DESKTOP),
+            steps = listOf(
+                FlowStep(
+                    "Exportas en el celular",
+                    "Ajustes › Copia de seguridad.",
+                    listOf("Exportar copia"),
+                ),
+                FlowStep(
+                    "Pasas el archivo a la PC",
+                    "Por cable, por Drive o como prefieras.",
+                ),
+                FlowStep(
+                    "Lo importas en la PC",
+                    "Eliges el .zip. Si la PC ya tenía páginas, pide confirmación y guarda lo anterior.",
+                    listOf("Importar copia del celular…"),
+                ),
+                FlowStep(
+                    "Lees tus páginas",
+                    "Por día, con su tinta y su texto. Escribir con la tableta llega después.",
+                ),
+            ),
+        ),
     )
 
-    /** El recorrido de un grupo de la lista, si tiene. */
-    fun flowFor(group: String): FeatureFlow? = flows.firstOrNull { it.group == group }
+    /**
+     * El recorrido de un grupo de la lista, si tiene. Si hay más de uno (el diario tiene el del celular
+     * y el de la PC), primero el que funciona en [platform].
+     */
+    fun flowFor(group: String, platform: Platform? = null): FeatureFlow? =
+        flows.filter { it.group == group }.sortedBy { platform != null && platform !in it.platforms }.firstOrNull()
 
     /** Cuántas funciones de la lista funcionan en [platform]. */
     fun countOn(platform: Platform): Int = groups.sumOf { g -> g.features.count { platform in it.platforms } }

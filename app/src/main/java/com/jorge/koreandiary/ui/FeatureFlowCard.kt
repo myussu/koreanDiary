@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jorge.koreandiary.features.FeatureFlow
+import com.jorge.koreandiary.features.Features
 import com.jorge.koreandiary.features.FlowAside
 import com.jorge.koreandiary.features.FlowStep
 import com.jorge.koreandiary.features.Platform
@@ -47,6 +48,23 @@ fun FeatureFlowCard(flow: FeatureFlow, platform: Platform, modifier: Modifier = 
         }
         flow.note?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = RAIL, top = 2.dp))
+        }
+    }
+}
+
+/** El índice de «Cómo se usa»: un botón por recorrido que salta a él. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FlowIndex(onPick: (Int) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Text("RECORRIDOS", style = MaterialTheme.typography.labelMedium, color = scheme.secondary)
+        FlowRow(
+            Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Features.flows.forEachIndexed { i, flow -> AppTag(flow.title, onClick = { onPick(i) }) }
         }
     }
 }

@@ -66,7 +66,7 @@ class FeaturesTest {
             assertTrue("«${f.title}» sin plataforma", f.platforms.isNotEmpty())
             // Desde la lista se salta al recorrido por el nombre del grupo: tiene que existir.
             assertNotNull("«${f.title}» apunta a «${f.group}», que no está en la lista", Features.groups.firstOrNull { it.title == f.group })
-            assertEquals(f, Features.flowFor(f.group))
+            assertEquals(f.group, Features.flowFor(f.group)?.group)
             for (step in f.steps) {
                 assertTrue("Paso sin título en «${f.title}»", step.title.isNotBlank())
                 assertTrue("«${step.title}» sin texto", step.text.isNotBlank())
@@ -75,6 +75,12 @@ class FeaturesTest {
                 step.aside?.let { a -> assertTrue("Recuadro vacío en «${step.title}»", a.buttons.isNotEmpty() || !a.text.isNullOrBlank()) }
             }
         }
+        // El diario tiene el recorrido del celular y el de la PC: cada versión salta al suyo.
+        assertEquals("Diario", Features.flowFor("Diario", Platform.PHONE)?.title)
+        assertEquals("En la PC", Features.flowFor("Diario", Platform.DESKTOP)?.title)
+        // Cada grupo de la lista con algo del celular tiene su recorrido (salvo Progreso, que es una sola pantalla).
+        val withFlow = Features.flows.map { it.group }.toSet()
+        assertEquals(Features.groups.map { it.title }.toSet() - "Progreso", withFlow)
         // Un recorrido solo del celular sale en gris en la PC, igual que la lista.
         val phoneOnly = Features.flows.first { it.platforms == setOf(Platform.PHONE) }
         assertNull(phoneOnly.missingLabel(Platform.PHONE))
