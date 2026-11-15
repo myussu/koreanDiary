@@ -83,6 +83,33 @@ class SceneTest {
     }
 
     @Test
+    fun wordsThatHadADrawingButDidNotBringIt() {
+        // Antes había dibujo, pero escribirlas no lo traía (solo la IA al revisar).
+        assertEquals(listOf("flowers"), ids("봄에 꽃다발을 샀어요").distinct())
+        assertEquals(listOf("wind"), ids("봄바람이 불어요"))
+        assertEquals(listOf("sun"), ids("여름 아침에 해돋이를 봤어요"))
+        assertEquals(listOf("sky"), ids("새벽에 일어났어요"))
+        assertEquals(listOf("moon", "stars"), ids("반달이 떴고 별자리가 보였어요"))
+        assertEquals(listOf("night"), ids("어젯밤에 잤어요"))
+        assertEquals(listOf("lake"), ids("계곡에서 놀았어요"))
+        assertEquals(listOf("flowers"), ids("정원이 예뻐요"))
+        // 나뭇잎 son hojas, no el bosque.
+        assertEquals(listOf("leaves"), ids("나뭇잎이 떨어져요"))
+    }
+
+    @Test
+    fun aSyllableInAnotherSenseBringsNothing() {
+        // 눈 de los ojos, 해 de hacer, 달 de mes, 별 de «especial», 산 de comprar.
+        for (text in listOf("눈을 감았어요", "숙제를 해 주세요", "한번 해 봤어요", "한 달 동안 공부했어요", "별 거 아니에요", "어제 산 책이에요")) {
+            assertTrue("«$text» no debería sumar nada", ids(text).isEmpty())
+        }
+        // Lo mismo dicho de la escena sí trae su dibujo.
+        assertEquals(listOf("snow"), ids("눈이 와요"))
+        assertEquals(listOf("moon"), ids("달이 밝아요").take(1))
+        assertEquals(listOf("mountain"), ids("산에 갔어요"))
+    }
+
+    @Test
     fun oneSyllableNounsNeedToStandAlone() {
         // 해요 (hacer), 별로 (no mucho), 비싸요 (caro), 달라요 (distinto), 강아지 (perro): nada.
         for (text in listOf("해요", "별로 안 좋아요", "비싸요", "달라요", "강아지가 있어요")) {

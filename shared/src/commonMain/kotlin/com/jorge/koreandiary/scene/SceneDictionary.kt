@@ -81,26 +81,28 @@ object SceneDictionary {
         "잔디" to "grass", "풀" to "grass", "풀밭" to "grass", "초원" to "grass", "들판" to "grass", "초록" to "grass",
         "밀밭" to "wheat", "밀" to "wheat", "보리" to "wheat", "황금" to "wheat", "금빛" to "wheat", "벼" to "wheat", "논" to "wheat",
         "모래" to "sand", "해변" to "sand", "해수욕" to "sand", "백사장" to "sand",
-        "꽃" to "flowers", "꽃밭" to "flowers", "장미" to "flowers", "튤립" to "flowers",
-        "낙엽" to "leaves", "단풍" to "leaves", "가을" to "leaves",
+        "꽃" to "flowers", "꽃밭" to "flowers", "장미" to "flowers", "튤립" to "flowers", "꽃다발" to "flowers", "꽃집" to "flowers", "정원" to "flowers",
+        "봄" to "flowers", "봄날" to "flowers",
+        "낙엽" to "leaves", "단풍" to "leaves", "가을" to "leaves", "나뭇잎" to "leaves",
         "길" to "street", "거리" to "street", "골목" to "street", "도로" to "street",
         // Horizonte
         "바다" to "sea", "바닷" to "sea", "파도" to "sea", "해안" to "sea", "수평선" to "sea", "물결" to "sea",
-        "호수" to "lake", "강" to "lake", "강물" to "lake", "시냇" to "lake", "개울" to "lake", "연못" to "lake",
+        "호수" to "lake", "강" to "lake", "강물" to "lake", "시냇" to "lake", "개울" to "lake", "연못" to "lake", "계곡" to "lake",
         "산" to "mountain", "언덕" to "mountain", "봉우리" to "mountain",
         "숲" to "forest", "나무" to "forest", "나뭇" to "forest", "공원" to "forest",
         "도시" to "city", "건물" to "city", "빌딩" to "city",
         // Cielo
-        "하늘" to "sky", "파랗" to "sky", "파란" to "sky", "파래" to "sky", "푸른" to "sky", "푸르" to "sky",
+        "하늘" to "sky", "파랗" to "sky", "파란" to "sky", "파래" to "sky", "푸른" to "sky", "푸르" to "sky", "새벽" to "sky",
         "해" to "sun", "햇빛" to "sun", "햇살" to "sun", "태양" to "sun", "햇볕" to "sun", "맑" to "sun", "밝" to "sun",
+        "해돋이" to "sun", "일출" to "sun", "아침" to "sun", "여름" to "sun",
         "노을" to "sunset", "석양" to "sunset", "저녁" to "sunset", "해질" to "sunset", "해가 지" to "sunset",
         "구름" to "clouds", "흐리" to "clouds", "흐려" to "clouds", "흐린" to "clouds",
-        "밤" to "night", "밤하늘" to "night", "어둡" to "night", "어두" to "night", "깜깜" to "night",
-        "달" to "moon", "달빛" to "moon", "보름달" to "moon",
-        "별" to "stars", "별빛" to "stars", "은하수" to "stars",
+        "밤" to "night", "밤하늘" to "night", "어둡" to "night", "어두" to "night", "깜깜" to "night", "오늘밤" to "night", "어젯밤" to "night", "한밤" to "night",
+        "달" to "moon", "달빛" to "moon", "보름달" to "moon", "반달" to "moon", "초승달" to "moon",
+        "별" to "stars", "별빛" to "stars", "은하수" to "stars", "별자리" to "stars",
         "무지개" to "rainbow",
         // Aire
-        "바람" to "wind", "산들" to "wind",
+        "바람" to "wind", "산들" to "wind", "봄바람" to "wind",
         "비" to "rain", "빗" to "rain", "빗방울" to "rain", "소나기" to "rain", "장마" to "rain",
         "눈" to "snow", "눈송이" to "snow", "함박눈" to "snow", "겨울" to "snow",
         "꽃잎" to "petals", "벚꽃" to "petals",
@@ -123,6 +125,19 @@ object SceneDictionary {
     internal val needsParticle = setOf("게", "새", "절")
 
     /**
+     * Frases donde una palabra de una sílaba es otra cosa: 눈 de los ojos (눈을 감았다), 해 de hacer
+     * (해 주세요, 해 봤어요), 달 de mes (한 달), 별 de «especial» (별 거 아니에요) y 산 de comprar
+     * (어제 산 책). Ahí no trae su dibujo.
+     */
+    internal val notScene = listOf(
+        "눈을 감", "눈을 뜨", "눈을 떠", "눈을 떴", "눈을 뜬", "눈이 아프", "눈이 아파", "눈이 나쁘", "눈이 나빠", "눈에 띄", "눈에 들어",
+        "해 주", "해 줘", "해 줬", "해 드", "해 봐", "해 봤", "해 보", "해 버", "해 놓", "해 둬", "해 둔", "해 야",
+        "한 달", "두 달", "세 달", "몇 달", "이번 달", "다음 달", "지난 달", "달 동안",
+        "별 거", "별 것", "별 일", "별 생각", "별 차이", "별 문제", "별 볼일",
+        "산 거", "산 것", "새로 산", "어제 산", "같이 산", "내가 산", "제가 산",
+    )
+
+    /**
      * Partículas que pueden seguir a un sustantivo de una sílaba. Sin 로: «별로» (no mucho) no son
      * estrellas.
      */
@@ -132,7 +147,7 @@ object SceneDictionary {
     )
 
     /** Las palabras de la app, sin dibujos nuevos. */
-    private val builtIn = SceneLexicon(keys.entries.map { it.key to it.value }, stems, particles, needsParticle) { byId[it] }
+    private val builtIn = SceneLexicon(keys.entries.map { it.key to it.value }, stems, particles, needsParticle, notScene) { byId[it] }
 
     /**
      * Elementos que aparecen en [text], en el orden en que se escribieron, sin repetir: la escena
@@ -158,7 +173,7 @@ object SceneDictionary {
         if (custom.isEmpty()) return builtIn
         val all = (keys.entries.map { it.key to it.value } + custom.flatMap { d -> d.keys.map { it to d.id } }).distinctBy { it.first }
         val elements = custom.associate { it.id to it.element }
-        return SceneLexicon(all, stems, particles, needsParticle) { byId[it] ?: elements[it] }
+        return SceneLexicon(all, stems, particles, needsParticle, notScene) { byId[it] ?: elements[it] }
     }
 
     /** Ids de la lista para el prompt: «id (nombre)», con los dibujos nuevos al final. */
@@ -175,6 +190,8 @@ class SceneLexicon internal constructor(
     stems: Set<String>,
     private val particles: List<String>,
     private val needsParticle: Set<String>,
+    /** Frases donde una sílaba suelta no es la de la escena (ver [SceneDictionary.notScene]). */
+    private val notScene: List<String>,
     private val elementOf: (String) -> SceneElement?,
 ) {
     /** Claves de varias palabras ("해가 지"): se buscan en el texto tal cual. */
@@ -222,8 +239,19 @@ class SceneLexicon internal constructor(
             val head = word.substring(0, 1)
             val single = singleSyllable[head] ?: continue
             val rest = word.substring(1)
-            if (rest in particles && (rest.isNotEmpty() || head !in needsParticle)) add(single, at, head)
+            if (rest in particles && (rest.isNotEmpty() || head !in needsParticle) && !inOtherSense(text, at, head)) add(single, at, head)
         }
         return found.entries.sortedBy { it.value.first }.mapNotNull { (id, v) -> elementOf(id)?.let { it to v.second } }
+    }
+
+    /** ¿La sílaba [head] escrita en [at] es parte de una frase de [notScene]? */
+    private fun inOtherSense(text: String, at: Int, head: String): Boolean = notScene.any { phrase ->
+        var i = phrase.indexOf(head)
+        var hit = false
+        while (i >= 0 && !hit) {
+            hit = at - i >= 0 && text.startsWith(phrase, at - i)
+            i = phrase.indexOf(head, i + 1)
+        }
+        hit
     }
 }
