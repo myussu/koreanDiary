@@ -1,0 +1,11 @@
+{
+ "id": "reeds",
+ "name": "juncos",
+ "keys": ["갈대"],
+ "zone": "GROUND",
+ "size": "MEDIUM",
+ "motion": "SWAY",
+ "count": 1,
+ "colors": [{"key":"green","light":"#5e8a58","dark":"#9dbd7f"},{"key":"leaf","light":"#88a54c","dark":"#b5cf78"},{"key":"brown","light":"#8e6343","dark":"#c49b72"},{"key":"tan","light":"#bb8957","dark":"#dfba86"}],
+ "shapes": [{"k":"stroke","pts":[[27,100],[27,61],[23,23]],"w":4,"c":"green","a":0.75},{"k":"stroke","pts":[[49,100],[51,59],[55,13]],"w":4,"c":"green","a":0.75},{"k":"stroke","pts":[[69,100],[73,63],[78,32]],"w":4,"c":"green","a":0.75},{"k":"stroke","pts":[[36,100],[23,80],[9,64]],"w":4,"c":"green","a":0.75},{"k":"stroke","pts":[[42,100],[42,68],[36,48]],"w":4,"c":"leaf","a":0.75},{"k":"stroke","pts":[[61,100],[78,78],[92,66]],"w":4,"c":"leaf","a":0.75},{"k":"stroke","pts":[[54,100],[67,78],[67,55]],"w":4,"c":"green","a":0.75},{"k":"stroke","pts":[[23,37],[22,22],[21,9]],"w":9,"c":"brown","a":0.85,"move":"SWAY"},{"k":"stroke","pts":[[55,30],[56,17],[57,4]],"w":9,"c":"brown","a":0.85,"move":"SWAY"},{"k":"stroke","pts":[[78,48],[79,35],[80,22]],"w":9,"c":"brown","a":0.85,"move":"SWAY"},{"k":"stroke","pts":[[20,28],[20,23],[20,18]],"w":3,"c":"tan","a":0.55},{"k":"stroke","pts":[[54,20],[54,16],[54,11]],"w":3,"c":"tan","a":0.55}]
+}
