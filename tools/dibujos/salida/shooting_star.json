@@ -1,0 +1,11 @@
+{
+ "id": "shooting_star",
+ "name": "estrella fugaz",
+ "keys": ["별똥별"],
+ "zone": "SKY",
+ "size": "SMALL",
+ "motion": "DRIFT",
+ "count": 1,
+ "colors": [{"key":"gold","light":"#cfaa4e","dark":"#edd080"},{"key":"white","light":"#b8c0bd","dark":"#d9e1db"},{"key":"blue","light":"#548eae","dark":"#83bad3"}],
+ "shapes": [{"k":"wash","pts":[[64,26],[6,90],[76,38]],"c":"gold","a":0.4},{"k":"stroke","pts":[[14,84],[40,57],[67,34]],"w":5,"c":"white","a":0.7},{"k":"stroke","pts":[[15,71],[40,46],[64,27]],"w":4,"c":"blue","a":0.4},{"k":"stroke","pts":[[29,85],[53,59],[76,39]],"w":4,"c":"gold","a":0.65},{"k":"blob","x":73,"y":29,"r":17,"sq":1,"ang":0,"c":"gold","a":0.15,"move":"TWINKLE"},{"k":"wash","pts":[[73,10],[78,23],[92,24],[81,33],[85,48],[73,40],[61,48],[65,33],[54,24],[68,23]],"c":"gold","a":0.86},{"k":"blob","x":73,"y":29,"r":5,"sq":1,"ang":0,"c":"white","a":0.8,"move":"TWINKLE"},{"k":"blob","x":42,"y":66,"r":3,"sq":1,"ang":0,"c":"gold","a":0.75,"move":"TWINKLE"}]
+}
