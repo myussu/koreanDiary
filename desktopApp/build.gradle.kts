@@ -30,6 +30,9 @@ tasks.test {
     val screens = layout.buildDirectory.dir("screens").get().asFile
     systemProperty("koreandiary.dataDir", data.absolutePath)
     systemProperty("koreandiary.screens", screens.absolutePath)
+    // Las capturas son salida de la tarea: si Gradle reusa los tests de la caché (el mismo commit ya
+    // se probó en la rama), también las restaura y el release no queda sin ellas.
+    outputs.dir(screens)
     doFirst { data.deleteRecursively() }
     testLogging { events("passed", "skipped", "failed") }
 }
