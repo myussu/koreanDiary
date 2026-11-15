@@ -185,5 +185,7 @@ class ConversationTest {
         assertTrue("«tengo tres horas de clase»" in p)
         assertTrue("YO: 네, 이번 학기에" in p)
         assertTrue("\"tu\"" in p && "\"nat\"" in p)
+        // La misma ayuda por partes que en el diario.
+        assertTrue("\"pista\"" in p)
     }
 }

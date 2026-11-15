@@ -599,7 +599,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     private val isScene get() = _state.value.page?.kind == PageKind.SCENE
 
-    /** La última idea preguntada: se guarda en la escena con la pista a la que llegaste. */
+    /** La última idea preguntada: se guarda en la página con la pista a la que llegaste (para las notas de sentido). */
     private var lastIdea: String? = null
 
     fun askHowTo(idea: String) {
@@ -607,10 +607,11 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         lastIdea = idea.trim()
         viewModelScope.launch {
             val settings = c.settings.state.value
-            // Escenas: ayuda por partes y las gramáticas nuevas como objetivo si encajan.
+            // Ayuda por partes en el diario y en las escenas; en las escenas además los elementos y el
+            // tono, y las gramáticas nuevas como objetivo si encajan.
             val prompt = Prompts.howToSay(
                 idea, settings.level, settings.standardLevel,
-                tiered = isScene,
+                scene = isScene,
                 targets = if (isScene) _state.value.newGrammar.map { it.label } else emptyList(),
                 customScene = if (isScene) c.sceneDrawings.drawings() else emptyList(),
             )
@@ -665,13 +666,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val mineTags = c.study.annotate(r.mine.grammar, emptyList())
         val naturalTags = r.natural?.let { c.study.annotate(it.grammar, emptyList()) } ?: emptyList()
         val wordTags = c.study.annotate(emptyList(), r.words)
-        val result = HowTo.Result(r, mineTags, naturalTags, wordTags, shown = if (isScene) 1 else 3)
+        val result = HowTo.Result(r, mineTags, naturalTags, wordTags, shown = 1)
         _howTo.value = result
         react(MascotMood.SURPRISED, holdMs = 4_000)
         revealed(result)
     }
 
-    /** Escenas: la siguiente pista (palabras → cómo unirlas → la frase). */
+    /** La siguiente pista (palabras → cómo unirlas → la frase). */
     fun moreHowTo() {
         val r = _howTo.value as? HowTo.Result ?: return
         if (r.shown >= 3) return
@@ -682,9 +683,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     /**
      * Lo que ya viste pasa a "sugerido" en esta página: si luego lo usas, FSRS lo cuenta como
-     * reconocimiento ("Hard"), no como recuerdo libre. Por eso en las escenas se suma por partes:
-     * la gramática de la frase recién cuando ves cómo unir, la versión natural recién con la frase.
-     * En la escena se guarda además la idea y hasta qué pista llegaste.
+     * reconocimiento ("Hard"), no como recuerdo libre. Por eso se suma por partes: la gramática de la
+     * frase recién cuando ves cómo unir, la versión natural recién con la frase. En la página se guarda
+     * además la idea y hasta qué pista llegaste (para las notas de sentido; en `sceneJson`, que en el
+     * diario solo lleva las ideas).
      */
     private suspend fun revealed(r: HowTo.Result) {
         val refs = buildList {
@@ -693,27 +695,29 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             if (r.shown >= 3) addAll(r.naturalTags)
         }.mapNotNull { it.ref }
         addSuggested(refs)
-        val idea = lastIdea
-        if (isScene && idea != null) {
-            val page = _state.value.page ?: return
-            val scene = SceneData.parse(page.sceneJson)
+        val idea = lastIdea ?: return
+        val page = _state.value.page ?: return
+        val scene = SceneData.parse(page.sceneJson)
+        val updated = if (isScene) {
             // La idea dicha, y lo que la IA vio en ella (elementos y tono) esperando a que lo escribas:
             // la escena reacciona a la tinta, no a lo que pensabas escribir. Si ya está escrito, aparece.
             val words = PendingScene.wordsFrom(r.response.words.map { it.first }, r.response.mine.text)
-            val updated = scene.withIdea(SceneIdea(idea, r.shown))
+            scene.withIdea(SceneIdea(idea, r.shown))
                 .withPending(PendingScene(r.response.sceneElements, r.response.sceneMood, words))
                 .revealWritten(liveText())
-            if (updated != scene) {
-                persist { it.copy(sceneJson = updated.toJson()) }
-                publishScene()
-            }
+        } else {
+            scene.withIdea(SceneIdea(idea, r.shown))
+        }
+        if (updated != scene) {
+            persist { it.copy(sceneJson = updated.toJson()) }
+            if (isScene) publishScene()
         }
     }
 
-    // ---------- Actualizar sugerencias (escenas) ----------
+    // ---------- Actualizar sugerencias ----------
 
     /**
-     * Sugerencias que siguen a la escena: lee lo que llevas escrito (ML Kit, gratis), arma candidatos
+     * Sugerencias que siguen a lo que escribes (diario o escena): lee lo que llevas escrito (ML Kit, gratis), arma candidatos
      * (lo que FSRS dice que te toca repasar y un poco del catálogo que no está en tu lista) y una
      * llamada a la IA elige lo que encaja. Se suman a las anteriores: lo que ya viste sugerido sigue
      * contando como reconocido si lo usas.
@@ -722,7 +726,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val current = _state.value
         if (current.refreshing) return
         if (current.strokes.isEmpty()) {
-            _state.update { it.copy(message = "Escribe algo de la escena primero: las sugerencias se eligen según lo que llevas.") }
+            _state.update { it.copy(message = "Escribe algo primero: las sugerencias se eligen según lo que llevas.") }
             return
         }
         viewModelScope.launch {
@@ -731,7 +735,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
             val api = providerId?.let { c.apiProvider(it) }
             if (providerId == null || api == null) {
-                _state.update { it.copy(message = "Para actualizar las sugerencias según tu escena, configura Gemini (es gratis) en Ajustes › IA.") }
+                _state.update { it.copy(message = "Para actualizar las sugerencias según lo que escribes, configura Gemini (es gratis) en Ajustes › IA.") }
                 return@launch
             }
             if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
@@ -755,13 +759,14 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     if (candidates.isEmpty()) {
                         "No hay más candidatos en tus listas por ahora."
                     } else {
-                        val raw = api.complete(CorrectionRequest(Prompts.sceneSuggestions(settings.level, settings.standardLevel, text, candidates)))
+                        val raw = api.complete(CorrectionRequest(Prompts.contextSuggestions(settings.level, settings.standardLevel, text, candidates, scene = isScene)))
                         c.settings.registerUse(providerId)
                         val picked = SceneSuggestionsParser.parse(raw, candidates.map { it.ref }.toSet()).mapNotNull { ItemRef.parse(it) }
                         refreshed += picked
                         addSuggested(picked)
-                        if (picked.isEmpty()) "La IA no encontró nada nuevo que encaje con tu escena."
-                        else "Sumé ${picked.size} sugerencias para tu escena (van primero). Las anteriores siguen."
+                        val what = if (isScene) "tu escena" else "lo que escribes"
+                        if (picked.isEmpty()) "La IA no encontró nada nuevo que encaje con $what."
+                        else "Sumé ${picked.size} sugerencias para $what (van primero). Las anteriores siguen."
                     }
                 }
             } catch (e: ProviderException) {
@@ -916,8 +921,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             val settings = c.settings.state.value
             val items = c.study.promptItems(ItemRef.decodeList(page.suggestedItems))
             val isScene = page.kind == PageKind.SCENE
-            // Escenas: lo que dijiste en «¿Cómo digo?», para avisar si lo escrito dice otra cosa.
-            val ideas = if (isScene) SceneData.parse(page.sceneJson).ideas.map { it.text } else emptyList()
+            // Lo que dijiste en «¿Cómo digo?», para avisar si lo escrito dice otra cosa (diario y escenas).
+            val ideas = SceneData.parse(page.sceneJson).ideas.map { it.text }
             val custom = if (isScene) c.sceneDrawings.drawings() else emptyList()
             // Tus errores de las últimas dos semanas: la IA avisa si uno se repite.
             val recent = c.study.recentErrors(System.currentTimeMillis(), page.id)

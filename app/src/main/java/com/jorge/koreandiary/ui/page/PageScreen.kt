@@ -218,9 +218,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         SuggestionsBar(
             state.suggestions,
             newGrammar = state.newGrammar,
-            // Escenas: sugerencias que siguen a lo que llevas escrito, también después de revisar
-            // (se sigue escribiendo).
-            onRefresh = if (isScene) vm::refreshSuggestions else null,
+            // Sugerencias que siguen a lo que llevas escrito, también después de revisar (se sigue
+            // escribiendo). Igual en el diario y en las escenas.
+            onRefresh = vm::refreshSuggestions,
             refreshing = state.refreshing,
             explain = explain,
             onChip = vm::toggleExplain,
@@ -235,7 +235,6 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
         if (howToOpen || howTo != HowTo.Idle) {
             HowToSayPanel(
                 state = howTo,
-                tiered = isScene,
                 voice = voice,
                 onDictate = vm::dictateHowTo,
                 onMore = vm::moreHowTo,
@@ -594,8 +593,6 @@ private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -
 @Composable
 private fun HowToSayPanel(
     state: HowTo,
-    /** Escenas: ayuda por partes y dictado. */
-    tiered: Boolean,
     voice: HowToVoice,
     onDictate: () -> Unit,
     onMore: () -> Unit,
@@ -651,17 +648,15 @@ private fun HowToSayPanel(
                     OutlinedTextField(
                         value = idea,
                         onValueChange = { idea = it },
-                        placeholder = { Text(if (tiered) "Dila o escríbela, en español" else "Lo que quieres decir, en español") },
+                        placeholder = { Text("Dila o escríbela, en español") },
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { ask() }),
                         modifier = Modifier.weight(1f),
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (tiered) {
-                            AppOutlinedButton(onClick = ::dictate, enabled = state != HowTo.Asking) {
-                                Text(if (voice.listening) "Escuchando… (parar)" else "Dictar")
-                            }
+                        AppOutlinedButton(onClick = ::dictate, enabled = state != HowTo.Asking) {
+                            Text(if (voice.listening) "Escuchando… (parar)" else "Dictar")
                         }
                         AppButton(onClick = ::ask, enabled = idea.isNotBlank() && state != HowTo.Asking && !voice.listening) { Text("Preguntar") }
                     }
@@ -682,44 +677,15 @@ private fun HowToSayPanel(
                     }) { Text("Pegar") }
                 }
                 is HowTo.Error -> Text(state.message, color = scheme.error, style = MaterialTheme.typography.bodySmall)
-                is HowTo.Result -> if (expanded) {
-                    if (tiered) TieredHowToResult(state, onMore) else HowToResult(state)
-                }
+                is HowTo.Result -> if (expanded) TieredHowToResult(state, onMore)
                 HowTo.Idle -> Unit
             }
         }
     }
 }
 
-@Composable
-private fun HowToResult(result: HowTo.Result) {
-    val scheme = MaterialTheme.colorScheme
-    val r = result.response
-    Text(if (r.natural == null) "CON LO QUE SABES (Y ES NATURAL)" else "CON LO QUE SABES", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-    Text(r.mine.text, fontSize = 22.sp)
-    AnnotatedTags(result.mineTags)
-    r.natural?.let { nat ->
-        Text("COMO LO DIRÍA UN COREANO", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-        Text(nat.text, fontSize = 22.sp)
-        AnnotatedTags(result.naturalTags)
-    }
-    if (r.note.isNotBlank()) Text(r.note, style = MaterialTheme.typography.bodySmall)
-    if (result.wordTags.isNotEmpty()) {
-        Text(
-            result.wordTags.joinToString("  ·  ") { w ->
-                (if (w.known) "" else "+") + w.label + (w.meaning?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-        )
-    }
-    if ((result.mineTags + result.naturalTags + result.wordTags).any { !it.known }) {
-        Text("“+” = no está en tus listas (el número es su nivel en el estándar).", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-    }
-}
-
 /**
- * Escenas: la ayuda por partes, para que intentes armar la frase antes de verla.
+ * La ayuda por partes, para que intentes armar la frase antes de verla (diario y escenas).
  * 1) las palabras; 2) cómo unirlas (partículas y terminación, sin la frase); 3) la frase.
  */
 @Composable

@@ -78,7 +78,8 @@ sealed interface CoachPanel {
     data class TargetShown(val item: PromptItem, val detail: String?, val explanation: ItemExplanation? = null) : CoachPanel
     /** "¿Cómo digo?": escribes o dictas en español lo que quieres decir. */
     data class HowToInput(val text: String = "", val listening: Boolean = false, val error: String? = null) : CoachPanel
-    data class HowToShown(val idea: String, val answer: HowToSayResponse) : CoachPanel
+    /** La ayuda por partes, como en el diario: [shown] 1 = palabras, 2 = cómo unirlas, 3 = la frase. */
+    data class HowToShown(val idea: String, val answer: HowToSayResponse, val shown: Int = 1) : CoachPanel
     data class Error(val message: String) : CoachPanel
 }
 
@@ -624,6 +625,11 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val current = st.panel
         if (!auto && current is CoachPanel.HintShown && current.level < 3) {
             _state.update { it.copy(panel = current.copy(level = current.level + 1)) }
+            return
+        }
+        // «¿Cómo digo?»: la siguiente parte (palabras → cómo unirlas → la frase).
+        if (!auto && current is CoachPanel.HowToShown) {
+            if (current.shown < 3) _state.update { it.copy(panel = current.copy(shown = current.shown + 1)) }
             return
         }
         val s = c.settings.state.value

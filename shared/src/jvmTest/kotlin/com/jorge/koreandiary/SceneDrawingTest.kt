@@ -161,7 +161,7 @@ class SceneDrawingTest {
         assertTrue(prompt.contains("x_cat (gato)"))
         assertTrue(prompt.contains("\"nuevos\": [{\"ko\": \"고양이\", \"es\": \"gato\"}]"))
         assertFalse(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false).contains("nuevos"))
-        assertTrue(Prompts.howToSay("veo un gato", "3A", 3, tiered = true, customScene = custom).contains("x_cat (gato)"))
+        assertTrue(Prompts.howToSay("veo un gato", "3A", 3, scene = true, customScene = custom).contains("x_cat (gato)"))
 
         val base = """{"oraciones":[{"n":1,"texto":"x","tiempo":"pasado"}],"correcciones":[],"usados":[{"f":"고양이","t":"n","ok":true,"id":null}],"mejoras":[]"""
         val r = CorrectionParser.parse(

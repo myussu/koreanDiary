@@ -568,15 +568,30 @@ internal fun CoachPanelView(
                     panel.error?.let { Text(it, color = scheme.error, style = MaterialTheme.typography.bodySmall) }
                 }
                 is CoachPanel.HowToShown -> {
+                    // Por partes, como en el diario: palabras → cómo unirlas → la frase.
                     val a = panel.answer
                     Text("«${panel.idea}»", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    Text(a.mine.text, style = MaterialTheme.typography.titleLarge)
-                    a.natural?.let { Text("Más natural: ${it.text}", style = MaterialTheme.typography.bodyMedium) }
-                    if (a.note.isNotBlank()) Text(a.note, style = MaterialTheme.typography.bodySmall)
-                    if (a.words.isNotEmpty()) {
-                        Text(a.words.joinToString(" · ") { (f, m) -> if (m.isBlank()) f else "$f: $m" }, style = MaterialTheme.typography.bodySmall)
+                    Text("1 · PALABRAS", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    if (a.words.isEmpty()) {
+                        Text("La IA no separó las palabras; pide la siguiente ayuda.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(a.words.joinToString("  ·  ") { (f, m) -> if (m.isBlank()) f else "$f: $m" }, style = MaterialTheme.typography.bodyLarge)
                     }
-                    Text("Dilo cuando estés listo: la IA ya sabe qué preguntaste.", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    if (panel.shown >= 2) {
+                        Text("2 · CÓMO UNIRLAS", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                        Text(a.hint?.takeIf { it.isNotBlank() } ?: "La IA no dio esta pista; mira la frase.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (panel.shown >= 3) {
+                        Text("3 · LA FRASE", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                        Text(a.mine.text, style = MaterialTheme.typography.titleLarge)
+                        a.natural?.let { Text("Más natural: ${it.text}", style = MaterialTheme.typography.bodyMedium) }
+                        if (a.note.isNotBlank()) Text(a.note, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(
+                        if (panel.shown < 3) "Intenta decirla antes de verla: la IA ya sabe qué preguntaste." else "Dilo cuando estés listo: la IA ya sabe qué preguntaste.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
                 }
                 CoachPanel.None -> Unit
             }
@@ -586,7 +601,10 @@ internal fun CoachPanelView(
                     AppTextButton(onClick = onExplain) { Text("Explicar con IA") }
                 }
                 if (panel is CoachPanel.TargetShown && includeLabel != null) AppTextButton(onClick = onToggleInclude) { Text(includeLabel) }
-                if (panel is CoachPanel.HowToShown && howTo != null) {
+                if (panel is CoachPanel.HowToShown && panel.shown < 3) {
+                    AppTextButton(onClick = onMore) { Text(if (panel.shown == 1) "Más ayuda" else "Ver la frase") }
+                }
+                if (panel is CoachPanel.HowToShown && panel.shown >= 3 && howTo != null) {
                     AppTextButton(onClick = { howTo.onHear(panel.answer.mine.text) }) { Text("Que la IA lo diga") }
                 }
                 AppTextButton(onClick = onClose) { Text("Cerrar") }

@@ -68,7 +68,9 @@ object Features {
             listOf(
                 phone("«Nueva página» trae sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel."),
                 phone("Toca una sugerencia para ver su significado, cómo se usa y ejemplos."),
-                phone("«¿Cómo digo?»: escribes la idea en español y te da la frase a tu nivel y, si cambia, la natural."),
+                phone("«¿Cómo digo?»: «Dictar» o escribes la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase», a tu nivel y, si cambia, la natural. Igual en el diario, las escenas y la conversación."),
+                phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con lo que cuentas (también después de «Revisar»)."),
+                phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste en «¿Cómo digo?», «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
                 phone("Herramientas: Lápiz, Borrar, «+ Línea» (inserta un renglón donde tocas), Deshacer y Rehacer."),
                 phone("«Revisar»: la app lee tu letra, confirmas el texto y la IA corrige."),
                 phone("La revisión va en tres niveles: bien, corregir (lo reescribes) y correcto pero más natural (cómo lo escribiría un coreano; solo para leer, «Descartar» si no te sirve). Arriba sale cuántas oraciones hay de cada uno."),
@@ -86,9 +88,7 @@ object Features {
             listOf(
                 phone("Describe un lugar o un momento, vivido o imaginado: mismo lienzo, Revisar y Verificar que el diario."),
                 phone("«Nueva escena» trae dos gramáticas nuevas (★), un paso por encima de tu nivel, aparte de las sugerencias."),
-                phone("«¿Cómo digo?»: «Dictar» la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase»."),
-                phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con tu escena (también después de «Revisar»)."),
-                phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste, «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
+                phone("Las mismas ayudas que el diario: «¿Cómo digo?» por partes con «Dictar», «Actualizar» las sugerencias según tu escena y las notas de sentido (≈)."),
                 phone("Escena viva: mientras escribes, lo que nombras aparece pintado a pincel en acuarela en una franja abajo de la hoja (el mar, un árbol que se mece, el sol, la lluvia, un gato, un faro, un templo… unas 135 cosas), sin tapar donde escribes. Lo que pides en «¿Cómo digo?» aparece recién cuando lo escribes. Si no tocas la hoja por 30 segundos se queda quieta para no gastar batería; al tocarla sigue."),
                 phone("Tono de la escena: al «Revisar» o con «¿Cómo digo?», la IA lee lo que se siente (amor, calma, nostalgia, tristeza…) y una luz de ese color sube desde abajo. No gasta pedidos extra."),
                 phone("Dibujos nuevos con Claude: al «Revisar» una escena, lo que se ve y la escena viva no sabía pintar (un camello, un robot) lo dibuja Claude en acuarela, hasta 2 por página: dibuja, mira cómo quedó y lo corrige; desde entonces aparece al escribir su palabra. Sin clave de Claude queda en espera."),
@@ -111,7 +111,8 @@ object Features {
             listOf(
                 phone("Conversación por voz con Gemini sobre el tema que elijas."),
                 phone("«Pulsar para hablar» (no te corta aunque pienses) o «Automático»."),
-                phone("«Pista» en tres niveles con «Más ayuda», «¿Cómo digo?» con «Dictar», «Traducir» la última frase y «Lento»."),
+                phone("«Pista» en tres niveles con «Más ayuda», «Traducir» la última frase y «Lento»."),
+                phone("«¿Cómo digo?» con «Dictar», por partes como en el diario: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase»; después, «Que la IA lo diga»."),
                 phone("Toca una palabra de la IA para traducirla."),
                 phone("El texto de la IA sale borroso hasta que lo tocas, para practicar escuchar (se apaga en Ajustes › Hablar y escuchar)."),
                 phone("Pista automática si no respondes (se activa en Ajustes › Hablar y escuchar)."),
@@ -222,7 +223,16 @@ object Features {
                     "Escribes con el S Pen",
                     "«+ Línea» abre un renglón donde tocas. La pantalla no se apaga mientras escribes.",
                     listOf("Lápiz", "Borrar", "+ Línea", "Deshacer", "Rehacer"),
-                    FlowAside("Si no sabes cómo decirlo", listOf("¿Cómo digo?"), "Escribes la idea en español y te da la frase a tu nivel; la escribes tú, a mano."),
+                    FlowAside(
+                        "Si no sabes cómo decirlo",
+                        listOf("¿Cómo digo?", "Dictar", "Más ayuda", "Ver la frase"),
+                        "La dices o la escribes en español; la ayuda llega por partes: palabras, cómo unirlas y la frase. La escribes tú, a mano.",
+                    ),
+                ),
+                FlowStep(
+                    "Sumas sugerencias",
+                    "Lee lo que llevas escrito y suma palabras y gramática que encajan con lo que cuentas.",
+                    listOf("Actualizar"),
                 ),
                 FlowStep(
                     "Pides la revisión",
@@ -236,7 +246,7 @@ object Features {
                 ),
                 FlowStep(
                     "Lees la revisión",
-                    "En tres niveles: bien, corregir y correcto pero más natural. Cada error con su corrección y el porqué, y si se repite de las últimas dos semanas, lo dice. Lo más natural y las «mejoras» son para leer: no hace falta reescribirlas.",
+                    "En tres niveles: bien, corregir y correcto pero más natural. Cada error con su corrección y el porqué, y si se repite de las últimas dos semanas, lo dice. Lo más natural, las «mejoras» y las notas de sentido (≈, si escribiste otra cosa que lo que dijiste en «¿Cómo digo?») son para leer: no hace falta reescribirlas.",
                 ),
                 FlowStep(
                     "Reescribes y verificas",
@@ -276,7 +286,7 @@ object Features {
                 ),
                 FlowStep(
                     "Revisas",
-                    "Como en el diario. Además la IA lee el tono (sube una luz de ese color), avisa con ≈ si escribiste otra cosa que lo que querías decir, y lo que se ve sin dibujo lo dibuja Claude.",
+                    "Como en el diario, con las notas de sentido (≈). Además la IA lee el tono (sube una luz de ese color) y lo que se ve sin dibujo lo dibuja Claude.",
                     listOf("Revisar", "Descartar"),
                 ),
                 FlowStep(
@@ -338,8 +348,8 @@ object Features {
                     listOf("Hablar", "Listo"),
                     FlowAside(
                         "Si te trabas",
-                        listOf("Pista", "Más ayuda", "¿Cómo digo?", "Dictar", "Traducir", "Lento"),
-                        "Toca una palabra de la IA para traducirla. Su texto sale borroso hasta que lo tocas.",
+                        listOf("Pista", "Más ayuda", "¿Cómo digo?", "Dictar", "Ver la frase", "Traducir", "Lento"),
+                        "«¿Cómo digo?» va por partes, como en el diario: palabras, cómo unirlas y la frase. Toca una palabra de la IA para traducirla; su texto sale borroso hasta que lo tocas.",
                     ),
                 ),
                 FlowStep(

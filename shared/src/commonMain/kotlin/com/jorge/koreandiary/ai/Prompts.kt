@@ -152,70 +152,86 @@ object Prompts {
     }
 
     /**
-     * "¿Cómo digo esto?": la frase con lo que el estudiante sabe y, si difiere, la versión natural.
-     * No se manda su lista (ahorra tokens): basta el nivel; la app marca después lo que no está en sus listas.
+     * La ayuda del medio de «¿Cómo digo?» (palabras → pista → frase): cómo unir las palabras sin dar la
+     * frase. La comparten el diario, las escenas y la conversación.
      */
+    internal const val HINT_TASK = "\"pista\": cómo unir esas palabras SIN escribir la frase ni partes de ella en coreano: " +
+        "qué partícula lleva cada palabra (바람 + 이) y qué terminación lleva el verbo y por qué (쓰다듬다 en presente -어요). " +
+        "1 o 2 frases en español. Es la ayuda intermedia antes de ver la frase."
+
     /**
-     * «¿Cómo digo esto?». Con [tiered] (escenas) pide además "pista": cómo unir las palabras sin dar
-     * la frase, para mostrar la ayuda por partes (palabras → pista → frase). [targets]: gramáticas
-     * nuevas que el estudiante está practicando en esta página; se usan solo si encajan.
+     * «¿Cómo digo esto?»: la frase con lo que el estudiante sabe y, si difiere, la natural, con la pista
+     * para la ayuda por partes (palabras → pista → frase), igual en el diario y en las escenas. No se
+     * manda su lista (ahorra tokens): basta el nivel; la app marca después lo que no está en sus listas.
+     * [scene]: además los elementos de la escena viva y el tono. [targets]: gramáticas nuevas que está
+     * practicando en esta página; se usan solo si encajan.
      */
     fun howToSay(
         idea: String,
         level: String,
         standardLevel: Int,
-        tiered: Boolean = false,
+        scene: Boolean = false,
         targets: List<String> = emptyList(),
         /** Escenas: los dibujos nuevos que ya existen (entran a la lista de "esc"). */
         customScene: List<CustomDrawing> = emptyList(),
     ): String = buildString {
-        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe ${if (tiered) "una escena (un lugar o un momento, con lo que ve, oye y siente)" else "su diario"} y quiere decir:")
+        val writes = if (scene) "una escena (un lugar o un momento, con lo que ve, oye y siente)" else "su diario (lo que le pasó, lo que piensa o lo que planea)"
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe $writes y quiere decir:")
         appendLine("«${idea.trim().replace('\n', ' ')}»")
         appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
-        appendLine("1. \"tu\": la frase en coreano usando solo vocabulario y gramática de nivel $standardLevel o menor; la forma más simple que siga siendo correcta. Registro -어요 salvo que la idea pida otro.")
-        if (targets.isNotEmpty()) {
-            appendLine("   Está practicando estas gramáticas nuevas: ${targets.joinToString(", ")}. Si alguna encaja de forma natural en esta idea, úsala en \"tu\" aunque esté sobre su nivel; si ninguna encaja, no la fuerces.")
+        val tasks = buildList {
+            add(
+                "\"tu\": la frase en coreano usando solo vocabulario y gramática de nivel $standardLevel o menor; la forma más simple que siga siendo correcta. Registro -어요 salvo que la idea pida otro." +
+                    if (targets.isNotEmpty()) "\n   Está practicando estas gramáticas nuevas: ${targets.joinToString(", ")}. Si alguna encaja de forma natural en esta idea, úsala en \"tu\" aunque esté sobre su nivel; si ninguna encaja, no la fuerces." else ""
+            )
+            add("\"nat\": cómo lo diría normalmente un coreano. Si sería igual a \"tu\", pon null.")
+            add("En \"g\" de cada frase, las estructuras gramaticales usadas en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -을 것 같다); modificadores de sustantivo como -은, -는, -던; partículas sin guion (처럼). Omite 이/가, 은/는, 을/를, 에, 도, -어요.")
+            add("\"nota\": 1 o 2 frases en español sobre la diferencia, o por qué la frase ya es natural.")
+            add("\"w\": las palabras de contenido en forma de diccionario con su significado en español.")
+            add(HINT_TASK)
+            if (scene) {
+                add("\"esc\": qué elementos de esta lista aparecen en la idea, de lo más importante a lo menos (solo ids de la lista; [] si ninguno): ${SceneDictionary.promptList(customScene)}.")
+                add("\"tono\": $MOOD_TASK")
+            }
         }
-        appendLine("2. \"nat\": cómo lo diría normalmente un coreano. Si sería igual a \"tu\", pon null.")
-        appendLine("3. En \"g\" de cada frase, las estructuras gramaticales usadas en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -을 것 같다); modificadores de sustantivo como -은, -는, -던; partículas sin guion (처럼). Omite 이/가, 은/는, 을/를, 에, 도, -어요.")
-        appendLine("4. \"nota\": 1 o 2 frases en español sobre la diferencia, o por qué la frase ya es natural.")
-        appendLine("5. \"w\": las palabras de contenido en forma de diccionario con su significado en español.")
-        if (tiered) {
-            appendLine("6. \"pista\": cómo unir esas palabras SIN escribir la frase ni partes de ella en coreano: qué partícula lleva cada palabra (바람 + 이) y qué terminación lleva el verbo y por qué (쓰다듬다 en presente -어요). 1 o 2 frases en español. Es la ayuda intermedia antes de ver la frase.")
-            appendLine("7. \"esc\": qué elementos de esta lista aparecen en la idea, de lo más importante a lo menos (solo ids de la lista; [] si ninguno): ${SceneDictionary.promptList(customScene)}.")
-            appendLine("8. \"tono\": $MOOD_TASK")
-        }
+        tasks.forEachIndexed { i, task -> appendLine("${i + 1}. $task") }
         appendLine()
         appendLine("FORMATO:")
-        append("{\"tu\": {\"k\": \"...\", \"g\": [\"-은\"]}, \"nat\": {\"k\": \"...\", \"g\": [\"-었던\"]}, \"nota\": \"...\", \"w\": [{\"f\": \"다니다\", \"s\": \"asistir\"}]")
-        appendLine(if (tiered) ", \"pista\": \"...\", \"esc\": [\"wind\", \"grass\"], \"tono\": {\"id\": \"calm\", \"n\": 1}}" else "}")
+        append("{\"tu\": {\"k\": \"...\", \"g\": [\"-은\"]}, \"nat\": {\"k\": \"...\", \"g\": [\"-었던\"]}, \"nota\": \"...\", \"w\": [{\"f\": \"다니다\", \"s\": \"asistir\"}], \"pista\": \"...\"")
+        appendLine(if (scene) ", \"esc\": [\"wind\", \"grass\"], \"tono\": {\"id\": \"calm\", \"n\": 1}}" else "}")
     }
 
     /**
-     * «Actualizar sugerencias» en una escena: de [candidates] (lo que te toca repasar según FSRS y un
-     * poco del catálogo que aún no está en tu lista), la IA elige lo que encaja con lo que llevas
-     * escrito. [text] es lo que leyó ML Kit de tu letra y puede traer errores de lectura.
+     * «Actualizar» las sugerencias: de [candidates] (lo que te toca repasar según FSRS y un poco del
+     * catálogo que aún no está en tu lista), la IA elige lo que encaja con lo que llevas escrito, en el
+     * diario o en una escena. [text] es lo que leyó ML Kit de tu letra y puede traer errores de lectura.
      */
-    fun sceneSuggestions(
+    fun contextSuggestions(
         level: String,
         standardLevel: Int,
         text: String,
         candidates: List<PromptItem>,
+        scene: Boolean,
         known: Int = 4,
         extra: Int = 2,
     ): String = buildString {
-        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) está describiendo a mano una escena (un lugar o un momento, con lo que ve, oye y siente). Esto es lo que lleva escrito, leído de su letra (puede tener errores de lectura):")
+        val writes = if (scene) "está describiendo a mano una escena (un lugar o un momento, con lo que ve, oye y siente)" else "está escribiendo a mano su diario (lo que le pasó, lo que piensa o lo que planea)"
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) $writes. Esto es lo que lleva escrito, leído de su letra (puede tener errores de lectura):")
         appendLine("«${text.trim().replace('\n', ' ')}»")
         appendLine()
-        appendLine("Elige de esta lista lo que le ayudaría a seguir describiendo ESA escena de forma coherente. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine("Elige de esta lista lo que le ayudaría a seguir ${if (scene) "describiendo ESA escena" else "contando ESO"} de forma coherente. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
         appendLine("CANDIDATOS (código: forma, tipo):")
         candidates.forEach { appendLine("- ${it.ref}: ${it.label} (${it.kind})") }
         appendLine()
         appendLine("- Hasta $known de su lista (códigos que empiezan con w o g) y hasta $extra que aún no conoce (códigos sv o sg).")
-        appendLine("- Prefiere sustantivos y adjetivos de lo que se ve, se oye o se siente en esa escena, y una gramática que sirva para describirla.")
-        appendLine("- No elijas lo que ya usó en el texto ni lo que no tenga relación con la escena. Si nada encaja, devuelve la lista vacía.")
+        if (scene) {
+            appendLine("- Prefiere sustantivos y adjetivos de lo que se ve, se oye o se siente en esa escena, y una gramática que sirva para describirla.")
+        } else {
+            appendLine("- Prefiere palabras de lo que está contando (lugares, personas, cosas, lo que sintió) y una gramática que sirva para seguir: el orden de lo que pasó, causas, planes.")
+        }
+        appendLine("- No elijas lo que ya usó en el texto ni lo que no tenga relación con lo que escribe. Si nada encaja, devuelve la lista vacía.")
         appendLine("- Solo códigos de la lista, tal cual.")
         appendLine()
         appendLine("FORMATO:")

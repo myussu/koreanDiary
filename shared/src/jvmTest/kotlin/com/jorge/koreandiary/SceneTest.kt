@@ -181,13 +181,16 @@ class SceneTest {
 
     @Test
     fun sceneSuggestionsPromptListsTheCandidates() {
-        val p = Prompts.sceneSuggestions(
-            "3A", 3, "바다가 파래요\n바람이 불어요",
-            listOf(PromptItem("w12", "모래", "sustantivo"), PromptItem("sv465", "파도", "sustantivo")),
-        )
+        val candidates = listOf(PromptItem("w12", "모래", "sustantivo"), PromptItem("sv465", "파도", "sustantivo"))
+        val p = Prompts.contextSuggestions("3A", 3, "바다가 파래요\n바람이 불어요", candidates, scene = true)
         assertTrue(p.contains("- w12: 모래 (sustantivo)"))
         assertTrue(p.contains("- sv465: 파도 (sustantivo)"))
         assertTrue(p.contains("바다가 파래요 바람이 불어요"))
+        assertTrue(p.contains("ESA escena"))
+        // En el diario, lo mismo pero para seguir contando lo que le pasó.
+        val diary = Prompts.contextSuggestions("3A", 3, "어제 친구를 만났어요", candidates, scene = false)
+        assertTrue(diary.contains("su diario") && diary.contains("contando ESO"))
+        assertFalse(diary.contains("escena"))
     }
 
     // ---------- Notas de sentido ----------
@@ -285,20 +288,22 @@ class SceneTest {
         val noIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true)
         assertTrue(noIdeas.lines().any { it.startsWith("7. \"tono\"") })
         assertFalse(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false).contains("\"tono\""))
-        val how = Prompts.howToSay("tomo su mano", "3A", 3, tiered = true)
+        val how = Prompts.howToSay("tomo su mano", "3A", 3, scene = true)
         assertTrue(how.lines().any { it.startsWith("8. \"tono\"") })
         assertFalse(Prompts.howToSay("mañana voy", "3A", 3).contains("\"tono\""))
     }
 
     @Test
     fun scenePromptAsksForTheHintAndTheTargets() {
-        val scene = Prompts.howToSay("el viento acaricia el pasto", "3A", 3, tiered = true, targets = listOf("-아/어 보이다", "-는 것 같다"))
+        val scene = Prompts.howToSay("el viento acaricia el pasto", "3A", 3, scene = true, targets = listOf("-아/어 보이다", "-는 것 같다"))
         assertTrue(scene.contains("\"pista\""))
         assertTrue(scene.contains("\"esc\"") && scene.contains("wind (viento)"))
         assertTrue(scene.contains("-아/어 보이다, -는 것 같다"))
         assertTrue(scene.contains("escena"))
+        // El diario también trae la pista (la ayuda por partes es igual en todas partes), sin la escena.
         val diary = Prompts.howToSay("mañana voy", "3A", 3)
-        assertFalse(diary.contains("\"pista\""))
+        assertTrue(diary.contains("\"pista\""))
+        assertFalse(diary.contains("\"esc\""))
         assertFalse(diary.contains("gramáticas nuevas"))
         assertTrue(diary.contains("su diario"))
     }

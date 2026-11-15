@@ -169,9 +169,10 @@ object ConversationPrompts {
             3. En "g" de cada frase, las estructuras gramaticales usadas en notación estándar (-어서, -을 것 같다; partículas sin guion). Omite 이/가, 은/는, 을/를, 에, 도, -어요.
             4. "nota": 1 frase en español sobre la diferencia, o por qué la frase ya es natural.
             5. "w": las palabras de contenido en forma de diccionario con su significado en español.
+            6. ${Prompts.HINT_TASK}
 
             FORMATO:
-            {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": []}, "nota": "...", "w": [{"f": "수업", "s": "clase"}]}
+            {"tu": {"k": "...", "g": ["-은"]}, "nat": {"k": "...", "g": []}, "nota": "...", "w": [{"f": "수업", "s": "clase"}], "pista": "..."}
             """.trimIndent()
         )
     }
