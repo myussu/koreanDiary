@@ -181,6 +181,11 @@ object CorrectionStatus {
      * no se reescribe ni frena la racha; se puede descartar si cambiaste de idea.
      */
     const val NOTE = "nota"
+    /**
+     * Correcto pero más natural: la oración no tiene errores, pero un coreano la escribiría de otra
+     * forma. Como las notas, no se reescribe ni frena la racha; se puede descartar.
+     */
+    const val NATURAL = "natural"
 }
 
 @Entity(tableName = "corrections", indices = [Index(value = ["pageId"])])

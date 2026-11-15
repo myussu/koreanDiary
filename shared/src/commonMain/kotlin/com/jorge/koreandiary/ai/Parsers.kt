@@ -73,6 +73,7 @@ object CorrectionParser {
                 type = o.str("tipo") ?: "gramatica",
                 explanation = o.str("explicacion") ?: "",
                 itemRef = o.str("item_id")?.takeIf { ITEM_REF.matches(it) },
+                repeats = o.optInt("repite", 0).coerceIn(0, 99).let { if (it == 1) 0 else it },
             )
         }
         val used = parseUsedItems(json.optJSONArray("usados"))
@@ -90,6 +91,15 @@ object CorrectionParser {
             val suggestion = o.str("sugerencia") ?: return@mapObjects null
             MeaningNoteDto(o.optInt("oracion", 0), original, suggestion, o.str("explicacion") ?: "")
         }.take(3)
+        // Correcto pero más natural: solo si de verdad cambia algo y no es una de las correcciones.
+        val corrected = corrections.map { it.sentence }.toSet()
+        val naturals = json.optJSONArray("natural").mapObjects { o ->
+            val original = o.str("original") ?: return@mapObjects null
+            val suggestion = o.str("sugerencia") ?: return@mapObjects null
+            val n = o.optInt("oracion", 0)
+            if (n in corrected || sameSentence(original, suggestion)) return@mapObjects null
+            NaturalDto(n, original, suggestion, o.str("explicacion") ?: "")
+        }.distinctBy { it.sentence }.take(3)
         val allUsed = (used + legacyNew).distinctBy { it.itemRef ?: "${it.kind}:${it.form}" }
         if (sentences.isEmpty() && corrections.isEmpty() && allUsed.isEmpty()) {
             throw ParseException("La respuesta no tiene oraciones, correcciones ni ítems usados.")
@@ -99,8 +109,13 @@ object CorrectionParser {
             sceneElements(json.optJSONArray("escena")), sceneMood(json.opt("tono")),
             json.optString("imagen").trim().take(600),
             sceneNew(json.optJSONArray("nuevos")),
+            naturals = naturals,
         )
     }
+
+    /** Sin espacios ni puntuación: «más natural» que solo cambia un punto no cuenta. */
+    private fun sameSentence(a: String, b: String): Boolean =
+        a.filter { it.isLetterOrDigit() } == b.filter { it.isLetterOrDigit() }
 
     /** Lista "usados" (formato compacto f/t/ok o el anterior forma_base/resultado). La comparte el workbook. */
     internal fun parseUsedItems(arr: JSONArray?): List<UsedItemDto> = arr.mapObjects { o ->

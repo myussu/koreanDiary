@@ -199,6 +199,19 @@ interface DiaryDao {
     @Query("SELECT * FROM corrections WHERE pageId = :pageId ORDER BY sentence, id")
     suspend fun corrections(pageId: Long): List<Correction>
 
+    /** Errores de otras páginas desde [since] (para avisar si uno se repite). Sin mejoras, notas ni «más natural». */
+    @Query(
+        "SELECT corrections.* FROM corrections JOIN pages ON pages.id = corrections.pageId " +
+            "WHERE pages.createdAt >= :since AND corrections.pageId != :exceptPage " +
+            "AND corrections.status IN ('${CorrectionStatus.PENDING}', '${CorrectionStatus.REWRITTEN}') " +
+            "ORDER BY pages.createdAt DESC, corrections.id DESC LIMIT :limit"
+    )
+    suspend fun recentErrors(since: Long, exceptPage: Long, limit: Int): List<Correction>
+
+    /** Los números de las oraciones de una página (para el resumen bien / corregir / más natural). */
+    @Query("SELECT number FROM sentences WHERE pageId = :pageId")
+    fun observeSentenceNumbers(pageId: Long): Flow<List<Int>>
+
     @Query("DELETE FROM corrections WHERE id = :id")
     suspend fun deleteCorrection(id: Long)
 

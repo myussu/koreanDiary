@@ -44,6 +44,10 @@ data class ApplySummary(
     val improvements: Int,
     /** Escenas: notas de sentido (lo escrito dice otra cosa que la idea). */
     val notes: Int = 0,
+    /** Oraciones correctas con una versión más natural. */
+    val naturals: Int = 0,
+    /** Correcciones de errores que ya cometió en las últimas dos semanas. */
+    val repeated: Int = 0,
 )
 
 /** Fuentes de un ítem en la base. */
@@ -227,8 +231,17 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             diary.insertCorrection(
                 Correction(
                     pageId = page.id, sentence = c.sentence, original = c.original, suggestion = c.suggestion,
-                    type = c.type, explanation = c.explanation, tense = tenseBySentence[c.sentence],
+                    type = c.type, explanation = repeatNote(c.repeats) + c.explanation, tense = tenseBySentence[c.sentence],
                     itemType = ref?.type, itemId = ref?.id,
+                )
+            )
+        }
+        response.naturals.forEach { n ->
+            diary.insertCorrection(
+                Correction(
+                    pageId = page.id, sentence = n.sentence, original = n.original, suggestion = n.suggestion,
+                    type = CorrectionType.NATURAL, explanation = n.explanation, tense = tenseBySentence[n.sentence],
+                    itemType = null, itemId = null, status = CorrectionStatus.NATURAL,
                 )
             )
         }
@@ -266,8 +279,21 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         ApplySummary(
             response.corrections.size, usage.reviewed, usage.newWords, usage.newGrammar, usage.pending,
             response.improvements.size, response.notes.size,
+            naturals = response.naturals.size,
+            repeated = response.corrections.count { it.repeats >= 2 },
         )
     }
+
+    /**
+     * Las correcciones de las últimas dos semanas, sin las de [exceptPage], para que la IA avise si un
+     * error se repite: «학교에 → 학교에서 (particula)». Solo errores (sin mejoras, notas ni versiones
+     * más naturales), las más recientes primero.
+     */
+    suspend fun recentErrors(now: Long, exceptPage: Long, limit: Int = 20): List<String> =
+        db.diaryDao().recentErrors(now - RECENT_ERRORS_MS, exceptPage, limit)
+            .map { "${it.original.trim()} → ${it.suggestion.trim()} (${it.type})" }
+            .distinct()
+
 
     /**
      * Marca, sin IA, qué estructuras y palabras de una respuesta ya están en tus listas.
@@ -546,6 +572,20 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
 
     companion object {
         private val WORD_KINDS = setOf("sustantivo", "verbo", "adjetivo", "adverbio")
+
+        /** Dos semanas: lo que la revisión mira para avisar que un error se repite. */
+        const val RECENT_ERRORS_MS = 14L * 24 * 60 * 60 * 1000
+
+        /** «Tercera vez en dos semanas. »: va delante de la explicación de un error que se repite. */
+        fun repeatNote(repeats: Int): String = if (repeats >= 2) "${ordinal(repeats)} vez en dos semanas. " else ""
+
+        private fun ordinal(n: Int): String = when (n) {
+            2 -> "Segunda"
+            3 -> "Tercera"
+            4 -> "Cuarta"
+            5 -> "Quinta"
+            else -> "La $n.ª"
+        }
     }
 }
 
@@ -566,6 +606,8 @@ object CorrectionType {
     const val IMPROVEMENT = "mejora"
     /** Escenas: lo escrito dice otra cosa que lo que dijiste que querías decir. */
     const val MEANING = "sentido"
+    /** Correcto pero más natural (no es un error). */
+    const val NATURAL = "natural"
 }
 
 class DiaryRepository(private val db: AppDatabase) {
@@ -626,6 +668,7 @@ class DiaryRepository(private val db: AppDatabase) {
     /** Descartar una nota de sentido (cambiaste de idea): se borra, no cuenta para nada. */
     suspend fun dismissNote(correction: Correction) = diary.deleteCorrection(correction.id)
     fun corrections(pageId: Long) = diary.observeCorrections(pageId)
+    fun sentenceNumbers(pageId: Long) = diary.observeSentenceNumbers(pageId)
     suspend fun correctionsNow(pageId: Long) = diary.corrections(pageId)
     suspend fun markRewritten(c: Correction) = diary.updateCorrection(c.copy(status = CorrectionStatus.REWRITTEN))
     suspend fun pendingPages() = diary.pagesWithStatus(PageStatus.PENDING)

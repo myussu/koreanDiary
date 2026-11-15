@@ -1,6 +1,7 @@
 package com.jorge.koreandiary.conversation
 
 import com.jorge.koreandiary.ai.PromptItem
+import com.jorge.koreandiary.ai.Prompts
 
 /** Quién dijo cada línea de la conversación. */
 enum class Speaker { USER, AI }
@@ -217,7 +218,7 @@ object ConversationPrompts {
 
     /**
      * Revisión final. Usa el mismo contrato que la corrección del diario ("oraciones", "correcciones",
-     * "usados", "mejoras") para reutilizar CorrectionParser; cada línea del estudiante es una "oración".
+     * "natural", "usados", "mejoras") para reutilizar CorrectionParser; cada línea del estudiante es una "oración".
      * Además pide "comentario". La lista de estudio NO se modifica con esto (por ahora solo se guarda).
      */
     fun review(
@@ -246,20 +247,22 @@ object ConversationPrompts {
             """
             TAREAS (solo sobre las líneas numeradas del estudiante; las de la IA son contexto):
             1. "oraciones": cada línea numerada con su tiempo principal: "pasado", "presente" o "futuro". Omite las que estén en español.
-            2. "correcciones": partículas, conjugación, gramática y naturalidad. "oracion" es el número de la línea. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases.
-            3. "usados": TODO lo que usó en coreano, una vez cada cosa:
+            2. "correcciones": partículas, conjugación, gramática y naturalidad. "oracion" es el número de la línea. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases. ${Prompts.NATURALNESS_ERRORS}
+            3. ${Prompts.naturalTask(standardLevel, spoken = true)} "oracion" es el número de la línea.
+            4. "usados": TODO lo que usó en coreano, una vez cada cosa:
                - Palabras de contenido en forma de diccionario (먹었어요 → 먹다).
                - Gramática en notación estándar: terminaciones con guion y forma con 으/어 (-어서, -으니까, -을 것 같다); partículas sin guion (이라도, 처럼).
                - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
                - "id": el de los objetivos si coincide; si no, null.
                - "t": n, v, a, adv, g u o. "ok": false si lo usó mal.
-            4. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que encajarían donde dijo algo demasiado básico. Si no aplica, [].
-            5. "comentario": 2 o 3 frases en español sobre cómo le fue (fluidez, lo que hizo bien, qué practicar).
+            5. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que encajarían donde dijo algo demasiado básico. Si no aplica, [].
+            6. "comentario": 2 o 3 frases en español sobre cómo le fue (fluidez, lo que hizo bien, qué practicar).
 
             FORMATO:
             {
               "oraciones": [{"n": 1, "texto": "...", "tiempo": "pasado"}],
               "correcciones": [{"oracion": 1, "original": "...", "sugerencia": "...", "tipo": "particula|conjugacion|gramatica|naturalidad", "explicacion": "...", "item_id": null}],
+              "natural": [{"oracion": 3, "original": "...", "sugerencia": "...", "explicacion": "..."}],
               "usados": [{"f": "자다", "t": "v", "ok": true, "id": "w42"}],
               "mejoras": [{"oracion": 2, "estructura": "-는 바람에", "ejemplo": "...", "explicacion": "..."}],
               "comentario": "..."

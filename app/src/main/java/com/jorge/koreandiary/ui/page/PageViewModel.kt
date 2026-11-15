@@ -151,6 +151,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     val corrections: StateFlow<List<Correction>> = c.diary.corrections(pageId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Números de las oraciones revisadas, para el resumen bien / corregir / más natural. */
+    val sentenceNumbers: StateFlow<List<Int>> = c.diary.sentenceNumbers(pageId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** Reacción de la mascota; vuelve a "normal" sola tras unos segundos. */
     private val _mascotMood = MutableStateFlow(MascotMood.IDLE)
     val mascotMood: StateFlow<MascotMood> = _mascotMood.asStateFlow()
@@ -915,6 +919,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             // Escenas: lo que dijiste en «¿Cómo digo?», para avisar si lo escrito dice otra cosa.
             val ideas = if (isScene) SceneData.parse(page.sceneJson).ideas.map { it.text } else emptyList()
             val custom = if (isScene) c.sceneDrawings.drawings() else emptyList()
+            // Tus errores de las últimas dos semanas: la IA avisa si uno se repite.
+            val recent = c.study.recentErrors(System.currentTimeMillis(), page.id)
 
             if (provider != ProviderId.SHARE) {
                 val name = providerName(provider)
@@ -934,7 +940,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 reviewing.update { it + pageId }
                 c.appScope.launch {
                     try {
-                        val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false, scene = isScene, ideas = ideas, customScene = custom)
+                        val prompt = Prompts.correction(
+                            settings.profile, settings.level, settings.standardLevel, items, text, hasImage = false,
+                            scene = isScene, ideas = ideas, customScene = custom, recentErrors = recent,
+                        )
                         val raw = api.complete(CorrectionRequest(prompt))
                         c.settings.registerUse(provider)
                         applyResponse(raw)
@@ -952,7 +961,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                     }
                 }
             } else {
-                val prompt = Prompts.correction(settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true, scene = isScene, ideas = ideas, customScene = custom)
+                val prompt = Prompts.correction(
+                    settings.profile, settings.level, settings.standardLevel, items, text, hasImage = true,
+                    scene = isScene, ideas = ideas, customScene = custom, recentErrors = recent,
+                )
                 val bitmap = renderPage(_state.value.strokes, width.toInt(), height.toInt(), lineHeight)
                 _shareIntents.send(ShareFlow.buildIntent(c.app, prompt, bitmap))
                 setPhase(Phase.AwaitingPaste, "El prompt también quedó copiado. Pégalo en el chat si no aparece.")
@@ -995,6 +1007,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         }
         val parts = buildList {
             add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
+            if (summary.repeated > 0) add(if (summary.repeated == 1) "1 error que se repite" else "${summary.repeated} errores que se repiten")
+            if (summary.naturals > 0) add(if (summary.naturals == 1) "1 más natural" else "${summary.naturals} más naturales")
             if (summary.reviewed > 0) add("${summary.reviewed} ítems repasados")
             if (summary.newWords > 0) add("${summary.newWords} palabras nuevas")
             if (summary.newGrammar > 0) add("${summary.newGrammar} gramáticas nuevas")

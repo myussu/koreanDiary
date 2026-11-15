@@ -21,7 +21,18 @@ data class CorrectionResponse(
     val sceneImagePrompt: String = "",
     /** Escenas: lo que se ve y todavía no tiene dibujo (como máximo 2). */
     val sceneNew: List<NewSceneThing> = emptyList(),
+    /**
+     * Oraciones correctas que un coreano diría de otra forma (el tercer nivel de la revisión: bien,
+     * corregir y correcto pero más natural). No son errores: no se reescriben ni frenan la racha.
+     */
+    val naturals: List<NaturalDto> = emptyList(),
 )
+
+/**
+ * Correcto pero más natural: [original] es la oración (o la parte) tal como la escribió o la dijo;
+ * [suggestion], la oración entera como la diría un coreano.
+ */
+data class NaturalDto(val sentence: Int, val original: String, val suggestion: String, val explanation: String)
 
 /** Nota de sentido: [original] dice otra cosa que la idea; [suggestion] es cómo se diría lo que quería. */
 data class MeaningNoteDto(val sentence: Int, val original: String, val suggestion: String, val explanation: String)
@@ -36,6 +47,11 @@ data class CorrectionDto(
     val explanation: String,
     /** "w42", "g3" o null. */
     val itemRef: String?,
+    /**
+     * Cuántas veces cometió este mismo error en las últimas dos semanas, contando esta (la IA lo
+     * compara con sus correcciones recientes). 0 si no se repite o no se le pasaron.
+     */
+    val repeats: Int = 0,
 )
 
 data class UsedItemDto(

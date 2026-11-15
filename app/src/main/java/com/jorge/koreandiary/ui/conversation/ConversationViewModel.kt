@@ -914,9 +914,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         val st = _state.value
         val r = st.record ?: return
         val review = st.review ?: return
-        val items = Drill.build(r.lines, review.correction.corrections)
+        val items = Drill.build(r.lines, review.correction.corrections, review.correction.naturals)
         if (items.isEmpty()) {
-            _state.update { it.copy(message = "No hay correcciones para practicar.") }
+            _state.update { it.copy(message = "No hay correcciones ni versiones más naturales para practicar.") }
             return
         }
         if (!speech.recognitionAvailable()) {

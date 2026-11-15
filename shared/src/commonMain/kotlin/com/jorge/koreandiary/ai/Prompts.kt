@@ -26,6 +26,21 @@ object Prompts {
         "\"ko\": el sustantivo en coreano en forma de diccionario, sin partícula (고양이, 등대); \"es\": en español. " +
         "Nada de personas, partes del cuerpo, comidas ni ideas abstractas. [] si no hay."
 
+    /**
+     * El tercer nivel de la revisión (bien, corregir y correcto pero más natural): oraciones sin
+     * errores que un coreano diría de otra forma. [spoken]: conversación (cómo lo diría hablando).
+     * Lo comparten el diario, las escenas y la revisión de la conversación.
+     */
+    internal fun naturalTask(standardLevel: Int, spoken: Boolean): String =
+        "\"natural\": oraciones SIN errores que un coreano ${if (spoken) "diría" else "escribiría"} de otra forma porque suenan forzadas, " +
+            "traducidas del español o poco naturales. \"sugerencia\": la oración entera como la ${if (spoken) "diría un coreano hablando (registro -어요)" else "escribiría un coreano"}, " +
+            "con vocabulario y gramática de nivel ${(standardLevel + 1).coerceAtMost(6)} o menor; \"explicacion\": 1 frase en español con qué cambia y por qué suena más natural. " +
+            "No repitas lo que ya está en \"correcciones\", ni cambios de estilo menores, ni sinónimos que dan igual. Como máximo 3. [] si todo suena natural."
+
+    /** Así se pide «naturalidad» en las correcciones: solo errores de uso; lo poco natural pero correcto va en "natural". */
+    internal const val NATURALNESS_ERRORS = "En \"naturalidad\" solo errores de uso (una palabra que no va con otra, algo que un coreano nunca diría así); " +
+        "lo que es correcto pero poco natural va en \"natural\"."
+
     /** Escenas: la descripción para pintar la escena (la usa el servidor de imágenes; en inglés para SDXL). */
     private const val IMAGE_TASK = "una o dos frases EN INGLÉS que describan cómo se ve la escena para pintarla: lugar, " +
         "momento del día, luz, objetos y personas (de lejos o de espaldas, sin rostros detallados). Solo lo que se ve; sin estilo artístico ni texto."
@@ -50,6 +65,11 @@ object Prompts {
         customScene: List<CustomDrawing> = emptyList(),
         /** Escenas: pedir la descripción para pintar la imagen (en pausa: no se pide). */
         sceneImage: Boolean = false,
+        /**
+         * Sus correcciones de las últimas dos semanas («원래 → 수정 (tipo)»), para que la IA avise
+         * si un error se repite. Vacía: no se pide "repite".
+         */
+        recentErrors: List<String> = emptyList(),
     ): String = buildString {
         appendLine("Eres profesor de coreano y corriges el diario manuscrito de un estudiante hispanohablante. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine()
@@ -66,6 +86,11 @@ object Prompts {
             ideas.forEach { appendLine("- ${it.trim().replace('\n', ' ')}") }
             appendLine()
         }
+        if (recentErrors.isNotEmpty()) {
+            appendLine("ERRORES RECIENTES (sus correcciones de las últimas dos semanas, para ver si se repiten):")
+            recentErrors.forEach { appendLine("- ${it.trim().replace('\n', ' ')}") }
+            appendLine()
+        }
         appendLine("TEXTO:")
         appendLine(text)
         if (hasImage) appendLine("(Hay una imagen de la página manuscrita: es la fuente principal; el texto es referencia.)")
@@ -74,7 +99,11 @@ object Prompts {
         // Las tareas se numeran solas: cada una aparece solo si aplica.
         val tasks = buildList {
             add("\"oraciones\": divide en oraciones y da el tiempo principal: \"pasado\", \"presente\" o \"futuro\".")
-            add("\"correcciones\": ortografía, partículas, conjugación, gramática y naturalidad. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases.")
+            add(
+                "\"correcciones\": ortografía, partículas, conjugación, gramática y naturalidad. No cambies lo correcto ni reescribas por estilo. Explica en español en 1-2 frases. $NATURALNESS_ERRORS" +
+                    if (recentErrors.isNotEmpty()) " \"repite\": si es el mismo error que uno de ERRORES RECIENTES (el mismo punto gramatical o la misma confusión, aunque con otras palabras), cuántas veces lo cometió contando esta; si no, 0." else ""
+            )
+            add(naturalTask(standardLevel, spoken = false))
             add(
                 """
                 "usados": TODO lo que usó, una vez cada cosa:
@@ -106,7 +135,8 @@ object Prompts {
         appendLine("{")
         val format = buildList {
             add("\"oraciones\": [{\"n\": 1, \"texto\": \"...\", \"tiempo\": \"pasado\"}]")
-            add("\"correcciones\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"tipo\": \"ortografia|particula|conjugacion|gramatica|naturalidad\", \"explicacion\": \"...\", \"item_id\": null}]")
+            add("\"correcciones\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"tipo\": \"ortografia|particula|conjugacion|gramatica|naturalidad\", \"explicacion\": \"...\", \"item_id\": null${if (recentErrors.isNotEmpty()) ", \"repite\": 0" else ""}}]")
+            add("\"natural\": [{\"oracion\": 3, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]")
             add("\"usados\": [{\"f\": \"자다\", \"t\": \"v\", \"ok\": true, \"id\": \"w42\"}, {\"f\": \"-어서\", \"t\": \"g\", \"ok\": true, \"id\": null}]")
             add("\"mejoras\": [{\"oracion\": 2, \"estructura\": \"-는 바람에\", \"ejemplo\": \"...\", \"explicacion\": \"...\"}]")
             if (ideas.isNotEmpty()) add("\"notas\": [{\"oracion\": 1, \"original\": \"...\", \"sugerencia\": \"...\", \"explicacion\": \"...\"}]")

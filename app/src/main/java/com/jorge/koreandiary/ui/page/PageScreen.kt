@@ -89,6 +89,7 @@ import com.jorge.koreandiary.mascot.MascotMood
 import com.jorge.koreandiary.scene.SceneImageJob
 import com.jorge.koreandiary.scene.SceneImages
 import com.jorge.koreandiary.settings.ProviderId
+import com.jorge.koreandiary.ai.ReviewLevels
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppMascot
 import com.jorge.koreandiary.ui.AppOutlinedButton
@@ -96,6 +97,7 @@ import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.ui.LocalPaperStyle
+import com.jorge.koreandiary.ui.ReviewLevelsLine
 import com.jorge.koreandiary.ui.formatDate
 import com.jorge.koreandiary.ui.pageStatusLabel
 import com.jorge.koreandiary.ui.paperBackground
@@ -106,6 +108,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val vm: PageViewModel = viewModel(key = "page-$pageId") { PageViewModel(container, pageId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val corrections by vm.corrections.collectAsStateWithLifecycle()
+    val sentenceNumbers by vm.sentenceNumbers.collectAsStateWithLifecycle()
     val howTo by vm.howTo.collectAsStateWithLifecycle()
     val explain by vm.explain.collectAsStateWithLifecycle()
     val voice by vm.voice.collectAsStateWithLifecycle()
@@ -245,7 +248,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             )
         }
 
-        if (corrections.isNotEmpty()) CorrectionsPanel(corrections, onMarkDone = vm::markRewritten, onDismissNote = vm::dismissNote)
+        if (corrections.isNotEmpty()) CorrectionsPanel(corrections, sentenceNumbers, onMarkDone = vm::markRewritten, onDismissNote = vm::dismissNote)
 
         state.message?.let { msg ->
             Surface(
@@ -777,11 +780,28 @@ private fun AnnotatedTags(tags: List<AnnotatedItem>) {
     }
 }
 
+/**
+ * Lo que trajo «Revisar»: arriba el resumen en tres niveles (bien, corregir, más natural) y abajo
+ * cada cosa. Solo las correcciones se reescriben; mejoras, notas de sentido y versiones más naturales
+ * son para leer.
+ */
 @Composable
-private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correction) -> Unit, onDismissNote: (Correction) -> Unit) {
+private fun CorrectionsPanel(
+    corrections: List<Correction>,
+    sentenceNumbers: List<Int>,
+    onMarkDone: (Correction) -> Unit,
+    onDismissNote: (Correction) -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(true) }
     val pending = corrections.count { it.status == CorrectionStatus.PENDING }
+    val levels = remember(corrections, sentenceNumbers) {
+        ReviewLevels.of(
+            sentenceNumbers.toSet(),
+            corrections.filter { it.status == CorrectionStatus.PENDING || it.status == CorrectionStatus.REWRITTEN }.map { it.sentence }.toSet(),
+            corrections.filter { it.status == CorrectionStatus.NATURAL }.map { it.sentence }.toSet(),
+        )
+    }
     Surface(color = scheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -793,6 +813,7 @@ private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correct
                 // Plegar libera espacio para escribir; la página igual se desplaza con el dedo.
                 AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Plegar" else "Ver") }
             }
+            if (expanded) ReviewLevelsLine(levels, Modifier.padding(start = 12.dp, bottom = 2.dp))
             if (expanded) LazyColumn(
                 Modifier.heightIn(max = 190.dp).padding(horizontal = 12.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
@@ -820,6 +841,19 @@ private fun CorrectionsPanel(corrections: List<Correction>, onMarkDone: (Correct
                                     Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
                                 }
                                 Text("Sentido · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                            }
+                            AppTextButton(onClick = { onDismissNote(c) }) { Text("Descartar") }
+                        }
+                        return@items
+                    }
+                    // Correcto pero más natural: para leer (y practicar si quieres); no se reescribe.
+                    if (c.status == CorrectionStatus.NATURAL) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("~", color = scheme.secondary, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(c.original, color = scheme.onSurfaceVariant)
+                                Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.secondary)
+                                Text("Más natural · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                             }
                             AppTextButton(onClick = { onDismissNote(c) }) { Text("Descartar") }
                         }

@@ -217,13 +217,13 @@ class SceneTest {
         assertTrue(withIdeas.contains("\"notas\""))
         assertTrue(withIdeas.contains("-아/어 보이다"))
         // El texto queda alineado: trimIndent no se rompe con las líneas agregadas.
-        assertTrue(withIdeas.lines().any { it.startsWith("5. \"notas\"") })
-        assertTrue(withIdeas.lines().any { it.startsWith("6. \"escena\"") })
+        assertTrue(withIdeas.lines().any { it.startsWith("6. \"notas\"") })
+        assertTrue(withIdeas.lines().any { it.startsWith("7. \"escena\"") })
         val diary = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false)
         assertFalse(diary.contains("\"notas\""))
         assertFalse(diary.contains("\"escena\""))
         assertFalse(diary.contains("LO QUE QUISO DECIR"))
-        assertTrue(diary.lines().any { it.startsWith("4. \"mejoras\"") })
+        assertTrue(diary.lines().any { it.startsWith("5. \"mejoras\"") })
     }
 
     // ---------- Tono de la escena ----------
@@ -279,11 +279,11 @@ class SceneTest {
     @Test
     fun promptsAskForTheMoodOnlyInScenes() {
         val withIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true, ideas = listOf("tomo su mano"))
-        assertTrue(withIdeas.lines().any { it.startsWith("7. \"tono\"") })
+        assertTrue(withIdeas.lines().any { it.startsWith("8. \"tono\"") })
         assertTrue(withIdeas.contains("love (amor, ternura)"))
         assertTrue(withIdeas.contains("\"tono\": {\"id\": \"love\", \"n\": 2}"))
         val noIdeas = Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false, scene = true)
-        assertTrue(noIdeas.lines().any { it.startsWith("6. \"tono\"") })
+        assertTrue(noIdeas.lines().any { it.startsWith("7. \"tono\"") })
         assertFalse(Prompts.correction("", "3A", 3, emptyList(), "가요.", hasImage = false).contains("\"tono\""))
         val how = Prompts.howToSay("tomo su mano", "3A", 3, tiered = true)
         assertTrue(how.lines().any { it.startsWith("8. \"tono\"") })

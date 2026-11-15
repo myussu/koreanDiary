@@ -1,10 +1,20 @@
 package com.jorge.koreandiary.conversation
 
 import com.jorge.koreandiary.ai.CorrectionDto
+import com.jorge.koreandiary.ai.NaturalDto
 import com.jorge.koreandiary.ink.TextMatch
 
-/** Una oración corregida para decir en voz alta. [fix] es la parte que cambió. */
-data class DrillItem(val target: String, val fix: String, val original: String, val explanation: String)
+/**
+ * Una oración para decir en voz alta. [fix] es la parte que cambió. [natural]: no era un error, es
+ * cómo lo diría un coreano (ahí [fix] es la oración entera).
+ */
+data class DrillItem(
+    val target: String,
+    val fix: String,
+    val original: String,
+    val explanation: String,
+    val natural: Boolean = false,
+)
 
 enum class DrillResult {
     /** Dijiste la oración corregida. */
@@ -24,9 +34,9 @@ object Drill {
      * Cada corrección se aplica sobre tu línea original para practicar la oración entera
      * (si el fragmento no aparece tal cual, se practica solo la sugerencia).
      */
-    fun build(lines: List<Line>, corrections: List<CorrectionDto>): List<DrillItem> {
+    fun build(lines: List<Line>, corrections: List<CorrectionDto>, naturals: List<NaturalDto> = emptyList()): List<DrillItem> {
         val userLines = lines.filter { it.speaker == Speaker.USER }
-        return corrections.mapNotNull { c ->
+        val fixed = corrections.mapNotNull { c ->
             val suggestion = c.suggestion.trim()
             if (suggestion.isEmpty()) return@mapNotNull null
             val line = userLines.getOrNull(c.sentence - 1)?.text?.trim()
@@ -36,7 +46,15 @@ object Drill {
                 suggestion
             }
             DrillItem(target = target, fix = suggestion, original = c.original.trim(), explanation = c.explanation)
-        }.distinctBy { normalize(it.target) }
+        }
+        // Después de las correcciones, las versiones naturales: se dicen enteras.
+        val natural = naturals.mapNotNull { n ->
+            val target = n.suggestion.trim()
+            if (target.isEmpty()) return@mapNotNull null
+            val original = userLines.getOrNull(n.sentence - 1)?.text?.trim() ?: n.original.trim()
+            DrillItem(target = target, fix = target, original = original, explanation = n.explanation, natural = true)
+        }
+        return (fixed + natural).distinctBy { normalize(it.target) }
     }
 
     /** Sin espacios ni puntuación: el reconocimiento de voz no siempre los pone igual. */
@@ -53,6 +71,8 @@ object Drill {
         // 1 error cada 6 caracteres: el reconocimiento se equivoca a veces aunque lo digas bien.
         val allowed = maxOf(1, target.length / 6)
         val close = TextMatch.substringDistance(h, target) <= allowed
+        // Una versión natural no tiene una parte corregida: basta con decir la oración.
+        if (item.natural) return if (close) DrillResult.OK else DrillResult.DIFFERENT
         // La parte corregida suele ser corta (una partícula, una terminación): ahí no se tolera
         // ningún error, porque justo ese carácter es lo que se está practicando.
         val fix = normalize(item.fix)

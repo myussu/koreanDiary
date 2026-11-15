@@ -62,11 +62,13 @@ import com.jorge.koreandiary.conversation.ConversationRecord
 import com.jorge.koreandiary.conversation.DrillResult
 import com.jorge.koreandiary.conversation.RecordMode
 import com.jorge.koreandiary.conversation.Speaker
+import com.jorge.koreandiary.ai.ReviewLevels
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.ReviewLevelsLine
 import com.jorge.koreandiary.ui.rememberSlowClock
 import com.jorge.koreandiary.voice.TurnMode
 import kotlinx.coroutines.delay
@@ -650,6 +652,14 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
         } else {
             review.comment?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
             val userLines = r.lines.filter { it.speaker == Speaker.USER }
+            val naturals = review.correction.naturals
+            ReviewLevelsLine(
+                ReviewLevels.of(
+                    review.correction.sentences.map { it.number }.toSet().ifEmpty { (1..userLines.size).toSet() },
+                    review.correction.corrections.map { it.sentence }.toSet(),
+                    naturals.map { it.sentence }.toSet(),
+                ),
+            )
             Label("Correcciones")
             if (review.correction.corrections.isEmpty()) Text("Nada que corregir. ✓")
             review.correction.corrections.forEach { c ->
@@ -659,6 +669,20 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
                     }
                     Text("${c.original} → ${c.suggestion}", fontWeight = FontWeight.SemiBold)
                     if (c.explanation.isNotBlank()) Text(c.explanation, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (naturals.isNotEmpty()) {
+                Label("Correcto, pero más natural")
+                naturals.forEach { n ->
+                    Column(Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(10.dp)) {
+                        Text(
+                            userLines.getOrNull(n.sentence - 1)?.text ?: n.original,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(n.suggestion, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
+                        if (n.explanation.isNotBlank()) Text(n.explanation, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
             if (review.correction.improvements.isNotEmpty()) {
@@ -686,10 +710,10 @@ private fun ReviewContent(st: ConvUiState, vm: ConversationViewModel) {
             val drill = st.drill
             if (drill != null) {
                 DrillCard(drill, vm)
-            } else if (review.correction.corrections.isNotEmpty()) {
+            } else if (review.correction.corrections.isNotEmpty() || naturals.isNotEmpty()) {
                 Label("Practicar en voz alta")
                 Text(
-                    "Di cada corrección en voz alta para fijarla, como reescribirla en el diario." +
+                    "Di cada corrección y cada versión más natural en voz alta para fijarlas, como reescribirlas en el diario." +
                         if (r.drillTotal > 0) " Última vez: ${r.drillPassed} de ${r.drillTotal}." else "",
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -739,9 +763,14 @@ private fun DrillCard(d: DrillState, vm: ConversationViewModel) {
                 Text("Práctica ${d.index + 1}/${d.items.size}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
                 AppTextButton(onClick = vm::closeDrill) { Text("Terminar") }
             }
+            if (item.natural) Text("MÁS NATURAL", style = MaterialTheme.typography.labelSmall, color = scheme.secondary)
             Text(item.target, style = MaterialTheme.typography.headlineSmall)
             if (item.original.isNotBlank()) {
-                Text("${item.original} → ${item.fix}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                Text(
+                    if (item.natural) "Dijiste: ${item.original}" else "${item.original} → ${item.fix}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
             }
             if (item.explanation.isNotBlank()) Text(item.explanation, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
