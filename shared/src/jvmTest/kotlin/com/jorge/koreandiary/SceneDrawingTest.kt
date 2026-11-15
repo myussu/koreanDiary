@@ -109,9 +109,9 @@ class SceneDrawingTest {
         val custom = listOf(drawing(cat), drawing(bird))
         val lex = SceneDictionary.withCustom(custom)
         assertEquals(listOf("sea", "x_cat"), lex.detect("바다에서 고양이를 봤다").map { it.id })
-        // Una sílaba: sola o con partícula, como las de la app (새벽 y 새로 no son pájaros).
+        // Una sílaba: sola o con partícula, como las de la app (새벽 y 새로 no son pájaros; 새벽 es el cielo).
         assertEquals(listOf("x_bird"), lex.detect("새가 날아요").map { it.id })
-        assertTrue(lex.detect("새벽에 새로 샀어요").isEmpty())
+        assertEquals(listOf("sky"), lex.detect("새벽에 새로 샀어요").map { it.id })
         assertEquals("고양이", lex.detectWithKeys("고양이가").single().second)
         assertEquals("gato", lex.element("x_cat")?.name)
         // Sin dibujos nuevos, el diccionario de siempre.
