@@ -1,0 +1,381 @@
+package com.jorge.koreandiary.review
+
+import com.jorge.koreandiary.ai.ParseException
+import com.jorge.koreandiary.ai.extractJsonObject
+import com.jorge.koreandiary.data.standard.GrammarKeys
+import com.jorge.koreandiary.srs.Fsrs
+import org.json.JSONObject
+
+/** Cómo se pide un ítem en el repaso rápido: cada tipo tiene sus pistas. */
+enum class ClozeKind {
+    /** Sustantivo, adverbio u otro: se escribe tal cual. */
+    WORD,
+    /** Verbo o adjetivo: va conjugado. */
+    VERB,
+    GRAMMAR,
+}
+
+/** Dónde está el hueco en la oración. */
+data class ClozeBlank(val start: Int, val text: String)
+
+/**
+ * Un ítem que entra al repaso: de tu lista y, si la hay, una oración tuya ya corregida con el hueco
+ * encontrado en el celular. Sin oración, la IA escribe una.
+ */
+data class ClozeTarget(
+    /** "w12" o "g3". */
+    val code: String,
+    /** Forma de diccionario o patrón, como está en tu lista. */
+    val label: String,
+    val kind: ClozeKind,
+    val meaning: String? = null,
+    val sentence: String? = null,
+    val blank: ClozeBlank? = null,
+) {
+    val own: Boolean get() = sentence != null
+}
+
+/** Una tarjeta del repaso: la oración con el hueco, la traducción y lo que hace falta para las pistas. */
+data class ClozeCard(
+    val code: String,
+    val label: String,
+    val kind: ClozeKind,
+    val meaning: String?,
+    val sentence: String,
+    val start: Int,
+    /** Lo que va en el hueco, tal como está en la oración. */
+    val answer: String,
+    /** Traducción con lo que corresponde al hueco entre corchetes; null sin IA. */
+    val translation: String? = null,
+    /** Verbo o adjetivo: su forma de diccionario. Gramática: el verbo o adjetivo al que va unida. */
+    val base: String? = null,
+    /** Verbo o adjetivo: la terminación que lleva («-았/었어요»). */
+    val ending: String? = null,
+    /** La oración es tuya (de una página), no de la IA. */
+    val own: Boolean = false,
+) {
+    val before: String get() = sentence.substring(0, start)
+    val after: String get() = sentence.substring(start + answer.length)
+}
+
+/**
+ * Repaso rápido (decidido con Jorge el 2026-11-15): en vez de tarjetas como Anki, oraciones con un
+ * espacio en blanco. Primero tus oraciones (ya corregidas); para lo que nunca usaste, oraciones de
+ * la IA (una sola llamada por sesión). La traducción se ve desde el inicio con lo que falta
+ * resaltado; respondes a mano. Tres pistas según el tipo; la calificación sale de cuántas usaste.
+ */
+object Cloze {
+
+    // ---------------------------------------------------------------- hueco en tus oraciones
+
+    private val TRAILING = Regex("""[.,!?~…·"'“”‘’)\]」』:;]+$""")
+    private val LEADING = Regex("""^["'“”‘’(\[「『]+""")
+
+    /** Las palabras de la oración (separadas por espacios), sin la puntuación de los bordes, con su posición. */
+    private fun tokens(sentence: String): List<ClozeBlank> =
+        Regex("""\S+""").findAll(sentence).mapNotNull { m ->
+            val lead = LEADING.find(m.value)?.value?.length ?: 0
+            val core = m.value.drop(lead).replace(TRAILING, "")
+            if (core.isEmpty()) null else ClozeBlank(m.range.first + lead, core)
+        }.toList()
+
+    /** La raíz de un verbo o adjetivo: sin el 다 final (공부하다 → 공부하, 먹다 → 먹). */
+    fun stem(label: String): String {
+        val form = label.trim()
+        return if (form.length > 1 && form.endsWith("다")) form.dropLast(1) else form
+    }
+
+    /**
+     * Busca el ítem en una oración tuya: un sustantivo tal cual; un verbo, la palabra conjugada entera
+     * (también contraída: 가다 → 갔어요, 공부하다 → 공부했어요); una terminación, la palabra que la
+     * lleva (o las dos, si va en dos: 가고 싶어요); una partícula, solo la partícula.
+     */
+    fun blankIn(sentence: String, label: String, kind: ClozeKind): ClozeBlank? {
+        val words = tokens(sentence)
+        return when (kind) {
+            ClozeKind.WORD -> {
+                val form = label.trim()
+                if (form.isEmpty()) null
+                else words.firstOrNull { it.text.startsWith(form) }?.let { ClozeBlank(it.start, form) }
+                    ?: sentence.indexOf(form).takeIf { it >= 0 }?.let { ClozeBlank(it, form) }
+            }
+            ClozeKind.VERB -> {
+                val stem = stem(label)
+                if (stem.isEmpty()) null else words.lastOrNull { conjugated(stem, it.text) }
+            }
+            ClozeKind.GRAMMAR -> grammarBlank(sentence, words, label)
+        }
+    }
+
+    private fun grammarBlank(sentence: String, words: List<ClozeBlank>, label: String): ClozeBlank? {
+        // Las claves más largas primero: "-고 싶다" antes que "-고". Las que tienen letras sueltas
+        // ("ㄹ 수 있다") no se pueden buscar así: esas las marca la IA.
+        for (key in GrammarKeys.keys(label).sortedByDescending { it.length }) {
+            // Una expresión que termina en 다 se conjuga: "고싶다" se busca como "고싶" (가고 싶어요).
+            val bare = key.substringAfter(':').let { if (it.length > 2 && it.endsWith("다")) it.dropLast(1) else it }
+            if (bare.isEmpty() || bare.any { it in 'ㄱ'..'ㅣ' }) continue
+            if (key.startsWith("P:")) {
+                // Una partícula va pegada al sustantivo: el hueco es solo ella.
+                val w = words.lastOrNull { it.text.length > bare.length && it.text.endsWith(bare) } ?: continue
+                return ClozeBlank(w.start + w.text.length - bare.length, bare)
+            }
+            for (i in words.indices.reversed()) {
+                for (span in 1..minOf(3, words.size - i)) {
+                    val joined = (i until i + span).joinToString("") { words[it].text }
+                    // Una terminación de una sílaba va al final de una palabra, sin ser toda la palabra.
+                    val found = if (bare.length == 1) span == 1 && joined.length >= 2 && joined.endsWith(bare) else joined.contains(bare)
+                    if (!found) continue
+                    val first = words[i]
+                    val last = words[i + span - 1]
+                    return ClozeBlank(first.start, sentence.substring(first.start, last.start + last.text.length))
+                }
+            }
+        }
+        return null
+    }
+
+    /** Las sílabas del hangul: inicial, vocal y final (índices de Unicode). */
+    private data class Jamo(val initial: Int, val vowel: Int, val final: Int)
+
+    private fun jamo(c: Char): Jamo? {
+        if (c !in '가'..'힣') return null
+        val n = c - '가'
+        return Jamo(n / (21 * 28), (n / 28) % 21, n % 28)
+    }
+
+    // Vocales (índice Unicode): ㅏ0 ㅐ1 ㅓ4 ㅕ6 ㅗ8 ㅘ9 ㅙ10 ㅚ11 ㅜ13 ㅝ14 ㅡ18 ㅣ20.
+    private val VOWEL_CONTRACTIONS = mapOf(8 to 9, 13 to 14, 18 to 4, 20 to 6, 11 to 10)
+    // Finales posibles al conjugar: ninguna, ㄴ, ㄹ, ㅂ (ㅂ니다) y ㅆ (pasado).
+    private val CONJUGATED_FINALS = setOf(0, 4, 8, 17, 20)
+    private const val HIEUT = 18
+    /** Lo que suele seguir a una raíz de una sílaba al conjugarla (가요, 가고, 갔어요…), no a un sustantivo (가방, 가족). */
+    private val VERBAL_NEXT = "아어았었요고서면는니지세야도기려자다네며시셨으을은겠".toSet()
+
+    /**
+     * ¿Esta palabra es el verbo conjugado? Empieza por la raíz o la contrae (가 → 갔, 오 → 왔,
+     * 하 → 했/해, 듣 → 들, 덥 → 더). Con una raíz de una sílaba lo que sigue tiene que sonar a
+     * conjugación, para no confundir 가다 con 가방 o 하다 con 한국.
+     */
+    fun conjugated(stem: String, word: String): Boolean {
+        if (stem.isEmpty()) return false
+        val single = stem.length == 1
+        if (word.startsWith(stem)) return !single || (word.length > 1 && word[1] in VERBAL_NEXT)
+        if (word.length < stem.length || (single && word.length < 2)) return false
+        if (!word.startsWith(stem.dropLast(1))) return false
+        val a = jamo(stem.last()) ?: return false
+        val b = jamo(word[stem.length - 1]) ?: return false
+        if (a.initial != b.initial) return false
+        val vowelOk = a.vowel == b.vowel || VOWEL_CONTRACTIONS[a.vowel] == b.vowel || (a.initial == HIEUT && a.vowel == 0 && b.vowel == 1)
+        val finalOk = b.final == a.final || b.final in CONJUGATED_FINALS
+        val nextOk = !single || word[1] in VERBAL_NEXT
+        return vowelOk && finalOk && nextOk
+    }
+
+    /** Tu oración con sus correcciones aplicadas (original → corrección), para repasar la versión buena. */
+    fun applyCorrections(text: String, fixes: List<Pair<String, String>>): String =
+        fixes.fold(text) { acc, (original, fixed) ->
+            val o = original.trim()
+            if (o.isEmpty() || !acc.contains(o)) acc else acc.replaceFirst(o, fixed.trim())
+        }
+
+    // ---------------------------------------------------------------- pistas
+
+    private fun syllables(s: String): List<Char> = s.filterNot { it.isWhitespace() }.toList()
+
+    private val INITIALS = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+    private val VOWELS = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+
+    /** Las sílabas desordenadas, para armar la respuesta. Siempre el mismo orden para la misma tarjeta. */
+    fun tiles(answer: String): List<Char> {
+        val s = syllables(answer)
+        if (s.size < 2) return s
+        val shuffled = s.shuffled(kotlin.random.Random(answer.hashCode()))
+        return if (shuffled == s) s.drop(1) + s.first() else shuffled
+    }
+
+    /**
+     * Las tres pistas, de menos a más:
+     * - sustantivo o adverbio: cuántas sílabas → la primera → las sílabas desordenadas;
+     * - verbo o adjetivo: forma de diccionario → terminación → las sílabas desordenadas;
+     * - gramática: el verbo → el patrón → las sílabas desordenadas.
+     * Si la respuesta es una sola sílaba, la última pista es su consonante inicial y su vocal.
+     */
+    fun hints(card: ClozeCard): List<String> {
+        val s = syllables(card.answer)
+        val boxes = "□".repeat(s.size)
+        val last = if (s.size >= 2) "Fichas: " + tiles(card.answer).joinToString(" · ")
+        else jamo(s.firstOrNull() ?: ' ')?.let { "Empieza con ${INITIALS[it.initial]} y su vocal es ${VOWELS[it.vowel]}" } ?: boxes
+        return when (card.kind) {
+            ClozeKind.WORD -> listOf(
+                "${s.size} ${if (s.size == 1) "sílaba" else "sílabas"}: $boxes",
+                if (s.size >= 2) "Empieza con ${s.first()}: ${s.first()}${"□".repeat(s.size - 1)}"
+                else jamo(s.first())?.let { "Empieza con ${INITIALS[it.initial]}" } ?: boxes,
+                last,
+            )
+            ClozeKind.VERB -> listOf(
+                "Forma de diccionario: ${card.base ?: card.label}",
+                "Terminación: ${card.ending ?: localEnding(card.base ?: card.label, card.answer)}",
+                last,
+            )
+            ClozeKind.GRAMMAR -> listOf(
+                card.base?.let { "Con: $it" } ?: card.meaning?.let { "Significa: $it" } ?: "${s.size} sílabas: $boxes",
+                "Gramática: ${card.label}",
+                last,
+            )
+        }
+    }
+
+    /** Sin la IA: lo que viene después de la raíz (먹었어요 → -었어요; 공부했어요 → …어요). */
+    fun localEnding(label: String, answer: String): String {
+        val stem = stem(label)
+        val word = answer.trim()
+        val common = stem.zip(word).takeWhile { (a, b) -> a == b }.size
+        val rest = word.drop(common)
+        return when {
+            rest.isEmpty() -> "la forma de diccionario"
+            common == stem.length -> "-$rest"
+            rest.length >= 2 -> "…" + rest.drop(1)
+            else -> "…$rest"
+        }
+    }
+
+    // ---------------------------------------------------------------- respuesta y calificación
+
+    private val NOISE = Regex("""[\s.,!?~…·"'“”‘’()\[\]-]""")
+
+    private fun normalize(s: String) = s.replace(NOISE, "")
+
+    /** ¿Lo que escribiste es lo del hueco? Vale cualquiera de las lecturas del reconocedor. */
+    fun matches(card: ClozeCard, candidates: List<String>): Boolean {
+        val expected = normalize(card.answer)
+        return expected.isNotEmpty() && candidates.any { normalize(it) == expected }
+    }
+
+    /**
+     * Sin pistas o con una = bien; con dos o tres, o si fallaste antes de acertar = difícil; si viste
+     * la respuesta = otra vez.
+     */
+    fun rating(hints: Int, wrongTries: Int, revealed: Boolean): Fsrs.Rating = when {
+        revealed -> Fsrs.Rating.AGAIN
+        hints <= 1 && wrongTries == 0 -> Fsrs.Rating.GOOD
+        else -> Fsrs.Rating.HARD
+    }
+
+    /** La traducción en trozos: (texto, va resaltado). Los corchetes marcan lo que corresponde al hueco. */
+    fun translationParts(translation: String): List<Pair<String, Boolean>> {
+        val out = mutableListOf<Pair<String, Boolean>>()
+        var rest = translation
+        while (rest.isNotEmpty()) {
+            val open = rest.indexOf('[')
+            val close = if (open >= 0) rest.indexOf(']', open + 1) else -1
+            if (open < 0 || close < 0) {
+                out += rest to false
+                break
+            }
+            if (open > 0) out += rest.substring(0, open) to false
+            out += rest.substring(open + 1, close) to true
+            rest = rest.substring(close + 1)
+        }
+        return out.filter { it.first.isNotEmpty() }
+    }
+
+    /** Las tarjetas que salen sin IA: las de tus oraciones con el hueco encontrado. */
+    fun localCards(targets: List<ClozeTarget>): List<ClozeCard> = targets.mapNotNull { t ->
+        val sentence = t.sentence ?: return@mapNotNull null
+        val blank = t.blank ?: return@mapNotNull null
+        ClozeCard(t.code, t.label, t.kind, t.meaning, sentence, blank.start, blank.text, own = true)
+    }
+
+    // ---------------------------------------------------------------- IA (una llamada por sesión)
+
+    private fun kindLabel(kind: ClozeKind) = when (kind) {
+        ClozeKind.WORD -> "palabra"
+        ClozeKind.VERB -> "verbo o adjetivo"
+        ClozeKind.GRAMMAR -> "gramática"
+    }
+
+    /**
+     * Una sola llamada para toda la sesión: traduce tus oraciones (y marca el hueco si el celular no
+     * lo encontró) y escribe una oración para lo que no tiene.
+     */
+    fun prompt(profile: String, level: String, standardLevel: Int, targets: List<ClozeTarget>): String = buildString {
+        appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) repasa con oraciones en las que falta una parte (el hueco) y la escribe a mano. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        if (profile.isNotBlank()) {
+            appendLine()
+            appendLine("SOBRE EL ESTUDIANTE: ${profile.trim().replace('\n', ' ')}")
+        }
+        appendLine()
+        appendLine("ÍTEMS (código: forma, tipo):")
+        targets.forEach { t ->
+            append("- ${t.code}: ${t.label} (${kindLabel(t.kind)})")
+            if (t.sentence != null) {
+                append(" | oración suya: «${t.sentence}»")
+                t.blank?.let { append(" | hueco: «${it.text}»") }
+            }
+            appendLine()
+        }
+        appendLine()
+        appendLine("TAREAS:")
+        appendLine("1. Si el ítem trae «oración suya», úsala tal cual (ya está corregida; no la cambies). Si trae «hueco», devuélvelo igual.")
+        appendLine("2. Si no trae oración, escribe una corta (una sola oración, 5 a 10 palabras), natural y cotidiana, sobre su vida, que use el ítem como lo usaría un coreano. Solo vocabulario y gramática de su nivel o menor, en estilo -아요/어요.")
+        appendLine("3. \"hueco\": el trozo de la oración que corresponde al ítem, copiado letra por letra: un sustantivo o adverbio tal cual (sin la partícula); un verbo o adjetivo, la palabra conjugada entera; una terminación, la palabra que la lleva entera (si la expresión ocupa dos palabras, las dos); una partícula, solo la partícula.")
+        appendLine("4. \"traduccion\": la traducción natural al español, con lo que corresponde al hueco entre corchetes, por ejemplo: «Como hay examen, [estudié] en la biblioteca».")
+        appendLine("5. \"base\": en un verbo o adjetivo, su forma de diccionario; en una gramática, la forma de diccionario del verbo, adjetivo o sustantivo al que va unida. \"terminacion\": en un verbo o adjetivo, la terminación que lleva en el hueco escrita como en un libro (\"-았/었어요\", \"-고\", \"-(으)니까\"); si no, null.")
+        appendLine()
+        appendLine("FORMATO:")
+        appendLine("{\"items\": [{\"id\": \"w12\", \"oracion\": \"시험이 있으니까 도서관에서 공부했어요.\", \"hueco\": \"공부했어요\", \"traduccion\": \"Como hay examen, [estudié] en la biblioteca.\", \"base\": \"공부하다\", \"terminacion\": \"-았/었어요\"}]}")
+    }
+
+    /**
+     * Las tarjetas de la sesión, tus oraciones primero. De la IA solo se toma un hueco que esté en la
+     * oración; si no, se usa el que encontró el celular o se deja el ítem. Tus oraciones que la IA no
+     * devolvió quedan sin traducción.
+     */
+    fun parse(raw: String, targets: List<ClozeTarget>): List<ClozeCard> {
+        val json = try {
+            JSONObject(extractJsonObject(raw))
+        } catch (e: org.json.JSONException) {
+            throw ParseException("JSON inválido: ${e.message}")
+        }
+        val arr = json.optJSONArray("items")
+        val byCode = HashMap<String, JSONObject>()
+        if (arr != null) for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optString("id").trim()
+            if (id.isNotEmpty() && id !in byCode) byCode[id] = o
+        }
+        fun JSONObject.text(key: String): String? =
+            if (isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() && it != "null" }
+
+        val cards = targets.mapNotNull { t ->
+            val o = byCode[t.code]
+            val sentence = t.sentence ?: o?.text("oracion") ?: return@mapNotNull null
+            val blank = t.blank ?: o?.text("hueco")?.let { hueco ->
+                sentence.indexOf(hueco).takeIf { it >= 0 }?.let { ClozeBlank(it, hueco) }
+            } ?: return@mapNotNull null
+            ClozeCard(
+                code = t.code, label = t.label, kind = t.kind, meaning = t.meaning,
+                sentence = sentence, start = blank.start, answer = blank.text,
+                translation = o?.text("traduccion"),
+                base = o?.text("base"),
+                ending = o?.text("terminacion"),
+                own = t.own,
+            )
+        }
+        return cards.sortedBy { if (it.own) 0 else 1 }
+    }
+}
+
+/**
+ * Qué entra a una sesión: primero lo que te toca repasar (de menor a mayor recuerdo) y unos pocos
+ * que nunca usaste ([newQuota]), hasta [limit]. Si falta de un lado, se completa con el otro.
+ */
+object QuickReviewPick {
+    fun <T> pick(due: List<T>, unseen: List<T>, limit: Int = 10, newQuota: Int = 3): List<T> {
+        val fresh = minOf(newQuota, unseen.size, limit)
+        val result = due.take(limit - fresh).toMutableList()
+        result += unseen.take(minOf(fresh, limit - result.size))
+        if (result.size < limit) result += unseen.drop(fresh).take(limit - result.size)
+        return result.distinct()
+    }
+}

@@ -78,6 +78,7 @@ fun StudyScreen(
     onBack: () -> Unit,
     onImport: () -> Unit,
     onSettings: () -> Unit = {},
+    onQuickReview: () -> Unit = {},
     initialTab: StudyTab = StudyTab.SUMMARY,
 ) {
     val words by container.study.words.collectAsStateWithLifecycle(emptyList())
@@ -132,6 +133,7 @@ fun StudyScreen(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                QuickReviewCard(due = states.count { it.dueAt <= now }, hasItems = words.isNotEmpty() || grammar.isNotEmpty(), onStart = onQuickReview)
                 LevelCard(report, vocabTest, settings.level, settings.standardLevel, onTest = { testing = true }, onSettings = onSettings)
                 ProgressSummary(container)
                 Box(Modifier.height(16.dp))
@@ -204,6 +206,31 @@ fun StudyScreen(
                 if (result != null) container.settings.update { it.copy(vocabTest = result.encode()) }
             },
         )
+    }
+}
+
+// ---------------------------------------------------------------- Repaso rápido
+
+/** La entrada al repaso rápido: unas diez oraciones para completar con lo que te toca repasar. */
+@Composable
+private fun QuickReviewCard(due: Int, hasItems: Boolean, onStart: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("REPASO RÁPIDO", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+            Text(
+                when {
+                    !hasItems -> "Cuando tengas una lista, aquí completas oraciones con lo que te toca repasar."
+                    due == 0 -> "Nada vence hoy: repasa lo que nunca usaste."
+                    else -> "$due ${if (due == 1) "te toca" else "te tocan"} hoy. Unas diez oraciones con un espacio en blanco, a mano."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        AppButton(onClick = onStart, enabled = hasItems) { Text("Repaso rápido") }
     }
 }
 

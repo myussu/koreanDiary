@@ -142,7 +142,10 @@ object Features {
             "Estudio",
             listOf(
                 phone("Tu lista y tu progreso en una pantalla, por pestañas: «Resumen», «Vocabulario», «Gramática», «Por revisar» y «Para agregar». Se abre con «Estudio» o tocando el resumen del inicio."),
-                phone("«Resumen»: «Tu nivel» y abajo racha, calendario, memoria del repaso, tiempos verbales, lo que más te cuesta y minutos hablados."),
+                phone("«Resumen»: «Repaso rápido», «Tu nivel» y abajo racha, calendario, memoria del repaso, tiempos verbales, lo que más te cuesta y minutos hablados."),
+                phone("«Repaso rápido»: unas diez oraciones con un espacio en blanco, con lo que te toca repasar y algo que nunca usaste. Primero tus oraciones (ya corregidas); para lo demás, la IA escribe una (una sola llamada por ronda). La traducción se ve desde el inicio, con lo que falta resaltado."),
+                phone("En el repaso rápido escribes la respuesta a mano en el recuadro («Teclado» si prefieres) y «Comprobar». «Pista» abre hasta tres: en una palabra, cuántas sílabas, la primera y las fichas desordenadas; en un verbo, la forma de diccionario, la terminación y las fichas; en una gramática, el verbo, el patrón y las fichas."),
+                phone("Cuenta para tu repaso al momento: sin pistas o con una = bien; con más, o si fallaste antes = difícil; «Ver respuesta» = vuelve pronto. Si tu forma también es correcta, «La mía también vale». Sin IA van solo tus oraciones, sin traducción."),
                 phone("«Tu nivel»: cuánto tienes de la gramática de cada nivel del estándar (y cuánto ya usaste bien) y el nivel que eso indica. Si no coincide con el de Ajustes, lo propone; no lo cambia solo."),
                 phone("«Prueba de vocabulario»: unas 15 palabras al azar por nivel, tocas las que conoces; suma su resultado a «Tu nivel». «Repetir la prueba» cuando quieras."),
                 phone("«Para agregar»: la gramática del estándar que te falta hasta tu nivel y uno más, y las palabras que no conociste en la prueba, de lo más básico arriba. «Agregar» la suma como nueva (te la va a sugerir); «Ya lo sé», como conocida (vuelve mucho después)."),
@@ -434,6 +437,12 @@ object Features {
                     "Revisas lo que no reconoció",
                     "En «Por revisar» quedan las palabras que la app no conocía: las agregas o las descartas.",
                     listOf("Por revisar", "Agregar", "Descartar"),
+                ),
+                FlowStep(
+                    "Repasas en unos minutos",
+                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco y su traducción. Escribes a mano lo que falta; si no sale, pides pistas. Cuenta para tu repaso al momento.",
+                    listOf("Repaso rápido", "Comprobar", "Pista", "Ver respuesta", "La mía también vale"),
+                    aside = FlowAside("Si prefieres", listOf("Teclado", "Borrar")),
                 ),
                 FlowStep(
                     "Ves tu nivel",

@@ -92,6 +92,8 @@ object EventKind {
     const val ASKED = "preguntada"
     /** «Ya lo sé» en «Para agregar»: dijiste que la conocías (cuenta como «fácil»; vuelve mucho después). */
     const val DECLARED = "declarada"
+    /** Repaso rápido de Estudio: completaste el espacio en blanco (la calificación sale de las pistas). */
+    const val QUICK_REVIEW = "repaso_rapido"
 }
 
 @Entity(

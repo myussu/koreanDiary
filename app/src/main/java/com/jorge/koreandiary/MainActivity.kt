@@ -40,6 +40,7 @@ import com.jorge.koreandiary.ui.SceneDrawingsScreen
 import com.jorge.koreandiary.ui.ScenesScreen
 import com.jorge.koreandiary.ui.SettingsGroup
 import com.jorge.koreandiary.ui.SettingsScreen
+import com.jorge.koreandiary.ui.QuickReviewScreen
 import com.jorge.koreandiary.ui.StudyScreen
 import com.jorge.koreandiary.ui.StudyTab
 import com.jorge.koreandiary.ui.conversation.ConversationScreen
@@ -150,8 +151,17 @@ private fun AppNavigation(container: AppContainer) {
                 onBack = ::pop,
                 onImport = { push("import") },
                 onSettings = { push("settings:${SettingsGroup.GENERAL.name}") },
+                onQuickReview = { push("repaso") },
                 initialTab = StudyTab.entries.firstOrNull { it.name == route.substringAfter(':', "") } ?: StudyTab.SUMMARY,
             )
+            // Un ViewModel por vez que se abre: cada repaso arma su propia sesión.
+            route == "repaso" -> {
+                val store = routeStores.storeFor(keys.last())
+                val owner = remember(store) { object : ViewModelStoreOwner { override val viewModelStore = store } }
+                CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+                    QuickReviewScreen(container, onBack = ::pop)
+                }
+            }
             route == "import" -> ImportScreen(container, onBack = ::pop)
             route.startsWith("settings") -> SettingsScreen(
                 container,

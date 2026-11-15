@@ -29,12 +29,18 @@ import com.jorge.koreandiary.data.standard.StdGrammar
 import com.jorge.koreandiary.data.standard.StdWord
 import com.jorge.koreandiary.progress.LevelCoverage
 import com.jorge.koreandiary.progress.LevelEstimate
+import com.jorge.koreandiary.review.Cloze
+import com.jorge.koreandiary.review.ClozeBlank
+import com.jorge.koreandiary.review.ClozeKind
+import com.jorge.koreandiary.review.ClozeTarget
+import com.jorge.koreandiary.review.QuickReviewPick
 import com.jorge.koreandiary.srs.Fsrs
 import com.jorge.koreandiary.conversation.TargetHelp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import kotlin.random.Random
 
 data class ImportSummary(val wordsAdded: Int, val grammarAdded: Int, val duplicates: Int)
 
@@ -500,6 +506,76 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         }
         val corrections = diary.correctionsForItem(ref.type, ref.id, limit).map { "${it.original.trim()} → ${it.suggestion.trim()}" }
         return ItemUsage((matching.ifEmpty { sentences }).distinct().take(limit), corrections)
+    }
+
+    /**
+     * Repaso rápido: hasta [limit] ítems de tu lista para completar en una oración. Primero lo que te
+     * toca repasar (lo que menos recuerdas) y unos pocos que nunca usaste (gramática de tus niveles y
+     * palabras). Cada uno trae, si la hay, una oración tuya ya corregida donde aparece; si no, la IA
+     * escribe una. No entra lo que repasaste en las últimas 12 horas.
+     */
+    suspend fun quickReviewTargets(now: Long, grammarLevels: List<String>, limit: Int = 10, random: Random = Random.Default): List<ClozeTarget> {
+        val wordStates = memory.allOfType(ItemType.WORD)
+        val grammarStates = memory.allOfType(ItemType.GRAMMAR)
+        val recent = now - 12 * 60 * 60 * 1000L
+        fun recall(s: MemoryState) = Fsrs.retrievabilityAt(Fsrs.Memory(s.stability, s.difficulty, s.lastReviewAt, s.reps, s.lapses), now)
+        val due = (wordStates + grammarStates)
+            .filter { it.dueAt <= now && it.lastReviewAt < recent }
+            .sortedBy { recall(it) }
+            .map { ItemRef(it.itemType, it.itemId) }
+        val seenWords = wordStates.map { it.itemId }.toSet()
+        val seenGrammar = grammarStates.map { it.itemId }.toSet()
+        val unseenGrammar = study.grammarIdsForLevels(grammarLevels).filter { it !in seenGrammar }.shuffled(random).map { ItemRef(ItemType.GRAMMAR, it) }
+        val unseenWords = study.allWordIds().filter { it !in seenWords }.shuffled(random).map { ItemRef(ItemType.WORD, it) }
+        // Lo nuevo, mezclado: una gramática y dos palabras.
+        val unseen = buildList {
+            val g = ArrayDeque(unseenGrammar)
+            val w = ArrayDeque(unseenWords)
+            while (g.isNotEmpty() || w.isNotEmpty()) {
+                g.removeFirstOrNull()?.let { add(it) }
+                repeat(2) { w.removeFirstOrNull()?.let { add(it) } }
+            }
+        }
+        val picked = QuickReviewPick.pick(due, unseen, limit)
+        val words = study.wordsByIds(picked.filter { it.type == ItemType.WORD }.map { it.id }).associateBy { it.id }
+        val grammar = study.grammarByIds(picked.filter { it.type == ItemType.GRAMMAR }.map { it.id }).associateBy { it.id }
+        return picked.mapNotNull { ref ->
+            val target = when (ref.type) {
+                ItemType.WORD -> words[ref.id]?.let { w ->
+                    val kind = if (w.type == "verbo" || w.type == "adjetivo") ClozeKind.VERB else ClozeKind.WORD
+                    ClozeTarget(ref.code, w.baseForm, kind, w.meaning)
+                }
+                else -> grammar[ref.id]?.let { g -> ClozeTarget(ref.code, g.pattern, ClozeKind.GRAMMAR, g.meaning) }
+            } ?: return@mapNotNull null
+            val own = ownSentence(ref, target.label, target.kind)
+            if (own == null) target else target.copy(sentence = own.first, blank = own.second)
+        }
+    }
+
+    /**
+     * Una oración tuya donde está el ítem, con sus correcciones aplicadas (la versión buena), de la
+     * página más reciente donde lo usaste. Null si no hay o si el celular no encuentra dónde está.
+     */
+    private suspend fun ownSentence(ref: ItemRef, label: String, kind: ClozeKind): Pair<String, ClozeBlank>? {
+        val pages = memory.pagesUsing(ref.type, ref.id, 6)
+        if (pages.isEmpty()) return null
+        val diary = db.diaryDao()
+        val sentences = diary.sentencesOf(pages).groupBy { it.pageId }
+        for (page in pages) {
+            val fixes = diary.corrections(page).filter { it.status == CorrectionStatus.PENDING || it.status == CorrectionStatus.REWRITTEN }
+            for (s in sentences[page].orEmpty()) {
+                val text = Cloze.applyCorrections(s.text.trim(), fixes.filter { it.sentence == s.number }.map { it.original to it.suggestion })
+                val blank = Cloze.blankIn(text, label, kind) ?: continue
+                return text to blank
+            }
+        }
+        return null
+    }
+
+    /** El resultado de una tarjeta del repaso rápido, al momento: si sales a la mitad, lo hecho ya cuenta. */
+    suspend fun applyQuickReview(code: String, rating: Fsrs.Rating, now: Long): Unit = db.withWriteTransaction {
+        val ref = ItemRef.parse(code)
+        if (ref != null && !ref.isStandard) review(ref, rating, EventKind.QUICK_REVIEW, now, pageId = null)
     }
 
     /**
