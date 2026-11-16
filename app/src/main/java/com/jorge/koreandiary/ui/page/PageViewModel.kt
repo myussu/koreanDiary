@@ -846,10 +846,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         // El reconocedor solo hace falta si algún renglón no está leído ya.
         if (keys.values.any { it !in readCache } && !runCatching { c.recognizer.isModelDownloaded() }.getOrDefault(false)) return
         val texts = HashMap<Int, String>()
-        for ((line, strokes) in byLine) {
+        // En orden: cada renglón se lee con el anterior como contexto (como en Revisar).
+        var previous = ""
+        for ((line, strokes) in byLine.toSortedMap()) {
             val key = keys.getValue(line)
             val text = readCache[key] ?: try {
-                c.recognizer.recognizeLines(strokes, lh, w).joinToString(" ") { it.text }
+                c.recognizer.recognizeLines(strokes, lh, w, preContext = previous).joinToString(" ") { it.text }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -858,6 +860,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             // Se recuerda en cuanto se lee: si un trazo nuevo corta esta pasada, lo leído no se pierde.
             readCache[key] = text
             texts[line] = text
+            previous = text
         }
         readCache.keys.retainAll(keys.values.toSet())
         lineTexts = texts

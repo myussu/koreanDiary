@@ -61,12 +61,18 @@ class HandwritingRecognizer {
     /**
      * Devuelve el texto de cada línea, en orden, para las líneas desde [fromLine] (inclusive).
      * Las líneas vacías se omiten.
+     *
+     * [preContext] es el texto que va justo antes de lo escrito (ML Kit usa los últimos 20 caracteres,
+     * espacios incluidos): con él, su modelo de idioma prefiere palabras que existen. El repaso
+     * rápido pasa la oración antes del hueco; la escena viva, el renglón anterior. Entre renglones
+     * se suma solo lo leído.
      */
     suspend fun recognizeLines(
         strokes: List<InkStroke>,
         lineHeight: Float,
         width: Float,
         fromLine: Int = 0,
+        preContext: String = "",
     ): List<RecognizedLine> {
         if (!isModelDownloaded()) downloadModel()
         val byLine = strokes.filter { it.points.isNotEmpty() }
@@ -74,7 +80,7 @@ class HandwritingRecognizer {
             .filterKeys { it >= fromLine }
             .toSortedMap()
         val result = mutableListOf<RecognizedLine>()
-        var preContext = ""
+        var context = preContext
         for ((line, lineStrokes) in byLine) {
             val offsetY = line * lineHeight
             val inkBuilder = Ink.builder()
@@ -85,14 +91,16 @@ class HandwritingRecognizer {
                 inkBuilder.addStroke(sb.build())
             }
             val context = RecognitionContext.builder()
-                .setPreContext(preContext.takeLast(20))
+                .setPreContext(context.takeLast(20))
                 .setWritingArea(WritingArea(width, lineHeight))
                 .build()
             val candidates = recognizer.recognize(inkBuilder.build(), context).await().candidates
             val text = candidates.firstOrNull()?.text?.trim().orEmpty()
             if (text.isNotEmpty()) {
-                result += RecognizedLine(line, text, candidates.drop(1).take(3).map { it.text })
-                preContext = "$preContext $text"
+                // Hasta 4 alternativas: más abajo las lecturas suelen ser casi la respuesta y dejarían
+                // pasar errores de verdad en el repaso rápido.
+                result += RecognizedLine(line, text, candidates.drop(1).take(4).map { it.text })
+                context = if (context.isEmpty()) text else "$context $text"
             }
         }
         return result

@@ -159,7 +159,8 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val candidates = try {
                 if (!c.recognizer.isModelDownloaded()) c.recognizer.downloadModel()
-                val lines = c.recognizer.recognizeLines(s.strokes, lineHeight, width)
+                // Lo que va antes del hueco como contexto: sin él leyó «국귀요» donde decía 꿈꿔요.
+                val lines = c.recognizer.recognizeLines(s.strokes, lineHeight, width, preContext = card.before)
                 listOf(lines.joinToString("") { it.text }) + lines.firstOrNull()?.alternatives.orEmpty()
             } catch (e: CancellationException) {
                 throw e
@@ -237,6 +238,16 @@ fun QuickReviewScreen(container: AppContainer, onBack: () -> Unit) {
             state.done -> Summary(state, onAgain = vm::start, onBack = onBack)
             card != null -> CardView(state, card, settings.stylusOnly, settings.penPressure, settings.penWidthDp, vm)
         }
+    }
+}
+
+/** Lo que la app leyó, en grande: así se ve enseguida si leyó bien tu letra. */
+@Composable
+private fun ReadBack(read: String?, color: androidx.compose.ui.graphics.Color) {
+    if (read.isNullOrBlank()) return
+    Column(Modifier.testTag("repaso_leido")) {
+        Text("LEÍ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(read, style = MaterialTheme.typography.headlineMedium, color = color)
     }
 }
 
@@ -336,16 +347,22 @@ private fun CardView(
             }
             state.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
             when (state.outcome) {
-                ClozeOutcome.RIGHT -> Text(
-                    if (state.rating == Fsrs.Rating.GOOD) "Bien." else "Bien, con ayuda: vuelve un poco antes.",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = scheme.tertiary,
-                )
-                ClozeOutcome.WRONG -> Text(
-                    "Leí «${state.read}». No es lo del hueco: prueba otra vez, abre una pista o, si tu forma también es correcta, «La mía también vale».",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.error,
-                )
+                ClozeOutcome.RIGHT -> {
+                    ReadBack(state.read, scheme.tertiary)
+                    Text(
+                        if (state.rating == Fsrs.Rating.GOOD) "Bien." else "Bien, con ayuda: vuelve un poco antes.",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = scheme.tertiary,
+                    )
+                }
+                ClozeOutcome.WRONG -> {
+                    ReadBack(state.read, scheme.error)
+                    Text(
+                        "No es lo del hueco: prueba otra vez o abre una pista. Si lo escribiste bien y la app leyó mal, o tu forma también es correcta, «La mía también vale».",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.error,
+                    )
+                }
                 ClozeOutcome.REVEALED -> Text("Era «${card.answer}». Vuelve pronto.", style = MaterialTheme.typography.titleMedium, color = scheme.error)
                 null -> {}
             }
