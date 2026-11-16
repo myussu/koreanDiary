@@ -175,6 +175,7 @@ agrega el detalle del aviso o el logcat.
   - «Prueba: bien» cierra la tarjeta.
   - «Prueba: mal», luego «La mía también vale» y «Otra vez».
   - «Ver respuesta», «Siguiente» y al final el resumen con «Otra ronda».
+- [ ] Al cerrar una tarjeta (acierto o «Ver respuesta»), «Más sobre esto» abre la explicación: significado, «Partes:», uso y ejemplos (con respuestas fijas, «Partes fijas de la versión de prueba…»). En la tarjeta siguiente ya no está abierta.
 - [ ] Repaso rápido escribiendo a mano en el recuadro (stylus) y «Comprobar». Lo leído sale en grande bajo «LEÍ» (`repaso_leido`), acierte o no.
 - [ ] «Prueba: mal» → «La mía también vale»: dice «Bien.» si no abriste más de una pista, y el resumen la cuenta igual.
 - [ ] Repasar todo y «Otra ronda» hasta que no quede nada: dice «Ya repasaste todo lo que tocaba hoy», no «importa tu lista».

@@ -104,6 +104,11 @@ data class ItemExplanation(
     /** Gramática: cómo se une a verbos y adjetivos. Palabras: conjugación si es irregular. */
     val conjugation: String?,
     val examples: List<ExampleSentence>,
+    /**
+     * De qué partes se forma: una palabra compuesta o derivada (꿈꾸다 = 꿈 «sueño» + 꾸다 «soñar»)
+     * o cómo se arma una gramática. Null si no tiene partes o si la explicación es anterior.
+     */
+    val structure: String? = null,
 )
 
 data class ExampleSentence(val korean: String, val english: String?)

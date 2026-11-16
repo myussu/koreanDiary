@@ -168,7 +168,7 @@ object ExplainParser {
         val examples = o.optJSONArray("ej").mapObjects { e ->
             e.str("ko")?.let { ExampleSentence(it, e.str("en")) }
         }
-        return ItemExplanation(form, meaning, o.str("u"), o.str("c"), examples)
+        return ItemExplanation(form, meaning, o.str("u"), o.str("c"), examples, structure = o.str("p"))
     }
 
     fun toJson(item: ItemExplanation): JSONObject = JSONObject()
@@ -176,6 +176,7 @@ object ExplainParser {
         .put("s", item.meaning)
         .put("u", item.usage ?: JSONObject.NULL)
         .put("c", item.conjugation ?: JSONObject.NULL)
+        .put("p", item.structure ?: JSONObject.NULL)
         .put("ej", JSONArray().apply {
             item.examples.forEach { put(JSONObject().put("ko", it.korean).put("en", it.english ?: JSONObject.NULL)) }
         })

@@ -262,11 +262,12 @@ object Prompts {
             - "f": la forma tal como aparece arriba.
             - "s": significado en español, máximo 10 palabras.
             - "u": cuándo y cómo se usa de forma natural, en español, 1 o 2 frases: matiz, registro, con qué partícula o palabras suele ir, o con qué no confundirla.
-            - "c": en gramática, cómo se une a verbos y adjetivos con 2 o 3 ejemplos cortos (가다 → 가느라고, 먹다 → 먹느라고). En palabras, la conjugación en -어요 si es irregular (듣다 → 들어요); si no, null.
+            - "c": en gramática, cómo se une a verbos y adjetivos con 2 o 3 ejemplos cortos (가다 → 가느라고, 먹다 → 먹느라고). En palabras, la conjugación en -어요 si es irregular o se contrae (듣다 → 들어요, 꿈꾸다 → 꿈꿔요); si no, null.
+            - "p": de qué partes se forma, en español y corto. Una palabra compuesta o derivada: cada parte con su significado (꿈꾸다 = 꿈 «sueño» + 꾸다 «soñar»; 꿈 viene de 꾸다 + -ㅁ). Una gramática: cómo se arma, si se ve (-느라고 = -느라 + -고). Si no tiene partes que ayuden a recordarla, null.
             - "ej": 2 oraciones naturales y cotidianas, como las diría un coreano, que el estudiante podría escribir en su diario (su día, la universidad, amigos, planes). Fuera del ítem, vocabulario y gramática de nivel $standardLevel o menor. Registro -어요. Cada una: "ko" y "en" (traducción al inglés).
 
             FORMATO:
-            {"items": [{"f": "-느라고", "s": "...", "u": "...", "c": "...", "ej": [{"ko": "...", "en": "..."}]}]}
+            {"items": [{"f": "-느라고", "s": "...", "u": "...", "c": "...", "p": "...", "ej": [{"ko": "...", "en": "..."}]}]}
             """.trimIndent()
         )
     }

@@ -102,6 +102,7 @@ import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.ui.LocalPaperStyle
+import com.jorge.koreandiary.ui.ExplanationBody
 import com.jorge.koreandiary.ui.ReviewLevelsLine
 import com.jorge.koreandiary.ui.testIds
 import com.jorge.koreandiary.ui.ScrollRow
@@ -578,15 +579,7 @@ private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -
             AppTextButton(onClick = onClose) { Text("Cerrar") }
         }
         if (e != null) {
-            Text(e.meaning, style = MaterialTheme.typography.bodyLarge)
-            e.usage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            e.conjugation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.secondary) }
-            e.examples.forEach { ex ->
-                Column(Modifier.padding(top = 4.dp)) {
-                    Text(ex.korean, fontSize = 17.sp)
-                    ex.english?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
-                }
-            }
+            ExplanationBody(e)
         } else {
             // Lo que la app ya sabe, mientras llega la IA o si no hay API.
             Text(chip.detail, style = MaterialTheme.typography.bodySmall)

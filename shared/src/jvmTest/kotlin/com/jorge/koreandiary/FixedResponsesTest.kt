@@ -59,6 +59,10 @@ class FixedResponsesTest {
         assertEquals(listOf("w1", "sg7"), picked)
         val explained = ExplainParser.parse(FixedResponses.answer(Prompts.explainItems("", "3A", 3, listOf("공원" to false, "-느라고" to true))))
         assertEquals(listOf("공원", "-느라고"), explained.map { it.form })
+        // «Más sobre esto»: de qué partes se forma, y sobrevive al guardarse.
+        assertTrue(explained.all { !it.structure.isNullOrBlank() })
+        assertTrue(Prompts.explainItems("", "3A", 3, listOf("꿈꾸다" to false)).contains("\"p\": de qué partes se forma"))
+        assertEquals(explained[0], ExplainParser.fromJson(ExplainParser.toJson(explained[0])))
     }
 
     @Test

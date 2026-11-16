@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -38,8 +39,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.ai.CorrectionRequest
+import com.jorge.koreandiary.ai.Prompts
+import com.jorge.koreandiary.ai.ItemExplanation
+import com.jorge.koreandiary.ai.ExplainParser
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.ProviderException
+import com.jorge.koreandiary.data.ExplanationStore
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkStroke
@@ -77,6 +82,10 @@ data class QuickReviewState(
     val note: String? = null,
     /** Mensaje cuando no hay tarjetas. */
     val empty: String? = null,
+    /** «Más sobre esto»: la explicación del ítem de la tarjeta cerrada, mientras llega y si falla. */
+    val explain: ItemExplanation? = null,
+    val explaining: Boolean = false,
+    val explainNote: String? = null,
     val tally: Map<Fsrs.Rating, Int> = emptyMap(),
 ) {
     val card: ClozeCard? get() = cards.getOrNull(index)
@@ -208,7 +217,50 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun next() = _state.update {
-        it.copy(index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, strokes = emptyList(), note = null)
+        it.copy(
+            index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, strokes = emptyList(), note = null,
+            explain = null, explaining = false, explainNote = null,
+        )
+    }
+
+    /**
+     * «Más sobre esto» al cerrar una tarjeta: significado, de qué partes se forma, uso, conjugación y
+     * ejemplos. Sale de las explicaciones ya guardadas (las mismas de las sugerencias); si no está, se
+     * pide a la IA una vez y queda guardada.
+     */
+    fun explain() {
+        val card = _state.value.card ?: return
+        if (_state.value.explaining) return
+        val key = ExplanationStore.key(card.label, card.kind == ClozeKind.GRAMMAR)
+        _state.update { it.copy(explaining = true, explainNote = null) }
+        viewModelScope.launch {
+            c.explanations.get(key)?.let { found ->
+                _state.update { it.copy(explain = found, explaining = false) }
+                return@launch
+            }
+            val settings = c.settings.state.value
+            val provider = c.coachProvider()
+            val note = when {
+                provider == null -> "Para ver más, configura Gemini (es gratis) en Ajustes › IA."
+                c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> "Llegaste al límite diario de la IA."
+                else -> try {
+                    val asked = listOf(card.label to (card.kind == ClozeKind.GRAMMAR))
+                    val raw = provider.second.complete(CorrectionRequest(Prompts.explainItems(settings.profile, settings.level, settings.standardLevel, asked)))
+                    c.settings.registerUse(provider.first)
+                    c.explanations.putAll(ExplanationStore.match(asked, ExplainParser.parse(raw)))
+                    if (c.explanations.get(key) == null) "La IA no devolvió esta explicación." else null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: ProviderException) {
+                    if (e.offline) "Sin conexión." else e.message ?: "Error de la IA."
+                } catch (e: ParseException) {
+                    "No se pudo leer la respuesta de la IA."
+                } catch (e: Exception) {
+                    e.message ?: e.javaClass.simpleName
+                }
+            }
+            _state.update { it.copy(explain = c.explanations.get(key), explaining = false, explainNote = note) }
+        }
     }
 }
 
@@ -366,6 +418,21 @@ private fun CardView(
                 ClozeOutcome.REVEALED -> Text("Era «${card.answer}». Vuelve pronto.", style = MaterialTheme.typography.titleMedium, color = scheme.error)
                 null -> {}
             }
+            // «Más sobre esto»: la palabra o la gramática de la tarjeta, por partes y con ejemplos.
+            if (shown && (state.explain != null || state.explaining || state.explainNote != null)) {
+                Column(
+                    Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(12.dp).testTag("repaso_mas"),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(card.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    state.explain?.let { ExplanationBody(it) }
+                    if (state.explaining) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("Buscando la explicación…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    }
+                    state.explainNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
+                }
+            }
         }
 
         if (answering || state.outcome == ClozeOutcome.WRONG) {
@@ -435,7 +502,10 @@ private fun CardView(
                 AppTextButton(onClick = vm::reveal) { Text("Ver respuesta") }
             }
         } else {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
+                if (state.explain == null && !state.explaining) {
+                    AppOutlinedButton(onClick = vm::explain, modifier = Modifier.testTag("repaso_mas_boton")) { Text("Más sobre esto") }
+                }
                 AppButton(onClick = vm::next) { Text(if (state.index + 1 < state.cards.size) "Siguiente" else "Terminar") }
             }
         }

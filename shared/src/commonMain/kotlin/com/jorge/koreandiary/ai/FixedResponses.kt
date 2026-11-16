@@ -150,6 +150,7 @@ object FixedResponses {
             items.put(
                 JSONObject().put("f", form).put("s", "significado de prueba").put("u", "Explicación fija de la versión de prueba.")
                     .put("c", if (m.groupValues[2] == "gramática") "가다 → 가요" else JSONObject.NULL)
+                    .put("p", "Partes fijas de la versión de prueba: $form = A + B.")
                     .put("ej", JSONArray().put(JSONObject().put("ko", "오늘 공원에 갔어요.").put("en", "I went to the park today.")))
             )
         }

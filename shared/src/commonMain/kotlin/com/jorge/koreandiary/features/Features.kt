@@ -69,7 +69,7 @@ object Features {
             "Diario",
             listOf(
                 phone("«Nueva página» trae sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel."),
-                phone("Toca una sugerencia para ver su significado, cómo se usa y ejemplos."),
+                phone("Toca una sugerencia para ver su significado, de qué partes se forma, cómo se usa y ejemplos."),
                 phone("«¿Cómo digo?»: «Dictar» o escribes la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase», a tu nivel y, si cambia, la natural. Igual en el diario, las escenas y la conversación."),
                 phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con lo que cuentas (también después de «Revisar»). Lo que viste hace poco en el workbook y lo que fallaste hace poco va primero, si encaja."),
                 phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste en «¿Cómo digo?», «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
@@ -148,6 +148,7 @@ object Features {
                 phone("«Resumen»: «Repaso rápido», «Tu nivel» y abajo racha, calendario, memoria del repaso, tiempos verbales, lo que más te cuesta y minutos hablados."),
                 phone("«Repaso rápido»: unas diez oraciones con un espacio en blanco, con lo que te toca repasar y algo que nunca usaste. Primero tus oraciones (ya corregidas); para lo demás, la IA escribe una (una sola llamada por ronda). La traducción se ve desde el inicio, con lo que falta resaltado."),
                 phone("En el repaso rápido escribes la respuesta a mano en el recuadro («Teclado» si prefieres) y «Comprobar». Lo que la app leyó sale en grande («LEÍ»), para ver si leyó bien tu letra; si leyó mal, «La mía también vale». «Pista» abre hasta tres: en una palabra, cuántas sílabas, la primera y las fichas desordenadas; en un verbo, la forma de diccionario, la terminación y las fichas; en una gramática, el verbo, el patrón y las fichas."),
+                phone("Al cerrar una tarjeta del repaso rápido, «Más sobre esto»: significado, de qué partes se forma (꿈꾸다 = 꿈 + 꾸다), cómo se usa, cómo se conjuga y dos ejemplos. Con IA la primera vez; después queda guardado."),
                 phone("Cuenta para tu repaso al momento: sin pistas o con una = bien; con más, o si fallaste antes = difícil; «Ver respuesta» = vuelve pronto. Si tu forma también es correcta, «La mía también vale». Sin IA van solo tus oraciones, sin traducción."),
                 phone("«Tu nivel»: cuánto tienes de la gramática de cada nivel del estándar (y cuánto ya usaste bien) y el nivel que eso indica. Si no coincide con el de Ajustes, lo propone; no lo cambia solo."),
                 phone("«Prueba de vocabulario»: unas 15 palabras al azar por nivel, tocas las que conoces; suma su resultado a «Tu nivel». «Repetir la prueba» cuando quieras."),
@@ -443,8 +444,8 @@ object Features {
                 ),
                 FlowStep(
                     "Repasas en unos minutos",
-                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco y su traducción. Escribes a mano lo que falta; si no sale, pides pistas. Cuenta para tu repaso al momento.",
-                    listOf("Repaso rápido", "Comprobar", "Pista", "Ver respuesta", "La mía también vale"),
+                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco y su traducción. Escribes a mano lo que falta; si no sale, pides pistas. Cuenta para tu repaso al momento. Al cerrar la tarjeta, «Más sobre esto» la explica por partes y con ejemplos.",
+                    listOf("Repaso rápido", "Comprobar", "Pista", "Ver respuesta", "La mía también vale", "Más sobre esto"),
                     aside = FlowAside("Si prefieres", listOf("Teclado", "Borrar")),
                 ),
                 FlowStep(
