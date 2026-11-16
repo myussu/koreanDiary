@@ -171,6 +171,20 @@ class ClozeTest {
     }
 
     @Test
+    fun theAiBlankGoesWhereTheItemIs() {
+        // Una partícula corta va pegada al final de una palabra (책이), no al principio de 이것.
+        assertEquals(ClozeBlank(1, "이"), Cloze.placeBlank("책이 이것보다 커요.", "이", "N이/가", ClozeKind.GRAMMAR))
+        // Una palabra va donde empieza una palabra (이불), no dentro de otra (고양이).
+        assertEquals(ClozeBlank(5, "이"), Cloze.placeBlank("고양이가 이불 위에 있어요.", "이", "이", ClozeKind.WORD))
+        // Si aparece una sola vez, ahí; si no aparece, no hay tarjeta.
+        assertEquals(ClozeBlank(8, "가고 싶어요"), Cloze.placeBlank("주말에 바다에 가고 싶어요.", "가고 싶어요", "V-고 싶다", ClozeKind.GRAMMAR))
+        assertNull(Cloze.placeBlank("주말에 바다에 갔어요.", "가고 싶어요", "V-고 싶다", ClozeKind.GRAMMAR))
+        val targets = listOf(ClozeTarget("g1", "N이/가", ClozeKind.GRAMMAR))
+        val card = Cloze.parse("""{"items": [{"id": "g1", "oracion": "책이 이것보다 커요.", "hueco": "이", "traduccion": "El libro..."}]}""", targets).single()
+        assertEquals("책", card.before)
+    }
+
+    @Test
     fun theSessionIsDueFirstThenAFewNew() {
         val due = (1..12).map { "d$it" }
         val unseen = (1..5).map { "n$it" }

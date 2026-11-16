@@ -88,8 +88,10 @@ fun StudyScreen(
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val stateMap = remember(states) { states.associateBy { it.itemType to it.itemId } }
     var tab by rememberSaveable { mutableStateOf(initialTab) }
-    var query by remember { mutableStateOf("") }
-    var open by remember { mutableStateOf<ItemRef?>(null) }
+    // Se guardan al girar el celular (F5 de las pruebas): la búsqueda y el ítem abierto, por su código.
+    var query by rememberSaveable { mutableStateOf("") }
+    var openCode by rememberSaveable { mutableStateOf<String?>(null) }
+    val open = openCode?.let { ItemRef.parse(it) }
     val q = query.trim().lowercase()
     val shownWords = remember(words, q) {
         if (q.isEmpty()) words else words.filter { w -> w.baseForm.contains(q) || w.meaning?.lowercase()?.contains(q) == true }
@@ -125,7 +127,7 @@ fun StudyScreen(
                     StudyTab.PENDING -> "${t.label} (${pending.size})"
                     else -> t.label
                 }
-                AppToggle(label, tab == t) { tab = t; open = null }
+                AppToggle(label, tab == t) { tab = t; openCode = null }
             }
         }
         when (tab) {
@@ -161,7 +163,7 @@ fun StudyScreen(
                                 ).joinToString(" · "),
                                 memory = stateMap[ItemType.WORD to w.id], now = now,
                                 expanded = open == ref,
-                                onClick = { open = if (open == ref) null else ref },
+                                onClick = { openCode = if (open == ref) null else ref.code },
                             ) { ItemDetail(container, ref, w.baseForm, stateMap[ItemType.WORD to w.id], now) }
                         }
                     } else {
@@ -172,7 +174,7 @@ fun StudyScreen(
                                 subtitle = listOfNotNull(g.level + (g.unit?.let { " · U$it" } ?: ""), g.meaning, sourceLabel(g.source)).joinToString(" · "),
                                 memory = stateMap[ItemType.GRAMMAR to g.id], now = now,
                                 expanded = open == ref,
-                                onClick = { open = if (open == ref) null else ref },
+                                onClick = { openCode = if (open == ref) null else ref.code },
                             ) { ItemDetail(container, ref, g.pattern, stateMap[ItemType.GRAMMAR to g.id], now) }
                         }
                     }
@@ -332,7 +334,7 @@ private fun CoverageCell(c: LevelCoverage, modifier: Modifier = Modifier) {
             fontWeight = if (c.listShare >= LevelEstimate.THRESHOLD) FontWeight.SemiBold else FontWeight.Normal,
             color = if (c.listShare >= LevelEstimate.THRESHOLD) scheme.tertiary else scheme.onSurface,
         )
-        Text("${c.usedWell} usadas bien", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        Text("${c.usedWell} ${if (c.usedWell == 1) "usada" else "usadas"} bien", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
     }
 }
 

@@ -170,6 +170,9 @@ agrega el detalle del aviso o el logcat.
   - «Prueba: mal», luego «La mía también vale» y «Otra vez».
   - «Ver respuesta», «Siguiente» y al final el resumen con «Otra ronda».
 - [ ] Repaso rápido escribiendo a mano en el recuadro (stylus) y «Comprobar».
+- [ ] «Prueba: mal» → «La mía también vale»: dice «Bien.» si no abriste más de una pista, y el resumen la cuenta igual.
+- [ ] Repasar todo y «Otra ronda» hasta que no quede nada: dice «Ya repasaste todo lo que tocaba hoy», no «importa tu lista».
+- [ ] En Gramática, abrir un ítem y girar el celular: sigue abierto, y lo escrito en el buscador sigue.
 
 ### Workbook
 

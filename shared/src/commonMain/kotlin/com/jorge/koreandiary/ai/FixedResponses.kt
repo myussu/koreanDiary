@@ -170,7 +170,7 @@ object FixedResponses {
                     o.put("base", label).put("terminacion", "-고 싶다")
                 }
                 kind == "gramática" -> {
-                    o.put("oracion", "이 문장은 $label 연습이에요.").put("hueco", label)
+                    o.put("oracion", "오늘은 $label 연습을 해요.").put("hueco", label)
                     o.put("traduccion", "Esta oración practica [esta gramática].").put("base", "하다")
                 }
                 else -> {

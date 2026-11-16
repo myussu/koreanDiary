@@ -279,6 +279,31 @@ object Cloze {
         return out.filter { it.first.isNotEmpty() }
     }
 
+    private val WORD_EDGE = Regex("""[\s.,!?~…·"'“”‘’()\[\]「」『』:;]""")
+
+    /**
+     * Dónde va el hueco que trajo la IA. Si aparece una vez, ahí. Si aparece más (이 en 이것 y en
+     * 책이), primero donde [blankIn] encuentra el ítem en la oración; si no, según el tipo: una
+     * partícula o terminación corta pegada al final de una palabra, lo demás al principio de una
+     * palabra. Antes se tomaba siempre la primera (F6 de las pruebas).
+     */
+    fun placeBlank(sentence: String, answer: String, label: String, kind: ClozeKind): ClozeBlank? {
+        if (answer.isEmpty()) return null
+        val starts = generateSequence(sentence.indexOf(answer).takeIf { it >= 0 }) { prev ->
+            sentence.indexOf(answer, prev + 1).takeIf { it >= 0 }
+        }.toList()
+        if (starts.size <= 1) return starts.firstOrNull()?.let { ClozeBlank(it, answer) }
+        blankIn(sentence, label, kind)?.let { b ->
+            starts.firstOrNull { s -> s < b.start + b.text.length && b.start < s + answer.length }?.let { return ClozeBlank(it, answer) }
+        }
+        fun startsWord(i: Int) = i == 0 || WORD_EDGE.matches(sentence[i - 1].toString())
+        fun endsWord(i: Int) = i + answer.length >= sentence.length || WORD_EDGE.matches(sentence[i + answer.length].toString())
+        val attached = kind == ClozeKind.GRAMMAR && answer.trim().length <= 2
+        val best = if (attached) starts.firstOrNull { endsWord(it) && !startsWord(it) } ?: starts.firstOrNull { endsWord(it) }
+        else starts.firstOrNull { startsWord(it) }
+        return ClozeBlank(best ?: starts.first(), answer)
+    }
+
     /** Las tarjetas que salen sin IA: las de tus oraciones con el hueco encontrado. */
     fun localCards(targets: List<ClozeTarget>): List<ClozeCard> = targets.mapNotNull { t ->
         val sentence = t.sentence ?: return@mapNotNull null
@@ -350,9 +375,7 @@ object Cloze {
         val cards = targets.mapNotNull { t ->
             val o = byCode[t.code]
             val sentence = t.sentence ?: o?.text("oracion") ?: return@mapNotNull null
-            val blank = t.blank ?: o?.text("hueco")?.let { hueco ->
-                sentence.indexOf(hueco).takeIf { it >= 0 }?.let { ClozeBlank(it, hueco) }
-            } ?: return@mapNotNull null
+            val blank = t.blank ?: o?.text("hueco")?.let { hueco -> placeBlank(sentence, hueco, t.label, t.kind) } ?: return@mapNotNull null
             ClozeCard(
                 code = t.code, label = t.label, kind = t.kind, meaning = t.meaning,
                 sentence = sentence, start = blank.start, answer = blank.text,

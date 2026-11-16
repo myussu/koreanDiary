@@ -51,6 +51,7 @@ import com.jorge.koreandiary.srs.Fsrs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -66,6 +67,8 @@ data class QuickReviewState(
     /** Respuestas que no coincidieron antes de acertar. */
     val wrong: Int = 0,
     val outcome: ClozeOutcome? = null,
+    /** La calificación con que se cerró la tarjeta: el mensaje sale de ella, no de los fallos. */
+    val rating: Fsrs.Rating? = null,
     /** Lo último que escribiste, tal como lo leyó la app. */
     val read: String? = null,
     val checking: Boolean = false,
@@ -98,7 +101,10 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             val now = System.currentTimeMillis()
             val targets = c.study.quickReviewTargets(now, settings.grammarLevelList)
             if (targets.isEmpty()) {
-                _state.update { it.copy(loading = false, empty = "Todavía no hay nada para repasar: importa tu lista o escribe en el diario.") }
+                // Sin lista no hay qué repasar; con lista, es que ya repasaste todo lo de hoy (F8 de las pruebas).
+                val empty = if (c.study.hasItems.first()) "Ya repasaste todo lo que tocaba hoy. Vuelve mañana, o úsalo escribiendo en el diario."
+                else "Todavía no hay nada para repasar: importa tu lista o escribe en el diario."
+                _state.update { it.copy(loading = false, empty = empty) }
                 return@launch
             }
             val provider = c.coachProvider()
@@ -195,13 +201,13 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
 
     private fun close(outcome: ClozeOutcome, rating: Fsrs.Rating) {
         val card = _state.value.card ?: return
-        _state.update { it.copy(outcome = outcome, tally = it.tally + (rating to (it.tally[rating] ?: 0) + 1)) }
+        _state.update { it.copy(outcome = outcome, rating = rating, tally = it.tally + (rating to (it.tally[rating] ?: 0) + 1)) }
         // En el alcance de la app: el resultado se guarda aunque cierres la pantalla enseguida.
         c.appScope.launch { c.study.applyQuickReview(card.code, rating, System.currentTimeMillis()) }
     }
 
     fun next() = _state.update {
-        it.copy(index = it.index + 1, hints = 0, wrong = 0, outcome = null, read = null, strokes = emptyList(), note = null)
+        it.copy(index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, strokes = emptyList(), note = null)
     }
 }
 
@@ -331,7 +337,7 @@ private fun CardView(
             state.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
             when (state.outcome) {
                 ClozeOutcome.RIGHT -> Text(
-                    if (state.hints <= 1 && state.wrong == 0) "Bien." else "Bien, con ayuda: vuelve un poco antes.",
+                    if (state.rating == Fsrs.Rating.GOOD) "Bien." else "Bien, con ayuda: vuelve un poco antes.",
                     style = MaterialTheme.typography.titleMedium,
                     color = scheme.tertiary,
                 )
