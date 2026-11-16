@@ -3,7 +3,11 @@ package com.jorge.koreandiary.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,7 +19,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 
@@ -113,3 +128,48 @@ fun AppTag(
         Text(text, fontSize = fontSize, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
     }
 }
+
+/**
+ * Una fila que se desplaza de lado y, si no cabe, se desvanece en el borde por donde sigue: así se
+ * nota que hay más sin ocupar otra fila de alto (pruebas del 2026-11-15: «Rehacer», «Por revisar» y
+ * «Hablar y escuchar» quedaban fuera sin pista). Para las pestañas, los grupos y la barra de la hoja.
+ */
+@Composable
+fun ScrollRow(
+    modifier: Modifier = Modifier,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.spacedBy(6.dp),
+    verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val scroll = rememberScrollState()
+    Row(
+        modifier.fadingEdges(scroll).horizontalScroll(scroll),
+        horizontalArrangement = horizontalArrangement,
+        verticalAlignment = verticalAlignment,
+        content = content,
+    )
+}
+
+/**
+ * El degradado de [ScrollRow]: borra el contenido hacia el borde con una máscara (no pinta ningún
+ * color, así sirve sobre cualquier fondo y en modo oscuro).
+ */
+fun Modifier.fadingEdges(scroll: ScrollState, width: androidx.compose.ui.unit.Dp = 36.dp): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+        drawContent()
+        val edge = width.toPx().coerceAtMost(size.width / 3)
+        // Negro y transparente son la máscara (BlendMode.DstOut), no colores que se vean.
+        if (scroll.canScrollForward) {
+            drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = size.width - edge, endX = size.width), blendMode = BlendMode.DstOut)
+        }
+        if (scroll.canScrollBackward) {
+            drawRect(Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = 0f, endX = edge), blendMode = BlendMode.DstOut)
+        }
+    }
+
+/**
+ * Los `testTag` como `resource-id` dentro de un diálogo: es otra ventana y no hereda lo de la raíz
+ * (F9 de las pruebas). Va en el contenido de cada diálogo que tenga etiquetas.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.testIds(): Modifier = semantics { testTagsAsResourceId = true }

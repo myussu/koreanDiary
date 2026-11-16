@@ -74,7 +74,7 @@ adb shell am broadcast -a ADB_INPUT_TEXT --es msg '어제 친구를 만났어요
 
 ## Leer la pantalla y tocar
 
-Los `testTag` salen como `resource-id` (la raíz tiene `testTagsAsResourceId`). Los botones también se
+Los `testTag` salen como `resource-id` (la raíz tiene `testTagsAsResourceId`, y cada diálogo con etiquetas también, porque un diálogo es otra ventana). Los botones también se
 encuentran por su texto, que es el mismo que dice «Qué puede hacer la app».
 
 ```bash
@@ -141,13 +141,17 @@ agrega el detalle del aviso o el logcat.
   - arriba, la línea de niveles (bien / corregir / más natural).
 - [ ] «Descartar» en la más natural la quita.
 - [ ] Reescribir debajo y «Verificar»: marca como reescrita la que coincide; «Hecho» marca a mano.
-- [ ] Con correcciones pendientes, la página no cuenta para la racha; al reescribirlas, sí.
+- [ ] La página del diario cuenta para la racha en cuanto tiene algo escrito, aunque tenga correcciones pendientes.
+- [ ] «Descartar» una más natural y «Hecho» en una corrección cambian el aviso de abajo por lo que queda («Queda 1 corrección por reescribir», «Todas las correcciones reescritas ✓»).
+- [ ] Con «+ Línea» activo, el aviso sale encima de la barra y no tapa el primer renglón.
+- [ ] La barra de la hoja: si no caben, las herramientas se desvanecen en el borde y se deslizan; «Rehacer» se alcanza.
 
 ### Escenas
 
 - [ ] «Nueva escena» trae dos gramáticas ★ aparte de las sugerencias.
 - [ ] Escribir 바다, 봄, 반달 o 새벽 (con texto confirmado o ADB Keyboard) hace aparecer su dibujo en la franja de abajo.
 - [ ] 눈을 감았어요, 해 주세요 y 한 달 no traen nieve, sol ni luna.
+- [ ] Una escena con correcciones pendientes no cuenta para la racha; al reescribirlas (o «Hecho» en todas), sí.
 - [ ] Revisar una escena trae la escena viva y el tono (luz de color desde abajo).
 - [ ] «Dibujos»: la lista por zona, «Prueba una palabra» con 봄바람 (viento) y 반달곰 (oso).
 - [ ] Sin tocar la hoja por 30 s, la escena se queda quieta; al tocar, sigue.

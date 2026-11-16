@@ -60,7 +60,9 @@ Documento vivo con todas las decisiones: https://claude.ai/artifact/HF2YEd3vBEkc
   - **Sin actualizaciones:** el actualizador no busca; la versión de prueba se compila e instala de nuevo.
 
   En todas las versiones:
-  - **Etiquetas:** los `testTag` salen como `resource-id` (`testTagsAsResourceId` en la raíz).
+  - **Etiquetas:** los `testTag` salen como `resource-id` (`testTagsAsResourceId` en la raíz y, con `Modifier.testIds()`, en cada diálogo con etiquetas: un diálogo es otra ventana y no hereda lo de la raíz).
+- **Filas que no caben** (`ScrollRow` en `ui/Components.kt`, pruebas del 2026-11-15): se desplazan de lado y se desvanecen en el borde por donde siguen (una máscara, sin color propio). La hoja es lo primero: ninguna fila pasa a dos renglones para no quitarle alto. La usan la barra de la hoja, las pestañas de Estudio, los grupos de Ajustes y los proveedores de IA.
+- **Avisos del panel de correcciones:** «Descartar» y «Hecho» cambian el aviso de abajo por lo que queda (`PageViewModel.panelStatus`); el de «+ Línea» va encima de la barra, fuera de la hoja.
   - **Aviso de cierre:** `CrashLog` guarda el último cierre por error en `noBackupFilesDir/cierre.txt` (fuera de toda copia) y el inicio lo avisa con «Copiar detalle».
 
   La guía para probar es `docs/PRUEBAS.md`.

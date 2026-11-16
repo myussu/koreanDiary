@@ -1022,14 +1022,14 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             if (response.sceneNew.isNotEmpty()) c.sceneDrawings.offer(response.sceneNew, page.confirmedText.orEmpty())
         }
         val parts = buildList {
-            add(if (summary.corrections == 0) "¡Sin errores!" else "${summary.corrections} correcciones")
-            if (summary.repeated > 0) add(if (summary.repeated == 1) "1 error que se repite" else "${summary.repeated} errores que se repiten")
-            if (summary.naturals > 0) add(if (summary.naturals == 1) "1 más natural" else "${summary.naturals} más naturales")
-            if (summary.reviewed > 0) add("${summary.reviewed} ítems repasados")
-            if (summary.newWords > 0) add("${summary.newWords} palabras nuevas")
-            if (summary.newGrammar > 0) add("${summary.newGrammar} gramáticas nuevas")
-            if (summary.improvements > 0) add("${summary.improvements} mejoras sugeridas")
-            if (summary.notes > 0) add(if (summary.notes == 1) "1 nota de sentido" else "${summary.notes} notas de sentido")
+            add(if (summary.corrections == 0) "¡Sin errores!" else countOf(summary.corrections, "corrección", "correcciones"))
+            if (summary.repeated > 0) add(countOf(summary.repeated, "error que se repite", "errores que se repiten"))
+            if (summary.naturals > 0) add(countOf(summary.naturals, "más natural", "más naturales"))
+            if (summary.reviewed > 0) add(countOf(summary.reviewed, "ítem repasado", "ítems repasados"))
+            if (summary.newWords > 0) add(countOf(summary.newWords, "palabra nueva", "palabras nuevas"))
+            if (summary.newGrammar > 0) add(countOf(summary.newGrammar, "gramática nueva", "gramáticas nuevas"))
+            if (summary.improvements > 0) add(countOf(summary.improvements, "mejora sugerida", "mejoras sugeridas"))
+            if (summary.notes > 0) add(countOf(summary.notes, "nota de sentido", "notas de sentido"))
             if (summary.pendingWords > 0) add("${summary.pendingWords} por revisar en Estudio")
         }
         react(
@@ -1084,16 +1084,39 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 _feedback.trySend(if (ok == pending.size) Feedback.SUCCESS else Feedback.FAIL)
                 if (ok == pending.size) maybePaintSceneImage()
                 val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
-                setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
+                setPhase(Phase.Writing, "$ok de ${countOf(pending.size, "corrección", "correcciones")} bien ${if (ok == 1) "reescrita" else "reescritas"}. Leí: “$read”")
             } catch (e: Exception) {
                 setPhase(Phase.Writing, HandwritingRecognizer.inkMessage(e) ?: "No se pudo reconocer: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }
 
-    /** Nota de sentido que no aplica (cambiaste de idea): se quita de la lista. */
+    /**
+     * Nota de sentido o versión más natural que no aplica: se quita de la lista. Si arriba quedó el
+     * resumen de la revisión, se actualiza (antes seguía contando lo descartado, F10 de las pruebas).
+     */
     fun dismissNote(correction: Correction) {
-        viewModelScope.launch { c.diary.dismissNote(correction) }
+        viewModelScope.launch {
+            c.diary.dismissNote(correction)
+            if (_state.value.message != null) setPhase(_state.value.phase, panelStatus())
+        }
+    }
+
+    /** Lo que queda en el panel de correcciones, para el aviso después de «Descartar» o «Hecho». */
+    private suspend fun panelStatus(): String {
+        val all = c.diary.correctionsNow(pageId)
+        val pending = all.count { it.status == CorrectionStatus.PENDING }
+        val naturals = all.count { it.status == CorrectionStatus.NATURAL }
+        return buildList {
+            add(
+                when {
+                    pending > 0 -> "Queda${if (pending == 1) "" else "n"} ${countOf(pending, "corrección", "correcciones")} por reescribir"
+                    all.any { it.status == CorrectionStatus.REWRITTEN } -> "Todas las correcciones reescritas ✓"
+                    else -> "Sin correcciones por reescribir"
+                }
+            )
+            if (naturals > 0) add(countOf(naturals, "más natural", "más naturales"))
+        }.joinToString(" · ") + "."
     }
 
     /** Para cuando el reconocimiento falla aunque lo hayas reescrito bien. */
@@ -1101,6 +1124,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         viewModelScope.launch {
             c.diary.markRewritten(correction)
             val left = c.diary.correctionsNow(pageId).count { it.status == CorrectionStatus.PENDING }
+            // El aviso de «Verificar» (p. ej. «1 de 2 bien reescritas») ya no vale: se cambia por lo que queda.
+            setPhase(_state.value.phase, panelStatus())
             if (left == 0) {
                 react(MascotMood.HAPPY)
                 _feedback.trySend(Feedback.SUCCESS)
@@ -1225,3 +1250,6 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         private const val MAX_EXPLAIN = 12
     }
 }
+
+/** «1 corrección», «3 correcciones». */
+internal fun countOf(n: Int, one: String, many: String): String = "$n ${if (n == 1) one else many}"

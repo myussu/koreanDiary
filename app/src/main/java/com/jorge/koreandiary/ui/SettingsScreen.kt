@@ -133,10 +133,7 @@ fun SettingsScreen(
             AppTextButton(onClick = { save(); onBack() }) { Text("‹ Diario") }
             Text("Ajustes", style = MaterialTheme.typography.titleLarge)
         }
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+        ScrollRow(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             SettingsGroup.entries.forEach { g -> AppToggle(g.label, group == g) { group = g } }
         }
         Column(
@@ -263,10 +260,7 @@ fun SettingsScreen(
                 }
                 Section("Corrección") {
                     Text("Proveedor por defecto", style = MaterialTheme.typography.labelLarge)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    ) {
+                    ScrollRow {
                         listOf(
                             ProviderId.SHARE to "Compartir con un chat",
                             ProviderId.GEMINI to "Gemini",

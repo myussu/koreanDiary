@@ -116,10 +116,8 @@ fun StudyScreen(
             Text("Estudio", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             AppButton(onClick = onImport) { Text("Importar") }
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(vertical = 8.dp).horizontalScroll(rememberScrollState()),
-        ) {
+        // Si no caben, se desvanecen en el borde y se deslizan (sin otra fila: más lugar para la lista).
+        ScrollRow(Modifier.padding(vertical = 8.dp)) {
             StudyTab.entries.forEach { t ->
                 val label = when (t) {
                     StudyTab.WORDS -> "${t.label} (${words.size})"

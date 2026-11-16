@@ -101,6 +101,8 @@ import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.ui.LocalPaperStyle
 import com.jorge.koreandiary.ui.ReviewLevelsLine
+import com.jorge.koreandiary.ui.testIds
+import com.jorge.koreandiary.ui.ScrollRow
 import com.jorge.koreandiary.ui.formatDate
 import com.jorge.koreandiary.ui.pageStatusLabel
 import com.jorge.koreandiary.ui.paperBackground
@@ -325,15 +327,6 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
                     vm.onCanvasSized(it.width.toFloat(), it.height.toFloat(), lineHeightPx)
                 },
             )
-            if (tool == InkTool.INSERT_LINE) {
-                // Text con fondo (no Surface): un Surface bloquearía los toques sobre las primeras líneas.
-                Text(
-                    "Toca la línea donde quieres una línea vacía: esa y las de abajo bajan un renglón.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onPrimary,
-                    modifier = Modifier.fillMaxWidth().background(scheme.primary.copy(alpha = 0.9f)).padding(horizontal = 12.dp, vertical = 6.dp),
-                )
-            }
             (state.phase as? Phase.Busy)?.let { busy ->
                 Surface(color = scheme.background.copy(alpha = 0.85f), modifier = Modifier.fillMaxSize()) {
                     Column(
@@ -348,18 +341,25 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             }
         }
 
+        // El aviso de «+ Línea» va fuera de la hoja, encima de la barra: antes tapaba el primer renglón,
+        // justo donde a veces hay que tocar (pruebas del 2026-11-15).
+        if (tool == InkTool.INSERT_LINE) {
+            Text(
+                "Toca la línea donde quieres una línea vacía: esa y las de abajo bajan un renglón.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onPrimary,
+                modifier = Modifier.fillMaxWidth().background(scheme.primary).padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
         HorizontalDivider(color = scheme.outlineVariant)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Herramientas a la izquierda (se desplazan si no caben); acciones fijas a la derecha.
-            Row(
-                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            // Herramientas a la izquierda (se desplazan si no caben, con un degradado que lo avisa);
+            // acciones fijas a la derecha.
+            ScrollRow(Modifier.weight(1f)) {
                 AppToggle("Lápiz", tool == InkTool.PEN) { tool = InkTool.PEN }
                 AppToggle("Borrar", tool == InkTool.ERASER) { tool = InkTool.ERASER }
                 AppToggle("+ Línea", tool == InkTool.INSERT_LINE) {
@@ -875,7 +875,7 @@ private fun ConfirmDialog(
         onDismissRequest = onDismiss,
         title = { Text("¿Esto es lo que escribiste?") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.testIds().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Corrige lo que se haya leído mal antes de enviarlo.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth().testTag("confirmar_texto"), minLines = 3)
                 // Versión de prueba: un texto con los errores fijos (docs/PRUEBAS.md), sin escribir coreano.
