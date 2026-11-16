@@ -80,7 +80,7 @@ class HandwritingRecognizer {
             .filterKeys { it >= fromLine }
             .toSortedMap()
         val result = mutableListOf<RecognizedLine>()
-        var context = preContext
+        var before = preContext
         for ((line, lineStrokes) in byLine) {
             val offsetY = line * lineHeight
             val inkBuilder = Ink.builder()
@@ -91,7 +91,7 @@ class HandwritingRecognizer {
                 inkBuilder.addStroke(sb.build())
             }
             val context = RecognitionContext.builder()
-                .setPreContext(context.takeLast(20))
+                .setPreContext(before.takeLast(20))
                 .setWritingArea(WritingArea(width, lineHeight))
                 .build()
             val candidates = recognizer.recognize(inkBuilder.build(), context).await().candidates
@@ -100,7 +100,7 @@ class HandwritingRecognizer {
                 // Hasta 4 alternativas: más abajo las lecturas suelen ser casi la respuesta y dejarían
                 // pasar errores de verdad en el repaso rápido.
                 result += RecognizedLine(line, text, candidates.drop(1).take(4).map { it.text })
-                context = if (context.isEmpty()) text else "$context $text"
+                before = if (before.isEmpty()) text else "$before $text"
             }
         }
         return result
