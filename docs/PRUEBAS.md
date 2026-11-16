@@ -127,6 +127,7 @@ agrega el detalle del aviso o el logcat.
 - [ ] «?» abre la lista con buscador; «Cómo se usa» abre los recorridos; «Ver cómo se usa ›» salta al de cada grupo.
 - [ ] Atrás (gesto o botón) vuelve de cada pantalla sin cerrar la app.
 - [ ] Girar el celular en el inicio, en una página y en Estudio no pierde lo que estaba en pantalla. En horizontal, el inicio se desplaza entero hasta «Nueva página», los tres botones y la lista.
+- [ ] Detalles que se veían mal: «SUGERENCIAS» en un renglón; los tipos de corrección con tilde («conjugación», «partícula»); plurales («1 palabra nueva», «1 usada bien»); «-다가» sin número en las sugerencias; la pista del estándar entre comillas («달»), sin «ej.:»; la frase de «¿Cómo digo?» y las correcciones se desvanecen abajo si hay más; «Ver cómo se usa ›» cae justo en el recorrido; la versión de prueba no muestra «Reintentar» al buscar actualización.
 - [ ] Modo oscuro (Ajustes › General): nada queda ilegible (texto negro sobre negro, botones invisibles).
 
 ### Diario
@@ -161,6 +162,7 @@ agrega el detalle del aviso o el logcat.
 - [ ] «Importar» con un TXT de gramática (`Unit 1: V-고 싶다 | A/V-(으)니까`): entra a «Gramática».
 - [ ] Pestañas Resumen, Vocabulario, Gramática, Por revisar y Para agregar.
 - [ ] Tocar un ítem de la lista abre su memoria, tus oraciones y lo que te corrigieron.
+- [ ] «Te corrigieron»: con gramática importada, una página nueva cuyas sugerencias traigan una gramática tuya, «Revisar» con «Usar texto de prueba». En Estudio › Gramática, esa gramática muestra «만나요 → 만났어요» en «Te corrigieron».
 - [ ] «Tu nivel»: filas por nivel. Si no coincide con Ajustes, aparece el aviso y el botón a Ajustes. No cambia el nivel solo.
 - [ ] «Prueba de vocabulario»: tocar algunas palabras, «Siguiente nivel» hasta «Listo» (o «Terminar aquí»). «Tu nivel» muestra el resultado.
 - [ ] «Para agregar»:

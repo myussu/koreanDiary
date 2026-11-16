@@ -854,6 +854,24 @@ object CorrectionType {
     const val MEANING = "sentido"
     /** Correcto pero más natural (no es un error). */
     const val NATURAL = "natural"
+
+    /**
+     * El tipo para mostrar. La IA devuelve claves sin tildes («conjugacion») a propósito, para que el
+     * JSON sea estable; en pantalla van con tilde (pruebas del 2026-11-15). Lo desconocido, tal cual.
+     */
+    fun label(type: String): String = when (type.trim().lowercase()) {
+        "ortografia" -> "ortografía"
+        "particula" -> "partícula"
+        "conjugacion" -> "conjugación"
+        "gramatica" -> "gramática"
+        "naturalidad" -> "naturalidad"
+        "vocabulario" -> "vocabulario"
+        "tiempo" -> "tiempo verbal"
+        IMPROVEMENT -> "mejora"
+        MEANING -> "sentido"
+        NATURAL -> "más natural"
+        else -> type
+    }
 }
 
 class DiaryRepository(private val db: AppDatabase) {

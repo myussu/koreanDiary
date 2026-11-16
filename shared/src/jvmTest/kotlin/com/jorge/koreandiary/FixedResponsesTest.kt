@@ -33,6 +33,9 @@ class FixedResponsesTest {
         assertEquals(listOf("presente", "pasado"), r.sentences.map { it.tense })
         assertEquals(setOf("만나요" to "만났어요", "친구을" to "친구를"), r.corrections.map { it.original to it.suggestion }.toSet())
         assertTrue(r.corrections.all { it.sentence == 1 })
+        // La primera queda enganchada a la gramática sugerida de tu lista (para «Te corrigieron»).
+        assertEquals("g2", r.corrections.first().itemRef)
+        assertEquals(null, r.corrections.drop(1).firstOrNull()?.itemRef)
         // La última oración, sin error, vuelve como «más natural».
         assertEquals(listOf(2), r.naturals.map { it.sentence })
         // Lo sugerido que está en el texto cuenta como usado.

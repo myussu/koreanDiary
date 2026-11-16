@@ -29,6 +29,16 @@ class StandardCatalogTest {
     }
 
     @Test
+    fun senseNumbersAreNotPartOfTheForm() {
+        // El estándar trae «-다가1(1)» y «-다가1(2)»: el número no se muestra y tu «-다가» coincide.
+        assertTrue(catalog.grammar.none { g -> Regex("[가-힣]\\d").containsMatchIn(g.form) })
+        assertEquals(listOf(61, 114), catalog.grammar.filter { it.form == "-다가" }.map { it.id })
+        assertEquals(61, catalog.grammar(listOf("V-다가"))?.id)
+        assertEquals("-다가", StandardCatalog.withoutSenseIndex("-다가1(2)"))
+        assertEquals("제3과", StandardCatalog.withoutSenseIndex("제3과"))
+    }
+
+    @Test
     fun aiNotationMatches() {
         assertEquals("-어서", catalog.grammar(listOf("-아서"))?.form)
         assertEquals("-는 바람에", catalog.grammar(listOf("-는 바람에"))?.form)

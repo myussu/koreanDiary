@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -82,6 +83,7 @@ import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.data.AnnotatedItem
 import com.jorge.koreandiary.data.db.Correction
+import com.jorge.koreandiary.data.CorrectionType
 import com.jorge.koreandiary.data.db.CorrectionStatus
 import com.jorge.koreandiary.data.db.PageKind
 import com.jorge.koreandiary.data.db.PageStatus
@@ -103,6 +105,7 @@ import com.jorge.koreandiary.ui.LocalPaperStyle
 import com.jorge.koreandiary.ui.ReviewLevelsLine
 import com.jorge.koreandiary.ui.testIds
 import com.jorge.koreandiary.ui.ScrollRow
+import com.jorge.koreandiary.ui.fadingEdges
 import com.jorge.koreandiary.ui.formatDate
 import com.jorge.koreandiary.ui.pageStatusLabel
 import com.jorge.koreandiary.ui.paperBackground
@@ -487,12 +490,15 @@ private fun SuggestionsBar(
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             mascot?.invoke()
-            Text("SUGERENCIAS", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-            onRefresh?.let { refresh ->
-                AppTextButton(onClick = refresh, enabled = !refreshing) { Text(if (refreshing) "Buscando…" else "Actualizar") }
+            // El título en un renglón; los botones se deslizan si no caben (antes «SUGERENCIAS» se partía).
+            Text("SUGERENCIAS", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false, modifier = Modifier.padding(end = 4.dp))
+            ScrollRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                onRefresh?.let { refresh ->
+                    AppTextButton(onClick = refresh, enabled = !refreshing) { Text(if (refreshing) "Buscando…" else "Actualizar") }
+                }
+                AppTextButton(onClick = onHowTo) { Text("¿Cómo digo?") }
+                AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }
             }
-            AppTextButton(onClick = onHowTo) { Text("¿Cómo digo?") }
-            AppTextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar" else "Mostrar") }
         }
         if (!expanded) return@Column
         // Escenas: las gramáticas nuevas, un paso por encima de tu nivel, en su propio grupo.
@@ -551,11 +557,13 @@ private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -
     val scheme = MaterialTheme.colorScheme
     val chip = card.chip
     val e = card.explanation
+    val scroll = rememberScrollState()
     Column(
         Modifier.fillMaxWidth().padding(top = 6.dp)
             .border(1.dp, scheme.outlineVariant)
             .heightIn(max = 280.dp)
-            .verticalScroll(rememberScrollState())
+            .fadingEdges(scroll, vertical = true)
+            .verticalScroll(scroll)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -643,9 +651,11 @@ private fun HowToSayPanel(
         if (granted || voice.listening) onDictate() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
+    // Si la ayuda no cabe, se desvanece abajo: se nota que sigue («Como lo diría un coreano»).
+    val panelScroll = rememberScrollState()
     Surface(color = scheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(
-            Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.heightIn(max = 300.dp).fadingEdges(panelScroll, vertical = true).verticalScroll(panelScroll).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -773,6 +783,8 @@ private fun CorrectionsPanel(
 ) {
     val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(true) }
+    // Las correcciones se desvanecen abajo si hay más (antes la explicación quedaba cortada sin pista).
+    val listState = rememberLazyListState()
     val pending = corrections.count { it.status == CorrectionStatus.PENDING }
     val levels = remember(corrections, sentenceNumbers) {
         ReviewLevels.of(
@@ -794,7 +806,8 @@ private fun CorrectionsPanel(
             }
             if (expanded) ReviewLevelsLine(levels, Modifier.padding(start = 12.dp, bottom = 2.dp))
             if (expanded) LazyColumn(
-                Modifier.heightIn(max = 190.dp).padding(horizontal = 12.dp),
+                Modifier.heightIn(max = 190.dp).fadingEdges(listState, vertical = true).padding(horizontal = 12.dp),
+                state = listState,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -852,7 +865,7 @@ private fun CorrectionsPanel(
                                 Text("  →  ", color = scheme.onSurfaceVariant)
                                 Text(c.suggestion, fontWeight = FontWeight.SemiBold, color = scheme.tertiary)
                             }
-                            Text("${c.type} · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                            Text("${CorrectionType.label(c.type)} · ${c.explanation}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                         }
                         // Si "Verificar" no la detecta aunque esté bien reescrita, se marca a mano.
                         if (!done) AppTextButton(onClick = { onMarkDone(c) }) { Text("Hecho") }

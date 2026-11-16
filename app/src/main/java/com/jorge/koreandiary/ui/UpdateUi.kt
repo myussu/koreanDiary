@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.update.ReleaseInfo
 import com.jorge.koreandiary.update.UpdateState
 import com.jorge.koreandiary.update.Updater
@@ -100,7 +101,8 @@ fun UpdatePanel(updater: Updater, alwaysVisible: Boolean, modifier: Modifier = M
                         if (s.backupFailed) {
                             AppOutlinedButton(onClick = { updater.startInstall(s.info, skipBackup = true) }) { Text("Actualizar sin copia") }
                         }
-                    } else {
+                    } else if (!BuildConfig.PRUEBA) {
+                        // La versión de prueba no se actualiza: reintentar no tiene sentido.
                         AppOutlinedButton(onClick = { scope.launch { updater.check() } }) { Text("Reintentar") }
                     }
                     AppTextButton(onClick = updater::dismiss) { Text("Cerrar") }

@@ -19,6 +19,8 @@ import org.json.JSONObject
  * - «친구을» → «친구를» (partícula).
  * - «학교에서 가요» → «학교에 가요» (partícula).
  * La última oración, si hay dos o más y no tiene error, vuelve como «más natural».
+ * La primera corrección se engancha a un ítem de tu lista sugerido en la página (una gramática si
+ * hay, si no una palabra): así se ve «Te corrigieron» al abrir ese ítem en Estudio.
  */
 class FixedProvider : CorrectionProvider {
     override val id: String = "prueba"
@@ -75,6 +77,10 @@ object FixedResponses {
                 corrected += n
             }
         }
+        // La primera corrección queda enganchada a un ítem de tu lista (no del estándar) sugerido aquí.
+        val suggested = section(prompt, "SUGERIDOS EN ESTA PÁGINA").mapNotNull { it.split(" | ").firstOrNull()?.trim() }
+        val owner = suggested.firstOrNull { Regex("""g\d+""").matches(it) } ?: suggested.firstOrNull { Regex("""w\d+""").matches(it) }
+        if (owner != null && correcciones.length() > 0) correcciones.getJSONObject(0).put("item_id", owner)
         val naturals = JSONArray()
         val last = sentences.size
         if (last >= 2 && last !in corrected) {

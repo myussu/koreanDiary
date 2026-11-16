@@ -80,6 +80,15 @@ class StandardCatalog(private val loadLines: (String) -> List<String>) {
     }
 
     companion object {
+        private val SENSE_INDEX = Regex("""(?<=[가-힣])\d+(\(\d+\))?$""")
+
+        /**
+         * El estándar numera las acepciones de una misma forma («-다가1(1)», «-다가1(2)»). El número
+         * no es parte de la forma: se veía en las sugerencias y no dejaba que tu «-다가» coincidiera
+         * con la del estándar (pruebas del 2026-11-15). Cada acepción conserva su id y su nivel.
+         */
+        fun withoutSenseIndex(form: String): String = form.trim().replace(SENSE_INDEX, "")
+
         /** id \t nivel \t palabra \t homónimo \t categoría \t ejemplo */
         fun parseVocab(lines: List<String>): List<StdWord> = lines.mapNotNull { line ->
             val c = line.split('\t')
@@ -95,7 +104,7 @@ class StandardCatalog(private val loadLines: (String) -> List<String>) {
                 id = c[0].toIntOrNull() ?: return@mapNotNull null,
                 level = c[1].toIntOrNull() ?: 0,
                 category = c[2],
-                form = c[3],
+                form = withoutSenseIndex(c[3]),
                 related = c[4].split('|').map { it.trim() }.filter { it.isNotEmpty() },
                 meaning = c[5],
             )

@@ -5,6 +5,8 @@
 .DS_Store
 /build/
 /app/build/
+/shared/build/
+/desktopApp/build/
 /captures/
 .externalNativeBuild/
 .cxx/
@@ -14,3 +16,7 @@
 
 # Escritorio (Rust)
 /desktop/**/target/
+
+# Pruebas en el emulador (docs/PRUEBAS.md): resultados y capturas locales, no van al repo
+/pruebas-resultados.md
+/capturas-pruebas/

@@ -326,7 +326,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             refs.mapNotNull { ref ->
                 when (ref.type) {
                     ItemType.STD_WORD -> c.catalog.wordById(ref.id.toInt())?.let {
-                        SuggestionChip(it.word, "Posible laguna · nivel ${it.level} del estándar · ${it.type} · ej.: ${it.guide}", false, isGap = true, ref = ref)
+                        SuggestionChip(it.word, "Posible laguna · nivel ${it.level} del estándar · ${it.type}" + (it.guide.takeIf { g -> g.isNotBlank() }?.let { g -> " · «$g»" } ?: ""), false, isGap = true, ref = ref)
                     }
                     ItemType.STD_GRAMMAR -> c.catalog.grammarById(ref.id.toInt())?.let {
                         val extra = listOf(it.category, it.meaning).filter { s -> s.isNotBlank() }.joinToString(" · ")

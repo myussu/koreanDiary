@@ -440,7 +440,7 @@ private fun ToAddTab(container: AppContainer, report: LevelReport?, test: VocabT
                 item { EmptyNote("Agregaste o ya tenías todas las que no conociste en la prueba. Puedes repetirla en «Resumen».") }
             }
             items(list, key = { "sv${it.id}" }) { w ->
-                AddRow(w.word, "Nivel ${w.level} · ${w.type}" + (w.guide.takeIf { it.isNotBlank() }?.let { " · ej.: $it" } ?: "")) { known ->
+                AddRow(w.word, "Nivel ${w.level} · ${w.type}" + (w.guide.takeIf { it.isNotBlank() }?.let { " · «$it»" } ?: "")) { known ->
                     add(ItemRef(ItemType.STD_WORD, w.id.toLong()), known)
                 }
             }

@@ -1,6 +1,7 @@
 package com.jorge.koreandiary.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -65,11 +66,15 @@ fun FeaturesScreen(onBack: () -> Unit) {
             AppToggle("Cómo se usa", showFlows) { showFlows = true }
         }
         if (showFlows) {
+            // Sin margen arriba en la lista: al saltar a un recorrido, ese queda justo debajo de las
+            // pestañas (con margen asomaba el final del anterior, pruebas del 2026-11-15).
             LazyColumn(
                 state = flowsState,
-                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                item(key = "indice") { FlowIndex { i -> scope.launch { flowsState.animateScrollToItem(i + 1) } } }
+                item(key = "indice") {
+                    Box(Modifier.padding(top = 4.dp)) { FlowIndex { i -> scope.launch { flowsState.animateScrollToItem(i + 1) } } }
+                }
                 items(Features.flows, key = { it.title }) { flow -> FeatureFlowCard(flow, Platform.PHONE) }
             }
         } else {

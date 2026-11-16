@@ -3,7 +3,7 @@ package com.jorge.koreandiary.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -151,20 +151,22 @@ fun ScrollRow(
 }
 
 /**
- * El degradado de [ScrollRow]: borra el contenido hacia el borde con una máscara (no pinta ningún
- * color, así sirve sobre cualquier fondo y en modo oscuro).
+ * El degradado de [ScrollRow] y de los paneles que cortan el texto: borra el contenido hacia el
+ * borde por donde sigue, con una máscara (no pinta ningún color, así sirve sobre cualquier fondo y en
+ * modo oscuro). [vertical] para paneles que se desplazan hacia abajo (la frase de «¿Cómo digo?», las
+ * correcciones). Va antes del modificador que desplaza.
  */
-fun Modifier.fadingEdges(scroll: ScrollState, width: androidx.compose.ui.unit.Dp = 36.dp): Modifier =
+fun Modifier.fadingEdges(scroll: ScrollableState, vertical: Boolean = false, width: androidx.compose.ui.unit.Dp = 36.dp): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
         drawContent()
-        val edge = width.toPx().coerceAtMost(size.width / 3)
+        val length = if (vertical) size.height else size.width
+        val edge = width.toPx().coerceAtMost(length / 3)
         // Negro y transparente son la máscara (BlendMode.DstOut), no colores que se vean.
-        if (scroll.canScrollForward) {
-            drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), startX = size.width - edge, endX = size.width), blendMode = BlendMode.DstOut)
-        }
-        if (scroll.canScrollBackward) {
-            drawRect(Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = 0f, endX = edge), blendMode = BlendMode.DstOut)
-        }
+        fun gradient(from: Color, to: Color, start: Float, end: Float) =
+            if (vertical) Brush.verticalGradient(listOf(from, to), startY = start, endY = end)
+            else Brush.horizontalGradient(listOf(from, to), startX = start, endX = end)
+        if (scroll.canScrollForward) drawRect(gradient(Color.Transparent, Color.Black, length - edge, length), blendMode = BlendMode.DstOut)
+        if (scroll.canScrollBackward) drawRect(gradient(Color.Black, Color.Transparent, 0f, edge), blendMode = BlendMode.DstOut)
     }
 
 /**
