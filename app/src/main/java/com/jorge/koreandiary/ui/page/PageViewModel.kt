@@ -29,6 +29,7 @@ import com.jorge.koreandiary.data.db.PageStatus
 import com.jorge.koreandiary.ink.InkJsonWriter
 import com.jorge.koreandiary.ink.InkOps
 import com.jorge.koreandiary.ink.InkSerializer
+import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.TextMatch
 import com.jorge.koreandiary.ink.renderPage
@@ -500,7 +501,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 persist { it.copy(reviewedLineCount = lines.maxOf { l -> l.line } + 1) }
                 setPhase(Phase.Confirm(text))
             } catch (e: Exception) {
-                setPhase(Phase.Writing, "No se pudo reconocer la escritura: ${e.message ?: e.javaClass.simpleName}")
+                setPhase(Phase.Writing, HandwritingRecognizer.inkMessage(e) ?: "No se pudo reconocer la escritura: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }
@@ -786,7 +787,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                "No se pudieron actualizar: ${e.message ?: e.javaClass.simpleName}"
+                HandwritingRecognizer.inkMessage(e) ?: "No se pudieron actualizar: ${e.message ?: e.javaClass.simpleName}"
             }
             _state.update { it.copy(refreshing = false, message = message) }
         }
@@ -1085,7 +1086,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
                 setPhase(Phase.Writing, "$ok de ${pending.size} correcciones bien reescritas. Leí: “$read”")
             } catch (e: Exception) {
-                setPhase(Phase.Writing, "No se pudo reconocer: ${e.message}")
+                setPhase(Phase.Writing, HandwritingRecognizer.inkMessage(e) ?: "No se pudo reconocer: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }

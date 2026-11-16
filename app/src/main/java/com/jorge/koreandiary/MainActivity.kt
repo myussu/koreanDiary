@@ -26,6 +26,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.lifecycle.ViewModel
@@ -37,6 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.ui.FeaturesScreen
 import com.jorge.koreandiary.ui.HomeScreen
+import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.ui.ImportScreen
 import com.jorge.koreandiary.ui.KoreanDiaryTheme
 import com.jorge.koreandiary.ui.SceneDrawingsScreen
@@ -133,10 +135,14 @@ private fun AppNavigation(container: AppContainer) {
 
     // Busca actualizaciones una vez por apertura, en silencio (sin errores si no hay red).
     LaunchedEffect(Unit) { container.updater.check(silent = true) }
-    // Precarga el modelo de escritura coreana por Wi-Fi: así la primera "Revisar" no espera la descarga.
+    // Precarga el modelo de escritura coreana si hay Wi-Fi: así la primera "Revisar" no espera la
+    // descarga. Con datos móviles no: se baja cuando lo pides (y ahí no espera a ningún Wi-Fi).
+    val appContext = LocalContext.current.applicationContext
     LaunchedEffect(Unit) {
         runCatching {
-            if (!container.recognizer.isModelDownloaded()) container.recognizer.downloadModel(wifiOnly = true)
+            if (HandwritingRecognizer.onUnmeteredNetwork(appContext) && !container.recognizer.isModelDownloaded()) {
+                container.recognizer.downloadModel()
+            }
         }
     }
 

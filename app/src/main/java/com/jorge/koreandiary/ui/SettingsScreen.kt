@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.BuildConfig
+import com.jorge.koreandiary.ink.HandwritingRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.jorge.koreandiary.ai.CorrectionRequest
@@ -235,7 +236,7 @@ fun SettingsScreen(
                                     "Modelo coreano descargado. Ya funciona sin internet."
                                 }
                             } catch (e: Exception) {
-                                "No se pudo descargar: ${e.message}"
+                                HandwritingRecognizer.inkMessage(e) ?: "No se pudo descargar: ${e.message ?: e.javaClass.simpleName}"
                             }
                         }
                     }) { Text("Descargar modelo de escritura coreana") }

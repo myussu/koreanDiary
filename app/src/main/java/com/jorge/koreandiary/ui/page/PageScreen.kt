@@ -67,6 +67,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
@@ -251,12 +252,22 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
 
         if (corrections.isNotEmpty()) CorrectionsPanel(corrections, sentenceNumbers, onMarkDone = vm::markRewritten, onDismissNote = vm::dismissNote)
 
+        // El aviso nunca tapa la hoja: hasta tres renglones, y la ✕ dice que se quita tocándolo.
         state.message?.let { msg ->
             Surface(
                 color = scheme.surfaceContainerHigh,
                 modifier = Modifier.fillMaxWidth().clickable { vm.dismissMessage() },
             ) {
-                Text(msg, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                Row(Modifier.padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.Top) {
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text("✕", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
+                }
             }
         }
     }

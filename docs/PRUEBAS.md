@@ -131,6 +131,7 @@ agrega el detalle del aviso o el logcat.
 
 ### Diario
 
+- [ ] Modelo de escritura sin Wi-Fi: `pm clear`, Wi-Fi apagado y solo datos móviles (`adb shell svc wifi disable`). «Revisar» baja el modelo con datos; si no hay red, en 90 s como mucho dice en español «Sin conexión…» o «tarda demasiado». Lo mismo con «Actualizar» y con «Comprobar» del repaso rápido. Ningún aviso en inglés, y el aviso no tapa la hoja (máximo tres renglones, con ✕).
 - [ ] «Nueva página» trae sugerencias; tocar una abre su significado (con respuestas fijas, «significado de prueba»).
 - [ ] Escribir en la hoja (stylus), Borrar, «+ Línea», Deshacer y Rehacer.
 - [ ] «¿Cómo digo?»: escribir una idea, ver la ayuda por partes (palabras → «Más ayuda» → «Ver la frase»).

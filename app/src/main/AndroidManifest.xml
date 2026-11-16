@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Saber si hay Wi-Fi antes de precargar el modelo de escritura (no gastar datos móviles). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Conversación por voz y preguntas en el modo Escuchar -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Modo Escuchar con la pantalla apagada: reproducción y micrófono en primer plano -->

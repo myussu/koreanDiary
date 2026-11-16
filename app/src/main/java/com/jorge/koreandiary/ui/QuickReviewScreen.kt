@@ -40,6 +40,7 @@ import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.ai.CorrectionRequest
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.ProviderException
+import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.InkTool
@@ -157,7 +158,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(checking = false, note = "No pude leer tu letra: ${e.message ?: e.javaClass.simpleName}") }
+                _state.update { it.copy(checking = false, note = HandwritingRecognizer.inkMessage(e) ?: "No pude leer tu letra: ${e.message ?: e.javaClass.simpleName}") }
                 return@launch
             }
             judge(card, candidates.filter { it.isNotBlank() })

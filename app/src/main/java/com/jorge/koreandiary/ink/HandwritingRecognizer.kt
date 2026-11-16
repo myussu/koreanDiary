@@ -1,6 +1,10 @@
 package com.jorge.koreandiary.ink
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.google.android.gms.tasks.Task
+import com.google.mlkit.common.MlKitException
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognition
@@ -10,7 +14,10 @@ import com.google.mlkit.vision.digitalink.recognition.DigitalInkRecognizerOption
 import com.google.mlkit.vision.digitalink.recognition.Ink
 import com.google.mlkit.vision.digitalink.recognition.RecognitionContext
 import com.google.mlkit.vision.digitalink.recognition.WritingArea
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -31,10 +38,24 @@ class HandwritingRecognizer {
 
     suspend fun isModelDownloaded(): Boolean = manager.isModelDownloaded(model).await()
 
-    /** [wifiOnly] para la precarga en segundo plano: ~20 MB que no deben gastar datos móviles. */
-    suspend fun downloadModel(wifiOnly: Boolean = false) {
-        val conditions = DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()
-        manager.download(model, conditions).await()
+    /**
+     * Baja el modelo (~20 MB) con la red que haya, con un tiempo límite. Nunca con condiciones de ML
+     * Kit («solo Wi-Fi»): ML Kit junta las descargas del mismo modelo, y una que espera el Wi-Fi hacía
+     * esperar para siempre a las que pedías después con datos móviles. La precarga decide antes, con
+     * [onUnmeteredNetwork], si conviene bajarlo.
+     *
+     * @throws ModelDownloadException con el mensaje en español, listo para mostrar.
+     */
+    suspend fun downloadModel() {
+        try {
+            withTimeout(DOWNLOAD_TIMEOUT_MS) { manager.download(model, DownloadConditions.Builder().build()).await() }
+        } catch (e: TimeoutCancellationException) {
+            throw ModelDownloadException(SLOW_DOWNLOAD, e)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw ModelDownloadException(NO_DOWNLOAD, e)
+        }
     }
 
     /**
@@ -78,6 +99,34 @@ class HandwritingRecognizer {
     }
 
     fun close() = recognizer.close()
+
+    companion object {
+        /** Cuánto se espera la descarga del modelo antes de decir que tarda demasiado. */
+        const val DOWNLOAD_TIMEOUT_MS = 90_000L
+
+        private const val NO_DOWNLOAD =
+            "Sin conexión: la primera vez hay que bajar el modelo de escritura coreana (unos 20 MB). Conéctate y prueba otra vez."
+        private const val SLOW_DOWNLOAD =
+            "El modelo de escritura coreana (unos 20 MB) tarda demasiado en bajar. Revisa la conexión y prueba otra vez."
+
+        /**
+         * El mensaje para la pantalla si [e] vino del reconocedor (la descarga del modelo o ML Kit), sin
+         * la excepción en inglés. Null si es otro error: quien llama muestra el suyo.
+         */
+        fun inkMessage(e: Throwable): String? = when {
+            e is ModelDownloadException -> e.message
+            generateSequence(e) { it.cause }.any { it is MlKitException } -> "No se pudo leer tu letra. Prueba otra vez."
+            else -> null
+        }
+
+        /** ¿Hay una red sin medición (Wi-Fi)? Para la precarga: no gastar datos móviles sin que lo pidas. */
+        fun onUnmeteredNetwork(context: Context): Boolean {
+            val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        }
+    }
 }
 
 data class RecognizedLine(val line: Int, val text: String, val alternatives: List<String>)
@@ -87,3 +136,6 @@ suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
     addOnFailureListener { cont.resumeWithException(it) }
     addOnCanceledListener { cont.cancel() }
 }
+
+/** El modelo de escritura no se pudo bajar (sin conexión o tardó demasiado). El mensaje va en español. */
+class ModelDownloadException(message: String, cause: Throwable? = null) : Exception(message, cause)
