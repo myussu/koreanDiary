@@ -76,7 +76,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("1. Lista de gramática en TXT", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Lee el formato “Unit N: patrón | patrón” sin usar IA. El apéndice se guarda como nivel “base”.",
+                    "Lee el formato “Unit N: patrón | patrón” (con o sin viñeta o negritas) sin usar IA. El apéndice se guarda como nivel “base”.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(value = level, onValueChange = { level = it }, label = { Text("Nivel de las unidades (p. ej. 3A)") }, singleLine = true)

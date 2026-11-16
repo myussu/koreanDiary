@@ -386,11 +386,13 @@ object ImportParser {
 /**
  * Lee la lista de gramática en TXT sin IA, con el formato del libro:
  *   - **Unit 1:** A-다고 하다, V-ㄴ/는다고 하다 | V-아/어야겠다 | ...
+ * La viñeta y las negritas son opcionales: `Unit 1: V-고 싶다 | A/V-(으)니까` (como lo describe la
+ * pantalla de Importar) y `**Unit 1:** …` también valen. «Unidad» en vez de «Unit», igual.
  * Las viñetas del apéndice ("- N 대신") se importan con nivel "base".
  * La sección de irregulares se omite: son reglas para el corrector, no patrones para sugerir.
  */
 object GrammarTxtParser {
-    private val UNIT_LINE = Regex("""^\s*-\s*\**\s*Unit\s+(\d+)\s*:?\s*\**\s*:?\s*(.+)$""", RegexOption.IGNORE_CASE)
+    private val UNIT_LINE = Regex("""^\s*(?:[-*•]\s*)?\**\s*(?:Unit|Unidad)\s+(\d+)\s*:?\s*\**\s*:?\s*(.+)$""", RegexOption.IGNORE_CASE)
     private val BULLET = Regex("""^\s*-\s+(.+)$""")
 
     fun parse(text: String, level: String): ImportPayload {
@@ -401,16 +403,17 @@ object GrammarTxtParser {
             val trimmed = line.trim()
             if (trimmed.isEmpty()) continue
             val lower = trimmed.lowercase()
-            if (trimmed.startsWith("#") || trimmed.startsWith("**")) {
-                if ("appendix" in lower || "extension" in lower || "apéndice" in lower) inAppendix = true
-                inRules = "irregular" in lower
-                continue
-            }
+            // Antes que los títulos: «**Unit 1:** …» empieza con ** y no es un título.
             val unitMatch = UNIT_LINE.find(trimmed)
             if (unitMatch != null) {
                 val unit = unitMatch.groupValues[1].toInt()
-                unitMatch.groupValues[2].split(" | ", "|").map { it.trim() }.filter { it.isNotEmpty() }
+                unitMatch.groupValues[2].split(" | ", "|").map { it.trim().trim('*').trim() }.filter { it.isNotEmpty() }
                     .forEach { grammar += point(it, unit, level) }
+                continue
+            }
+            if (trimmed.startsWith("#") || trimmed.startsWith("**")) {
+                if ("appendix" in lower || "extension" in lower || "apéndice" in lower) inAppendix = true
+                inRules = "irregular" in lower
                 continue
             }
             if (inAppendix && !inRules) {
