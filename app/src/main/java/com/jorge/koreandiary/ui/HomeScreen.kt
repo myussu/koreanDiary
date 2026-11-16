@@ -112,91 +112,96 @@ fun HomeScreen(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
             ) { Text("?") }
         }
-        CrashCard(modifier = Modifier.padding(top = 10.dp))
-        if (BuildConfig.PRUEBA) {
-            Text(
-                "Versión de prueba: va aparte de tu diario. " + if (settings.fixedAi) "La IA contesta con respuestas fijas." else "La IA es la real.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.padding(top = 6.dp).testTag("version_prueba"),
-            )
-        }
-        UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
-        BackupBanner(container, onSettings = { onSettings(SettingsGroup.BACKUP) }, modifier = Modifier.padding(top = 10.dp))
         // Solo hace falta saber si hay algo en las listas, no cargarlas enteras cada vez que abres el inicio.
         val hasStudy by container.study.hasItems.collectAsStateWithLifecycle(true)
-        val needsStudy = !hasStudy
-        val needsProfile = settings.profile.isBlank()
-        if (!settings.hideOnboarding && (needsStudy || needsProfile)) {
-            OnboardingCard(
-                needsStudy = needsStudy,
-                needsProfile = needsProfile,
-                hasApi = container.isConfigured(ProviderId.GEMINI) || container.isConfigured(ProviderId.AZURE),
-                onStudy = onStudy,
-                onSettings = onSettings,
-                onHide = { container.settings.update { it.copy(hideOnboarding = true) } },
-            )
-        }
-        if (settings.showMascot) {
-            MascotGreeting(container, counted.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
-        }
-        if (pages.isNotEmpty()) {
-            // Resumen corto; el detalle (tu nivel, calendario, memoria, lo que más cuesta) está en Estudio › Resumen.
-            val byTense = tenses.associate { it.tense to it.total }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 10.dp)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    .clickable(onClick = onProgress)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "${pages.size} ${if (pages.size == 1) "página" else "páginas"} · pasado ${byTense["pasado"] ?: 0} · " +
-                        "presente ${byTense["presente"] ?: 0} · futuro ${byTense["futuro"] ?: 0}",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                Text("Resumen ›", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        AppButton(
-            onClick = {
-                creating = true
-                scope.launch {
-                    val id = newPageWithSuggestions(container, PageKind.DIARY)
-                    creating = false
-                    onOpenPage(id)
-                }
-            },
-            enabled = !creating,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp).testTag("inicio_nueva_pagina"),
-            contentPadding = PaddingValues(vertical = 14.dp),
-        ) { Text("Nueva página") }
-        // Misma altura para los tres aunque «Hablar y escuchar» ocupe dos renglones.
-        Row(
-            Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 8.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val padding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
-            val cell = Modifier.weight(1f).fillMaxHeight()
-            // Describir un lugar o un momento, vivido o imaginado.
-            AppOutlinedButton(onClick = onScenes, modifier = cell.testTag("inicio_escenas"), contentPadding = padding) { Text("Escenas") }
-            // Pistas y revisión para ejercicios del workbook, con foto.
-            AppOutlinedButton(onClick = onWorkbook, modifier = cell.testTag("inicio_workbook"), contentPadding = padding) { Text("Workbook") }
-            // Conversación por voz con Gemini y el pódcast de Escuchar.
-            AppOutlinedButton(onClick = onConversation, modifier = cell.testTag("inicio_hablar"), contentPadding = padding) {
-                Text("Hablar y escuchar", textAlign = TextAlign.Center)
-            }
-        }
-
-        if (pages.isEmpty()) {
-            Text(
-                "Aún no hay páginas. Empieza una nueva y escribe sobre tu día con el S Pen.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
+        // Todo se desplaza junto (avisos, botones y la lista): en horizontal, o con la mascota y los
+        // avisos a la vista, «Nueva página» y la lista quedaban sin alto (F3 de las pruebas).
         val today = LocalDate.now()
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item(key = "arriba") {
+                Column {
+                    CrashCard(modifier = Modifier.padding(top = 10.dp))
+                    if (BuildConfig.PRUEBA) {
+                        Text(
+                            "Versión de prueba: va aparte de tu diario. " + if (settings.fixedAi) "La IA contesta con respuestas fijas." else "La IA es la real.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 6.dp).testTag("version_prueba"),
+                        )
+                    }
+                    UpdatePanel(container.updater, alwaysVisible = false, modifier = Modifier.padding(top = 10.dp))
+                    BackupBanner(container, onSettings = { onSettings(SettingsGroup.BACKUP) }, modifier = Modifier.padding(top = 10.dp))
+                    val needsStudy = !hasStudy
+                    val needsProfile = settings.profile.isBlank()
+                    if (!settings.hideOnboarding && (needsStudy || needsProfile)) {
+                        OnboardingCard(
+                            needsStudy = needsStudy,
+                            needsProfile = needsProfile,
+                            hasApi = container.isConfigured(ProviderId.GEMINI) || container.isConfigured(ProviderId.AZURE),
+                            onStudy = onStudy,
+                            onSettings = onSettings,
+                            onHide = { container.settings.update { it.copy(hideOnboarding = true) } },
+                        )
+                    }
+                    if (settings.showMascot) {
+                        MascotGreeting(container, counted.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() })
+                    }
+                    if (pages.isNotEmpty()) {
+                        // Resumen corto; el detalle (tu nivel, calendario, memoria, lo que más cuesta) está en Estudio › Resumen.
+                        val byTense = tenses.associate { it.tense to it.total }
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 10.dp)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                .clickable(onClick = onProgress)
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${pages.size} ${if (pages.size == 1) "página" else "páginas"} · pasado ${byTense["pasado"] ?: 0} · " +
+                                    "presente ${byTense["presente"] ?: 0} · futuro ${byTense["futuro"] ?: 0}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text("Resumen ›", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    AppButton(
+                        onClick = {
+                            creating = true
+                            scope.launch {
+                                val id = newPageWithSuggestions(container, PageKind.DIARY)
+                                creating = false
+                                onOpenPage(id)
+                            }
+                        },
+                        enabled = !creating,
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).testTag("inicio_nueva_pagina"),
+                        contentPadding = PaddingValues(vertical = 14.dp),
+                    ) { Text("Nueva página") }
+                    // Misma altura para los tres aunque «Hablar y escuchar» ocupe dos renglones.
+                    Row(
+                        Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(top = 8.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val padding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                        val cell = Modifier.weight(1f).fillMaxHeight()
+                        // Describir un lugar o un momento, vivido o imaginado.
+                        AppOutlinedButton(onClick = onScenes, modifier = cell.testTag("inicio_escenas"), contentPadding = padding) { Text("Escenas") }
+                        // Pistas y revisión para ejercicios del workbook, con foto.
+                        AppOutlinedButton(onClick = onWorkbook, modifier = cell.testTag("inicio_workbook"), contentPadding = padding) { Text("Workbook") }
+                        // Conversación por voz con Gemini y el pódcast de Escuchar.
+                        AppOutlinedButton(onClick = onConversation, modifier = cell.testTag("inicio_hablar"), contentPadding = padding) {
+                            Text("Hablar y escuchar", textAlign = TextAlign.Center)
+                        }
+                    }
+                    if (pages.isEmpty()) {
+                        Text(
+                            "Aún no hay páginas. Empieza una nueva y escribe sobre tu día con el S Pen.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
             items(pages, key = { it.pageId }) { p -> PageSummaryCard(p, today, onClick = { onOpenPage(p.pageId) }) }
         }
     }

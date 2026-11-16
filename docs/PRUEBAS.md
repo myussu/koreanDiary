@@ -126,7 +126,7 @@ agrega el detalle del aviso o el logcat.
 - [ ] El inicio muestra «Versión de prueba…» con «La IA contesta con respuestas fijas».
 - [ ] «?» abre la lista con buscador; «Cómo se usa» abre los recorridos; «Ver cómo se usa ›» salta al de cada grupo.
 - [ ] Atrás (gesto o botón) vuelve de cada pantalla sin cerrar la app.
-- [ ] Girar el celular en el inicio, en una página y en Estudio no pierde lo que estaba en pantalla.
+- [ ] Girar el celular en el inicio, en una página y en Estudio no pierde lo que estaba en pantalla. En horizontal, el inicio se desplaza entero hasta «Nueva página», los tres botones y la lista.
 - [ ] Modo oscuro (Ajustes › General): nada queda ilegible (texto negro sobre negro, botones invisibles).
 
 ### Diario
