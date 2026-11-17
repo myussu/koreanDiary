@@ -1,6 +1,7 @@
 package com.jorge.koreandiary.review
 
 import com.jorge.koreandiary.ai.ParseException
+import com.jorge.koreandiary.ai.Prompts
 import com.jorge.koreandiary.ai.extractJsonObject
 import com.jorge.koreandiary.data.standard.GrammarKeys
 import com.jorge.koreandiary.srs.Fsrs
@@ -325,6 +326,7 @@ object Cloze {
      */
     fun prompt(profile: String, level: String, standardLevel: Int, targets: List<ClozeTarget>): String = buildString {
         appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) repasa con oraciones en las que falta una parte (el hueco) y la escribe a mano. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(Prompts.SPANISH)
         if (profile.isNotBlank()) {
             appendLine()
             appendLine("SOBRE EL ESTUDIANTE: ${profile.trim().replace('\n', ' ')}")
@@ -344,7 +346,7 @@ object Cloze {
         appendLine("1. Si el ítem trae «oración suya», úsala tal cual (ya está corregida; no la cambies). Si trae «hueco», devuélvelo igual.")
         appendLine("2. Si no trae oración, escribe una corta (una sola oración, 5 a 10 palabras), natural y cotidiana, sobre su vida, que use el ítem como lo usaría un coreano. Solo vocabulario y gramática de su nivel o menor, en estilo -아요/어요.")
         appendLine("3. \"hueco\": el trozo de la oración que corresponde al ítem, copiado letra por letra: un sustantivo o adverbio tal cual (sin la partícula); un verbo o adjetivo, la palabra conjugada entera; una terminación, la palabra que la lleva entera (si la expresión ocupa dos palabras, las dos); una partícula, solo la partícula.")
-        appendLine("4. \"traduccion\": la traducción natural al español, con lo que corresponde al hueco entre corchetes, por ejemplo: «Como hay examen, [estudié] en la biblioteca».")
+        appendLine("4. \"traduccion\": la traducción natural al español, fiel al sentido de la oración, con lo que corresponde al hueco entre corchetes, por ejemplo: «Como hay examen, [estudié] en la biblioteca».")
         appendLine("5. \"base\": en un verbo o adjetivo, su forma de diccionario; en una gramática, la forma de diccionario del verbo, adjetivo o sustantivo al que va unida. \"terminacion\": en un verbo o adjetivo, la terminación que lleva en el hueco escrita como en un libro (\"-았/었어요\", \"-고\", \"-(으)니까\"); si no, null.")
         appendLine()
         appendLine("FORMATO:")

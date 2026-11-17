@@ -2,6 +2,7 @@ package com.jorge.koreandiary.listen
 
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.PromptItem
+import com.jorge.koreandiary.ai.Prompts
 import com.jorge.koreandiary.ai.extractJsonObject
 import com.jorge.koreandiary.conversation.CorrectionStyle
 import org.json.JSONArray
@@ -136,6 +137,7 @@ object ListenPrompts {
         val plan = ScriptPlan.forMinutes(minutes)
         val n = standardLevel.coerceIn(1, 6)
         appendLine("Eres guionista de un pódcast corto en coreano para un estudiante hispanohablante de nivel $level (≈ nivel $n de 6 del estándar coreano). Lo va a ESCUCHAR, muchas veces sin mirar la pantalla, para entrenar el oído. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(Prompts.SPANISH)
         if (profile.isNotBlank()) appendLine("Sobre él: ${profile.trim()}")
         appendLine()
         appendLine("TEMA: ${topic.ifBlank { "algo cotidiano e interesante de la vida en Corea" }}")
@@ -192,6 +194,7 @@ object ListenPrompts {
     ): String = buildString {
         appendLine("You host a Korean listening session for a Spanish-speaking learner at about TOPIK level ${standardLevel.coerceIn(1, 6)} (his textbook level: $level). He is often not looking at the screen.")
         if (profile.isNotBlank()) appendLine("About him: ${profile.trim()}")
+        appendLine(Prompts.SPANISH_EN)
         appendLine("The app plays the narration below with a separate voice. You stay silent during the narration and only speak during PAUSES.")
         appendLine()
         appendLine("NARRATION — \"${script.title}\" (${script.titleEs}):")

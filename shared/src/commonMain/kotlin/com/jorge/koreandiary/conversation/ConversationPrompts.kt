@@ -38,6 +38,7 @@ object ConversationPrompts {
         appendLine("You are a friendly Korean conversation partner for a Spanish-speaking learner at about TOPIK level ${standardLevel.coerceIn(1, 6)} (his textbook level: $level).")
         if (profile.isNotBlank()) appendLine("About him: ${profile.trim()}")
         appendLine("The session lasts about $minutes minutes.")
+        appendLine(Prompts.SPANISH_EN)
         appendLine()
         appendLine(
             """
@@ -130,6 +131,7 @@ object ConversationPrompts {
      */
     fun hint(level: String, standardLevel: Int, recent: List<Line>, targets: List<PromptItem>): String = buildString {
         appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6) está conversando por voz y se trabó: no sabe cómo responder. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(Prompts.SPANISH)
         appendLine()
         appendLine("ÚLTIMAS LÍNEAS (IA = su compañero de conversación, YO = el estudiante):")
         recent.takeLast(8).forEach { appendLine("${if (it.speaker == Speaker.AI) "IA" else "YO"}: ${it.text}") }
@@ -161,6 +163,7 @@ object ConversationPrompts {
             recent.takeLast(6).forEach { appendLine("${if (it.speaker == Speaker.AI) "IA" else "YO"}: ${it.text}") }
         }
         appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código. Es lenguaje hablado: frases cortas y naturales.")
+        appendLine(Prompts.SPANISH)
         appendLine()
         appendLine(
             """
@@ -185,6 +188,7 @@ object ConversationPrompts {
     fun word(word: String, sentence: String): String = """
         Eres profesor de coreano para hispanohablantes. En la oración «${sentence.trim()}» aparece «${word.trim()}».
         Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+        ${Prompts.SPANISH}
         1. "f": la forma de diccionario de la palabra de contenido (먹었어요 → 먹다); si es una partícula o terminación, su notación estándar (-어서, 처럼).
         2. "s": su significado en español en este contexto, máximo 8 palabras.
         3. "nota": si la forma conjugada o una partícula pegada cambia el sentido, explícalo en 1 frase en español; si no, null.
@@ -197,6 +201,7 @@ object ConversationPrompts {
     fun item(label: String, kind: String, standardLevel: Int): String = """
         Eres profesor de coreano para hispanohablantes de nivel ≈ $standardLevel de 6. Explica «${label.trim()}» (${kind.trim()}).
         Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+        ${Prompts.SPANISH}
         1. "s": su significado en español, máximo 10 palabras.
         2. "uso": para qué sirve y cómo se usa en una conversación, en español, 1 o 2 frases. Si es gramática, con qué se combina (A/V/N) y cómo se conjuga.
         3. "k": un ejemplo corto y natural en coreano (registro -어요) que podría decir en una conversación.
@@ -210,6 +215,7 @@ object ConversationPrompts {
     fun sentence(sentence: String, standardLevel: Int): String = """
         Eres profesor de coreano para hispanohablantes. Traduce al español: «${sentence.trim()}»
         Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
+        ${Prompts.SPANISH}
         1. "es": la traducción natural al español.
         2. "simple": la misma idea en coreano más simple (nivel $standardLevel o menor, registro -어요); si ya es simple, repítela.
 
@@ -232,6 +238,7 @@ object ConversationPrompts {
         listen: Boolean = false,
     ): String = buildString {
         appendLine("Eres profesor de coreano y revisas una conversación hablada entre un estudiante hispanohablante y una IA. Lo del estudiante es una transcripción automática que él ya revisó: es lenguaje hablado, no corrijas puntuación ni espacios. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(Prompts.SPANISH)
         appendLine()
         appendLine("ESTUDIANTE: ${profile.ifBlank { "(sin perfil)" }}")
         appendLine("Nivel: $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정)")

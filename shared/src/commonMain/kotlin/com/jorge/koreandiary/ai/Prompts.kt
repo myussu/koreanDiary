@@ -11,6 +11,17 @@ import com.jorge.koreandiary.scene.art.CustomDrawing
 object Prompts {
 
     /**
+     * El español de las respuestas: el de Perú. Sin esto algunos modelos escriben con palabras de
+     * España («guay», «vale», «coger») que aquí no se usan. Va en todo prompt que pida español.
+     */
+    const val SPANISH = "Todo el español que escribas, como se habla en Perú (español latinoamericano): claro y natural, con ustedes y nunca vosotros, " +
+        "y palabras de aquí (celular, computadora, carro, jugo, departamento, manejar, chévere), no de España (guay, vale, coger, ordenador, móvil, zumo, piso, conducir, mola)."
+
+    /** Lo mismo para los prompts en inglés de los modelos de voz, que hablan en español cuando él pregunta. */
+    const val SPANISH_EN = "Whenever you speak Spanish, speak it as people do in Peru (Latin American Spanish): ustedes, never vosotros, " +
+        "and local words (celular, computadora, carro, chévere), never Spain-only ones (guay, vale, coger, ordenador, móvil)."
+
+    /**
      * Escenas: cómo leer el tono (en la revisión y en «¿Cómo digo?»). Es lo que se siente, no lo que
      * pasa: cambia la luz de la escena viva.
      */
@@ -72,6 +83,7 @@ object Prompts {
         recentErrors: List<String> = emptyList(),
     ): String = buildString {
         appendLine("Eres profesor de coreano y corriges el diario manuscrito de un estudiante hispanohablante. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(SPANISH)
         appendLine()
         appendLine("ESTUDIANTE: ${profile.ifBlank { "(sin perfil)" }}")
         appendLine("Nivel: $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정)")
@@ -179,6 +191,7 @@ object Prompts {
         appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe $writes y quiere decir:")
         appendLine("«${idea.trim().replace('\n', ' ')}»")
         appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(SPANISH)
         appendLine()
         val tasks = buildList {
             add(
@@ -248,6 +261,7 @@ object Prompts {
      */
     fun explainItems(profile: String, level: String, standardLevel: Int, items: List<Pair<String, Boolean>>): String = buildString {
         appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) escribe su diario a mano y la app le sugirió estas palabras y gramáticas. Explica cada una y muestra cómo la usaría un coreano en la vida diaria. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(SPANISH)
         if (profile.isNotBlank()) {
             appendLine()
             appendLine("SOBRE EL ESTUDIANTE: ${profile.trim().replace('\n', ' ')}")
@@ -280,6 +294,7 @@ object Prompts {
      */
     fun workbookHints(level: String, standardLevel: Int, focus: String?, previous: List<String>): String = buildString {
         appendLine("Eres profesor de coreano. La imagen es una página de un libro de coreano (student book, workbook u otro) de un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정). Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(SPANISH)
         appendLine()
         if (focus.isNullOrBlank()) {
             appendLine("GRAMÁTICA DE LA LECCIÓN: no se indicó. Dedúcela de la página (título, recuadros o lo que piden los ejercicios) y márcala con \"foco\" en \"gram\".")
@@ -320,6 +335,7 @@ object Prompts {
      */
     fun workbookReview(level: String, standardLevel: Int, exercises: List<WorkbookExercise>, lesson: List<String> = emptyList()): String = buildString {
         appendLine("Eres profesor de coreano. La imagen muestra las respuestas que un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6) escribió a mano en una página de su libro. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
+        appendLine(SPANISH)
         appendLine()
         if (lesson.isNotEmpty()) {
             appendLine("GRAMÁTICA DE LA LECCIÓN (solo contexto): ${lesson.joinToString(" · ")}. Las pistas eran sugerencias opcionales: no exijas usarlas. Si eligió otra conexión válida, evalúala igual por si está bien y es natural.")
@@ -343,6 +359,7 @@ object Prompts {
 
     private val IMPORT_TEMPLATE = """
         Convierte la siguiente lista de estudio de coreano en un objeto JSON válido. Responde SOLO con el JSON, sin texto adicional ni bloques de código.
+        $SPANISH
 
         REGLAS:
         - Separa vocabulario y gramática.
