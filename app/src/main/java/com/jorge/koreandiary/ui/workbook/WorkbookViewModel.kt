@@ -19,6 +19,7 @@ import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.workbook.WorkbookSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -142,7 +143,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 val session = _state.value.session
                 if (session != null && session.focus == null) {
                     val updated = session.copy(focus = lesson)
-                    c.workbook.save(updated)
+                    saveSession(updated)
                     _state.update { it.copy(session = updated, focus = lesson) }
                 }
             }
@@ -174,7 +175,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                 val file = c.workbook.importPhoto(session.id, source, name)
                 c.workbook.captureFile(session.id).delete()
                 val updated = if (stage == WorkbookStage.HINTS) session.copy(pagePhoto = file.name) else session.copy(reviewPhoto = file.name)
-                c.workbook.save(updated)
+                saveSession(updated)
                 _state.update { it.copy(session = updated, busy = null) }
                 request(stage)
             } catch (e: CancellationException) {
@@ -185,8 +186,17 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
         }
     }
 
+    /** El pedido a la IA en curso, para cortarlo si borras la página. */
+    private var requestJob: Job? = null
+    @Volatile private var deleted = false
+
+    /** Nada se guarda de una página ya borrada: guardar volvía a crear su carpeta y reaparecía en la lista. */
+    private suspend fun saveSession(session: WorkbookSession) {
+        if (!deleted) c.workbook.save(session)
+    }
+
     fun request(stage: WorkbookStage) {
-        viewModelScope.launch {
+        requestJob = viewModelScope.launch {
             val st = _state.value
             val session = st.session ?: return@launch
             val settings = c.settings.state.value
@@ -200,7 +210,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                     // Se guarda con qué gramática se pidieron, para la revisión y para reabrir la sesión.
                     if (session.focus != st.focus) {
                         val updated = session.copy(focus = st.focus)
-                        c.workbook.save(updated)
+                        saveSession(updated)
                         _state.update { it.copy(session = updated) }
                     }
                     val previous = c.study.previousGrammar(settings.grammarLevelList, st.focus, System.currentTimeMillis())
@@ -268,6 +278,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
     }
 
     private suspend fun handle(stage: WorkbookStage, raw: String) {
+        if (deleted) return
         val session = _state.value.session ?: return
         when (stage) {
             WorkbookStage.HINTS -> {
@@ -279,7 +290,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                     vocabAdded = session.vocabAdded + added,
                     exerciseCount = hints.exercises.size,
                 )
-                c.workbook.save(updated)
+                saveSession(updated)
                 val vocabNote = if (added > 0) " $added palabras de la página pasaron a tu vocabulario." else ""
                 val grammarNote = if (hints.grammar.isNotEmpty()) " Elige qué gramática agregar a tu lista." else ""
                 val exercisesNote = if (hints.exercises.isEmpty()) "Página sin ejercicios." else "${hints.exercises.size} ejercicios con pistas."
@@ -308,7 +319,7 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
                     fsrsNote = " ${usage.reviewed} ítems repasados" +
                         (if (usage.newWords + usage.newGrammar > 0) " (${usage.newWords + usage.newGrammar} nuevos)" else "") + "."
                 }
-                c.workbook.save(updated)
+                saveSession(updated)
                 val ok = review.items.count { it.status == com.jorge.koreandiary.ai.ReviewStatus.OK }
                 _state.update {
                     it.copy(session = updated, review = review, busy = null, message = "$ok de ${review.items.size} respuestas bien.$fsrsNote")
@@ -318,6 +329,10 @@ class WorkbookViewModel(private val c: AppContainer, private val sessionId: Long
     }
 
     fun delete(onDone: () -> Unit) {
+        // Primero se corta el pedido a la IA: antes, su respuesta llegaba después de borrar, metía el
+        // vocabulario de la página en tu lista y la página borrada volvía a aparecer.
+        deleted = true
+        requestJob?.cancel()
         viewModelScope.launch {
             c.workbook.delete(sessionId)
             onDone()

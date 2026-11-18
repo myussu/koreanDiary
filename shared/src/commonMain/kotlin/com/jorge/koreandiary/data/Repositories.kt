@@ -241,6 +241,9 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
      */
     suspend fun applyCorrection(page: DiaryPage, response: CorrectionResponse, now: Long): ApplySummary = db.withWriteTransaction {
         val diary = db.diaryDao()
+        // La página se pudo borrar mientras la IA respondía (la revisión sigue aunque salgas): de una
+        // página que ya no existe no se guarda nada. Antes quedaban correcciones y oraciones sueltas.
+        if (diary.page(page.id) == null) return@withWriteTransaction ApplySummary(0, 0, 0, 0, 0, 0)
         // Además del estado se mira si la página ya dejó repasos: el estado viaja con cada guardado de
         // la tinta, y uno atrasado podría devolverla a "pendiente" con su uso ya contado.
         val firstReview = page.status != PageStatus.REVIEWED && memory.eventCountForPage(page.id) == 0
@@ -393,7 +396,8 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         for (a in asked.distinctBy { it.itemRef ?: it.form.trim() }) {
             val form = a.form.trim()
             if (form.isEmpty()) continue
-            val explicit = a.itemRef?.let { ItemRef.parse(it) }?.takeUnless { it.isStandard }
+            // Un id que la IA devuelve y no está en tu lista no se califica: se busca por su forma.
+            val explicit = a.itemRef?.let { ItemRef.parse(it) }?.takeUnless { it.isStandard }?.takeIf { inMyList(it) }
             val ref = explicit ?: if (a.isGrammar) {
                 findMine(form, myGrammar)?.let { ItemRef(ItemType.GRAMMAR, it.id) }
             } else {
@@ -408,6 +412,12 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             }
         }
         ListenSummary(again, pending)
+    }
+
+    /** ¿El ítem (una palabra o una gramática tuya) sigue en tu lista? */
+    private suspend fun inMyList(ref: ItemRef): Boolean = when (ref.type) {
+        ItemType.WORD -> study.wordsByIds(listOf(ref.id)).isNotEmpty()
+        else -> study.grammarByIds(listOf(ref.id)).isNotEmpty()
     }
 
     /**
@@ -909,6 +919,8 @@ class DiaryRepository(private val db: AppDatabase) {
      * borra su fila de tinta, que es como la racha sabe que está vacía (ver `PageInk`).
      */
     suspend fun save(page: DiaryPage, inkJson: String?): Unit = db.withWriteTransaction {
+        // Un guardado atrasado de una página ya borrada no deja su tinta suelta en la base.
+        if (diary.page(page.id) == null) return@withWriteTransaction
         diary.updatePage(page.withoutInk())
         writeInk(page.id, inkJson)
     }
@@ -918,6 +930,7 @@ class DiaryRepository(private val db: AppDatabase) {
      * guardado al salir de la página no pise uno que cambió mientras tanto.
      */
     suspend fun saveInk(id: Long, inkJson: String?, canvasWidth: Int, updatedAt: Long): Unit = db.withWriteTransaction {
+        if (diary.page(id) == null) return@withWriteTransaction
         writeInk(id, inkJson)
         diary.touchPage(id, canvasWidth, updatedAt)
     }

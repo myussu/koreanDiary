@@ -120,6 +120,10 @@ object Cloze {
                 val w = words.lastOrNull { it.text.length > bare.length && it.text.endsWith(bare) } ?: continue
                 return ClozeBlank(w.start + w.text.length - bare.length, bare)
             }
+            // Una terminación de una sílaba que también es partícula o final de sustantivo («-는» en
+            // 저는, «-고» en 그리고, «-기» en 고기) no se puede distinguir aquí: el hueco caía en una
+            // palabra que no la usa y el repaso calificaba mal. Esas las marca la IA en su oración.
+            if (bare.length == 1 && bare[0] in AMBIGUOUS_ENDINGS) continue
             for (i in words.indices.reversed()) {
                 for (span in 1..minOf(3, words.size - i)) {
                     val joined = (i until i + span).joinToString("") { words[it].text }
@@ -151,6 +155,16 @@ object Cloze {
     private const val HIEUT = 18
     /** Lo que suele seguir a una raíz de una sílaba al conjugarla (가요, 가고, 갔어요…), no a un sustantivo (가방, 가족). */
     private val VERBAL_NEXT = "아어았었요고서면는니지세야도기려자다네며시셨으을은겠".toSet()
+    /**
+     * Palabras comunes que empiezan como una raíz de una sílaba conjugada y no lo son: 하지만 no es
+     * 하다, 가을 no es 가다, 나는 y 나도 son «yo», 사자 es el león y 할아버지 no es «할».
+     */
+    private val NOT_A_VERB = listOf("하지만", "할아버지", "가을", "나는", "나도", "사자")
+    /**
+     * Terminaciones de una sílaba que no se buscan en el celular: son también partículas (저는,
+     * 밥을, 집에) o el final de muchos sustantivos y conectores (그리고, 고기, 아버지, 의자, 어머니, 가게).
+     */
+    private val AMBIGUOUS_ENDINGS = "은는을를이가도만에의로와과나고기지자니게".toSet()
 
     /**
      * ¿Esta palabra es el verbo conjugado? Empieza por la raíz o la contrae (가 → 갔, 오 → 왔,
@@ -160,6 +174,7 @@ object Cloze {
     fun conjugated(stem: String, word: String): Boolean {
         if (stem.isEmpty()) return false
         val single = stem.length == 1
+        if (single && NOT_A_VERB.any { word.startsWith(it) }) return false
         if (word.startsWith(stem)) return !single || (word.length > 1 && word[1] in VERBAL_NEXT)
         if (word.length < stem.length || (single && word.length < 2)) return false
         if (!word.startsWith(stem.dropLast(1))) return false

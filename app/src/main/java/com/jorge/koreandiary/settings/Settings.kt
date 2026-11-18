@@ -58,6 +58,13 @@ data class AppSettings(
     val penWidth: String = "medio",
     /** El trazo cambia de grosor según la presión del S Pen, como un pincel. */
     val penPressure: Boolean = true,
+    /**
+     * Alto del renglón como parte del ancho de la hoja; 0 = todavía sin fijar. La tinta se guarda
+     * relativa al ancho, así que el renglón también: si fuera fijo en dp, en otro celular (o con otro
+     * «zoom de pantalla») la letra ya escrita dejaría de caer sobre los renglones. Se fija la primera
+     * vez que abres una página con el renglón de siempre (64 dp) y viaja con la copia de los ajustes.
+     */
+    val lineRatio: Float = 0f,
     /** Escenas: los bordes de la página reaccionan a lo que escribes (mar, pasto, viento…). */
     val liveScene: Boolean = true,
     /** Escenas: tu servidor de ComfyUI por Tailscale, p. ej. http://truenas:8188 ("" = sin servidor). */
@@ -166,6 +173,7 @@ class SettingsStore(context: Context) {
         showMascot = prefs.getBoolean("showMascot", true),
         penWidth = prefs.getString("penWidth", "medio") ?: "medio",
         penPressure = prefs.getBoolean("penPressure", true),
+        lineRatio = prefs.getFloat("lineRatio", 0f),
         liveScene = prefs.getBoolean("liveScene", true),
         imageServer = prefs.getString("imageServer", "") ?: "",
         imageCheckpoint = prefs.getString("imageCheckpoint", "") ?: "",
@@ -220,6 +228,7 @@ class SettingsStore(context: Context) {
             .putBoolean("showMascot", s.showMascot)
             .putString("penWidth", s.penWidth)
             .putBoolean("penPressure", s.penPressure)
+            .putFloat("lineRatio", s.lineRatio)
             .putBoolean("liveScene", s.liveScene)
             .putString("imageServer", s.imageServer)
             .putString("imageCheckpoint", s.imageCheckpoint)
@@ -311,12 +320,32 @@ class SecretStore(context: Context) {
             prefs.edit().remove(name).apply()
             return
         }
+        val blob = try {
+            encrypt(value)
+        } catch (e: Exception) {
+            // La clave del Keystore quedó inservible (pasa tras algunas actualizaciones del sistema o al
+            // restaurar el celular). Antes esto cerraba la app cada vez que pegabas una clave. Lo cifrado
+            // con ella ya no se puede leer: se crea una nueva y las otras claves hay que pegarlas otra vez.
+            resetKey()
+            encrypt(value)
+        }
+        prefs.edit().putString(name, Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
+        decrypted[name] = value
+    }
+
+    /** El IV (12 bytes) y, a continuación, lo cifrado. */
+    private fun encrypt(value: String): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        val blob = cipher.iv + encrypted
-        prefs.edit().putString(name, Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
-        decrypted[name] = value
+        return cipher.iv + encrypted
+    }
+
+    private fun resetKey() {
+        runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(ALIAS) }
+        // Así Ajustes no dice «Clave guardada» de una que ya no se puede descifrar.
+        prefs.edit().clear().apply()
+        decrypted.clear()
     }
 
     fun get(name: String): String? {

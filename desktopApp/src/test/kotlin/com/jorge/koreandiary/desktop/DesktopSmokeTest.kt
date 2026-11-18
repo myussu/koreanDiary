@@ -52,6 +52,11 @@ class DesktopSmokeTest {
 
     @Before
     fun clean() {
+        // Solo la carpeta de prueba que pone Gradle (desktopApp/build.gradle.kts). Sin esa propiedad,
+        // `dataDir` es la carpeta de verdad (%APPDATA%\KoreanDiary): correr el test desde el IDE la borraba.
+        check(!System.getProperty("koreandiary.dataDir").isNullOrBlank()) {
+            "Falta -Dkoreandiary.dataDir: este test borra su carpeta de datos y no debe tocar la de verdad. Córrelo con Gradle (:desktopApp:test)."
+        }
         DesktopPaths.dataDir.listFiles()?.forEach { it.deleteRecursively() }
     }
 

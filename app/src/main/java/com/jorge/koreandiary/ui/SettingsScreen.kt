@@ -555,7 +555,15 @@ private fun MascotSettings(container: AppContainer) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
-            val r = container.mascotPack.import(uris)
+            val r = try {
+                container.mascotPack.import(uris)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Un ZIP cortado o un archivo que no se puede abrir: antes esto cerraba la app.
+                result = "No se pudieron leer los archivos: ${e.message ?: e.javaClass.simpleName}"
+                return@launch
+            }
             result = buildString {
                 if (r.imported.isEmpty()) append("No se reconoció ninguna imagen. ")
                 else append("Importadas: ${r.imported.joinToString { it.storedName }}. ")
@@ -594,8 +602,13 @@ private fun MascotSettings(container: AppContainer) {
 internal fun SecretKeyField(container: AppContainer, name: String, label: String) {
     var value by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(container.secrets.has(name)) }
+    var failed by remember { mutableStateOf(false) }
     Text(
-        if (saved) "Clave guardada (cifrada en el Keystore)." else "Sin clave.",
+        when {
+            failed -> "No se pudo guardar la clave en este celular. Inténtalo otra vez."
+            saved -> "Clave guardada (cifrada en el Keystore)."
+            else -> "Sin clave."
+        },
         style = MaterialTheme.typography.bodySmall,
     )
     OutlinedTextField(
@@ -607,8 +620,9 @@ internal fun SecretKeyField(container: AppContainer, name: String, label: String
     )
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         AppButton(onClick = {
-            container.secrets.put(name, value.trim())
-            value = ""
+            // El Keystore puede fallar; que eso no cierre la app.
+            failed = runCatching { container.secrets.put(name, value.trim()) }.isFailure
+            if (!failed) value = ""
             saved = container.secrets.has(name)
         }, enabled = value.isNotBlank()) { Text("Guardar clave") }
         if (saved) AppTextButton(onClick = {

@@ -22,6 +22,21 @@ class GrammarTxtParserTest {
         assertTrue(payload.words.isEmpty())
     }
 
+    /** El Bloc de notas guarda con una marca invisible al inicio (BOM): la primera unidad no se pierde. */
+    @Test
+    fun aFileSavedByNotepadKeepsItsFirstUnit() {
+        val payload = GrammarTxtParser.parse("\uFEFFUnit 1: V-고 싶다\nUnit 2: A/V-(으)니까", "3A")
+        assertEquals(listOf(1, 2), payload.grammar.map { it.unit })
+    }
+
+    /** Una línea de unidad sin patrones no inventa uno con lo que sobra («:» o un dígito). */
+    @Test
+    fun aUnitLineWithoutPatternsAddsNothing() {
+        val payload = GrammarTxtParser.parse("Unit 5:\nUnit 12\nUnit 6: V-느라고", "3A")
+        assertEquals(listOf("V-느라고"), payload.grammar.map { it.pattern })
+        assertEquals(listOf(6), payload.grammar.map { it.unit })
+    }
+
     @Test
     fun theBookFormatWithBulletAndBold() {
         val payload = GrammarTxtParser.parse(

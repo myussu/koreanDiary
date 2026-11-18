@@ -157,6 +157,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     private var micWanted = false
     /** Espera en segundo plano: si no vuelves, termina la sesión. */
     private var backgroundJob: Job? = null
+    /** Cuándo saliste de la app con la sesión en curso; 0 si estás en ella. */
+    private var backgroundSinceMs = 0L
+    /** La sesión con una revisión de la IA en curso: no se lanza otra para la misma. */
+    private var reviewingId: Long? = null
     private var speaker: AudioOut? = null
     private var ticker: Job? = null
     private var record: ConversationRecord? = null
@@ -350,6 +354,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             targets = targets,
         )
         startedAtMs = now
+        backgroundSinceMs = 0L
         nextLineId = 0
         wrapUpSent = false
         ending = false
@@ -604,6 +609,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         if (st.turnMode == TurnMode.AUTO && !st.muted) toggleMute()
         mic?.stop()
         mic = null
+        if (backgroundSinceMs == 0L) backgroundSinceMs = System.currentTimeMillis()
+        // Una copia de lo que va: antes la sesión solo existía en memoria hasta terminar, y si Android
+        // cerraba la app en segundo plano se perdía entera. Al terminar de verdad se reemplaza.
+        snapshot("La app se cerró mientras estaba en segundo plano.")?.let { saveInOrder(it) }
         backgroundJob?.cancel()
         backgroundJob = viewModelScope.launch {
             delay(BACKGROUND_GRACE_MS)
@@ -614,6 +623,15 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     /** Volviste a tiempo: la sesión sigue. En automático queda en silencio hasta que quites el silencio. */
     fun onForeground() {
+        val leftAt = backgroundSinceMs
+        // El celular estuvo dormido y el minuto de gracia no llegó a correr: la sesión termina ahora,
+        // con la duración de cuando saliste.
+        if (leftAt > 0L && _state.value.stage == ConvStage.Live && System.currentTimeMillis() - leftAt > BACKGROUND_GRACE_MS) {
+            end("Saliste de la app.")
+            backgroundSinceMs = 0L
+            return
+        }
+        backgroundSinceMs = 0L
         backgroundJob?.cancel()
         backgroundJob = null
         if (_state.value.stage == ConvStage.Live && micWanted) startMic()
@@ -838,12 +856,11 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         speaker = null
         session?.close()
         session = null
-        val st = _state.value
-        val base = record ?: return
-        val lines = st.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text.trim()) }
+        if (record == null) return
         // Nada que guardar (p. ej. no se pudo conectar): de vuelta a la preparación con el motivo,
         // sin crear una sesión vacía que además contaría para los minutos de hoy.
-        if (lines.isEmpty()) {
+        val saved = snapshot(reason)
+        if (saved == null) {
             val why = (listOf(reason) + notes).joinToString("\n")
             _state.update {
                 it.copy(stage = ConvStage.Setup, talking = false, connected = false, floating = null, panel = CoachPanel.None, message = why)
@@ -851,8 +868,37 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             loadSetup()
             return
         }
-        val saved = base.copy(
-            durationSec = ((System.currentTimeMillis() - startedAtMs) / 1000).toInt(),
+        record = saved
+        _state.update {
+            it.copy(
+                stage = ConvStage.Review, record = saved, edits = editsFor(saved), review = null,
+                reviewError = null, reviewing = false, panel = CoachPanel.None, talking = false, connected = false, floating = null,
+            )
+        }
+        // appScope: se guarda aunque la pantalla se cierre en este momento.
+        saveInOrder(saved)
+    }
+
+    /**
+     * La sesión como quedaría guardada ahora; null si todavía no hay nada dicho.
+     *
+     * La duración es el tiempo de conversación, no el del reloj: si saliste de la app, cuenta hasta
+     * que saliste más el minuto de gracia, y nunca más que el tiempo de la sesión con su minuto de
+     * cierre. Con el celular dormido los temporizadores no avanzan, y una sesión olvidada en segundo
+     * plano se guardaba con horas y agotaba los minutos del día.
+     */
+    private fun snapshot(reason: String): ConversationRecord? {
+        val base = record ?: return null
+        val st = _state.value
+        val lines = st.lines.filter { it.text.isNotBlank() }.map { Line(it.speaker, it.text.trim()) }
+        if (lines.isEmpty()) return null
+        val now = System.currentTimeMillis()
+        val leftAt = backgroundSinceMs
+        val endMs = if (leftAt > 0L) minOf(now, leftAt + BACKGROUND_GRACE_MS) else now
+        val elapsedSec = ((endMs - startedAtMs) / 1000).toInt().coerceAtLeast(0)
+        val capSec = if (st.totalSec > 0) st.totalSec + 60 else Int.MAX_VALUE
+        return base.copy(
+            durationSec = minOf(elapsedSec, capSec),
             lines = lines,
             lookups = lookups.toList(),
             askedHowTo = askedHowTo.toList(),
@@ -866,15 +912,16 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             notes = notes.toList(),
             endReason = reason,
         )
-        record = saved
-        _state.update {
-            it.copy(
-                stage = ConvStage.Review, record = saved, edits = editsFor(saved), review = null,
-                reviewError = null, reviewing = false, panel = CoachPanel.None, talking = false, connected = false, floating = null,
-            )
+    }
+
+    /** Guarda en el alcance de la app y en orden: una copia parcial atrasada nunca pisa la sesión final. */
+    private fun saveInOrder(saved: ConversationRecord) {
+        val previous = saveJob
+        saveJob = c.appScope.launch {
+            previous?.join()
+            // Sin espacio o sin permiso de escritura, que no se cierre la app: queda lo último guardado.
+            runCatching { c.conversations.save(saved) }
         }
-        // appScope: se guarda aunque la pantalla se cierre en este momento.
-        saveJob = c.appScope.launch { c.conversations.save(saved) }
     }
 
     fun openReview(id: Long) {
@@ -885,7 +932,8 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             _state.update {
                 it.copy(
                     stage = ConvStage.Review, record = r, edits = editsFor(r), review = review,
-                    reviewError = null, reviewing = false, hasCoach = c.coachProvider() != null,
+                    // Si su revisión sigue en curso (saliste y volviste), se espera esa: no se pide otra.
+                    reviewError = null, reviewing = reviewingId == r.id, hasCoach = c.coachProvider() != null,
                 )
             }
         }
@@ -896,10 +944,15 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
 
     fun editLine(index: Int, text: String) = _state.update { it.copy(edits = it.edits + (index to text)) }
 
-    /** Corrige lo que dijiste. Solo guarda la revisión: la lista de estudio no cambia. */
+    /**
+     * Corrige lo que dijiste y, la primera vez, lo cuenta para el repaso ([countForReview]). El
+     * resultado es de la sesión que se pidió revisar: si mientras tanto abriste otra, se guarda en su
+     * archivo y no toca lo que estás viendo.
+     */
     fun runReview() {
         val st = _state.value
         val r = st.record ?: return
+        if (reviewingId == r.id) return
         val (providerId, provider) = c.coachProvider() ?: run {
             _state.update { it.copy(reviewError = "Configura Gemini o Azure en Ajustes › IA para revisar la conversación.") }
             return
@@ -918,6 +971,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         _state.update { it.copy(reviewing = true, reviewError = null) }
+        reviewingId = r.id
+        // Solo toca la pantalla si sigues en esta sesión (saliste a la lista o abriste otra: no).
+        fun mine(change: (ConvUiState) -> ConvUiState) = _state.update { if (it.record?.id == r.id) change(it) else it }
         viewModelScope.launch {
             try {
                 val prompt = ConversationPrompts.review(s.profile, s.level, s.standardLevel, r.targets, lines, listen = r.isListen)
@@ -925,20 +981,24 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 c.settings.registerUse(providerId)
                 val review = ConversationParser.review(raw)
                 var updated = r.copy(lines = lines, reviewRaw = raw)
-                // Cuenta para el repaso una sola vez por sesión, aunque la revises otra vez.
-                val counted = if (r.fsrsApplied) null else countForReview(updated, review)
-                if (counted != null) updated = updated.copy(fsrsApplied = true)
+                // Cuenta para el repaso una sola vez por sesión, aunque la revises otra vez. Manda lo
+                // que quedó guardado: si otra revisión de esta sesión ya contó, esta no vuelve a contar.
+                val alreadyCounted = r.fsrsApplied || c.conversations.load(r.id)?.fsrsApplied == true
+                val counted = if (alreadyCounted) null else countForReview(updated, review)
+                if (counted != null || alreadyCounted) updated = updated.copy(fsrsApplied = true)
                 c.conversations.save(updated)
-                record = updated
-                _state.update { it.copy(reviewing = false, review = review, record = updated, edits = editsFor(updated), message = counted ?: it.message) }
+                if (_state.value.record?.id == r.id) record = updated
+                mine { it.copy(reviewing = false, review = review, record = updated, edits = editsFor(updated), message = counted ?: it.message) }
             } catch (e: ProviderException) {
-                _state.update { it.copy(reviewing = false, reviewError = if (e.offline) "Sin conexión." else e.message) }
+                mine { it.copy(reviewing = false, reviewError = if (e.offline) "Sin conexión." else e.message) }
             } catch (e: ParseException) {
-                _state.update { it.copy(reviewing = false, reviewError = "No se pudo leer la respuesta: ${e.message}") }
+                mine { it.copy(reviewing = false, reviewError = "No se pudo leer la respuesta: ${e.message}") }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(reviewing = false, reviewError = e.message ?: e.javaClass.simpleName) }
+                mine { it.copy(reviewing = false, reviewError = e.message ?: e.javaClass.simpleName) }
+            } finally {
+                if (reviewingId == r.id) reviewingId = null
             }
         }
     }

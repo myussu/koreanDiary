@@ -143,7 +143,8 @@ fun BackupSettings(container: AppContainer, beforeExport: () -> Unit) {
                         "${BackupFormat.pagesLabel(current.incoming.pages)} (versión ${current.incoming.appVersionName}).\n\n" +
                         "Reemplaza todo lo que hay ahora en la app: ${BackupFormat.pagesLabel(current.currentPages)}, listas, repaso, " +
                         "workbooks, conversaciones, mascota y ajustes. Las claves de API se quedan como están.\n\n" +
-                        (if (current.undo) "" else "Antes se guarda lo que hay ahora, para poder deshacer. ") +
+                        (if (current.undo) "Antes se guarda lo que hay ahora dentro de la app: queda abajo, en «Copia antes de actualizar», como «deshacer» con «Restaurar». "
+                        else "Antes se guarda lo que hay ahora, para poder deshacer. ") +
                         "La app se cierra y vuelve a abrirse con la copia; si no se abre sola, ábrela tú.",
                 )
             },

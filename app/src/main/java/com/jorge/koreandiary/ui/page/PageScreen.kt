@@ -131,7 +131,19 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val context = LocalContext.current
     var tool by rememberSaveable { mutableStateOf(InkTool.PEN) }
     val density = LocalDensity.current
-    val lineHeightPx = with(density) { 64.dp.toPx() }
+    // El renglón es una parte fija del ancho de la hoja, igual que la tinta (que se guarda relativa a
+    // ese ancho). La primera vez se fija con el renglón de siempre, 64 dp en este celular; desde
+    // entonces se usa esa proporción, así la letra sigue sobre sus renglones aunque cambies de celular
+    // o de «zoom de pantalla» (con 64 dp fijos quedaba corrida y «Revisar» mezclaba renglones).
+    val fullPaperWidth = rememberPaperWidth()
+    val lineRatio = when {
+        settings.lineRatio > 0f -> settings.lineRatio
+        fullPaperWidth.value > 0f -> 64f / fullPaperWidth.value
+        else -> 0f
+    }
+    LaunchedEffect(lineRatio) {
+        if (settings.lineRatio <= 0f && lineRatio > 0f) container.settings.update { it.copy(lineRatio = lineRatio) }
+    }
     val strokeWidthPx = with(density) { settings.penWidthDp.dp.toPx() }
     // El último toque en la hoja (también el lápiz flotando sobre ella). No es estado: tocar no
     // recompone la pantalla; de él dependen la pantalla encendida y el descanso de la escena viva.
@@ -177,11 +189,19 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     val page = state.page
     val pendingCorrections = corrections.count { it.status == CorrectionStatus.PENDING }
 
-    // Al llegar correcciones (o al abrir una página revisada), baja hasta donde toca reescribir.
-    LaunchedEffect(page?.id, corrections.size, page?.reviewedLineCount) {
+    // Al llegar correcciones (o al abrir una página revisada), baja hasta donde toca reescribir. Solo
+    // entonces: antes también saltaba con «+ Línea» dentro de la zona revisada y con «Descartar»,
+    // lejos del renglón que estabas mirando.
+    LaunchedEffect(page?.id, corrections.isNotEmpty(), state.reviewSeq) {
         if (page != null && page.status != PageStatus.DRAFT && corrections.isNotEmpty()) {
             inkScroll.scrollToLine(page.reviewedLineCount)
         }
+    }
+
+    // La página ya no existe (se borró por vacía y la pantalla se restauró después): se vuelve atrás en
+    // vez de dejar escribir en una hoja que no se puede guardar.
+    LaunchedEffect(state.missing) {
+        if (state.missing) onBack()
     }
 
     // Mientras la IA trabaja, la mascota piensa; si no, muestra su última reacción.
@@ -279,6 +299,9 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
     }
 
     val paperAndTools: @Composable ColumnScope.(paperWidth: Dp) -> Unit = { paperWidth ->
+        // Con la hoja a su ancho de siempre, lo mismo que 64 dp; si la hoja se achica (pantalla
+        // dividida), el renglón se achica con ella, como la tinta.
+        val lineHeightPx = with(density) { if (lineRatio > 0f) paperWidth.toPx() * lineRatio else 64.dp.toPx() }
         val watchTouches = Modifier.pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {

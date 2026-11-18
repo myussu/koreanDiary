@@ -200,7 +200,7 @@ agrega el detalle del aviso o el logcat.
 ### Copia de seguridad (nunca probado de punta a punta)
 
 - [ ] «Exportar copia» a un archivo, borrar con `pm clear`, «Importar copia» de ese archivo: vuelven páginas, tinta, listas, dibujos y ajustes.
-- [ ] Después de importar, «Deshacer la última importación» vuelve a los datos de antes.
+- [ ] Después de importar, «Deshacer la última importación» vuelve a los datos de antes, y lo que había al deshacer queda en «Copia antes de actualizar» como «Dentro de la app: deshacer-…», con «Restaurar».
 - [ ] Las fotos del workbook siguen después de importar.
 - [ ] «Copia antes de actualizar» › «Elegir carpeta» (Ajustes › Copia y actualizaciones): la carpeta queda elegida, y «Cambiar carpeta» y «Quitar carpeta» funcionan.
 - [ ] La copia en esa carpeta se crea al instalar una actualización: solo se puede probar en tu app de verdad, con una actualización real. Revisa que el archivo aparezca.

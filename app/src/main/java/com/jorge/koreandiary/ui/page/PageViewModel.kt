@@ -140,6 +140,10 @@ data class PageUiState(
     val message: String? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
+    /** Sube con cada revisión aplicada: la pantalla baja entonces a la zona de reescritura. */
+    val reviewSeq: Int = 0,
+    /** La página no existe en la base: la pantalla vuelve atrás. */
+    val missing: Boolean = false,
 )
 
 class PageViewModel(private val c: AppContainer, private val pageId: Long) : ViewModel() {
@@ -200,7 +204,19 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     private val redoStack = ArrayDeque<Snapshot>()
     private var saveJob: Job? = null
 
+    /**
+     * «Guarda ya» para quien no puede esperar la pausa: el actualizador lo pide justo antes de
+     * instalar, porque Android cierra la app al reemplazarla sin avisar a la pantalla.
+     */
+    private val flush: suspend () -> Unit = {
+        if (!deleted) {
+            dirtySince = 0L
+            persist()
+        }
+    }
+
     init {
+        c.openPages += flush
         // Los dibujos de fábrica y los nuevos entran al diccionario de la escena: uno que llega mientras
         // la página está abierta (se terminaron de leer al abrir la app, o Claude terminó de dibujar)
         // aparece enseguida si su palabra ya está escrita.
@@ -215,7 +231,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             }
         }
         viewModelScope.launch {
-            val page = c.diary.page(pageId) ?: return@launch
+            val page = c.diary.page(pageId)
+            if (page == null) {
+                // Sin página no hay dónde guardar: antes la hoja se mostraba igual y lo escrito se perdía.
+                _state.update { it.copy(missing = true) }
+                return@launch
+            }
             // Lo que ya se leyó de cada renglón de la escena la última vez: no se lee todo de nuevo.
             if (page.kind == PageKind.SCENE) readCache.putAll(SceneData.parse(page.sceneJson).reads)
             showPage(page)
@@ -227,6 +248,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 reviewing.first { pageId !in it }
                 val fresh = c.diary.page(pageId) ?: return@launch
                 showPage(fresh)
+                _state.update { it.copy(reviewSeq = it.reviewSeq + 1) }
                 setPhase(
                     Phase.Writing,
                     if (fresh.status == PageStatus.REVIEWED) "La revisión terminó mientras no estabas. Reescribe las correcciones y pulsa “Verificar”." else null,
@@ -276,13 +298,14 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             val loaded = if (abs(width - w) > 0.5f) InkOps.scale(read, width / w) else read
             // Lo que alcanzaste a escribir antes de que apareciera la tinta guardada va después de ella,
             // también en los pasos de deshacer (si no, deshacer dejaría la página en blanco).
+            // Siempre, aunque ahora no quede nada de lo temprano en pantalla: si hiciste un trazo y lo
+            // deshiciste antes de que cargara, «Rehacer» ponía solo ese trazo y la página se guardaba así.
             val early = _state.value.strokes
-            if (early.isNotEmpty()) {
-                listOf(undoStack, redoStack).forEach { stack ->
-                    val merged = stack.map { snap -> snap.copy(strokes = loaded + snap.strokes) }
-                    stack.clear()
-                    stack.addAll(merged)
-                }
+            listOf(undoStack, redoStack).forEach { stack ->
+                if (stack.isEmpty()) return@forEach
+                val merged = stack.map { snap -> snap.copy(strokes = loaded + snap.strokes) }
+                stack.clear()
+                stack.addAll(merged)
             }
             val all = if (early.isEmpty()) loaded else loaded + early
             strokesLoaded = true
@@ -500,6 +523,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 recognizedForReview = text
                 persist { it.copy(reviewedLineCount = lines.maxOf { l -> l.line } + 1) }
                 setPhase(Phase.Confirm(text))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 setPhase(Phase.Writing, HandwritingRecognizer.inkMessage(e) ?: "No se pudo reconocer la escritura: ${e.message ?: e.javaClass.simpleName}")
             }
@@ -1005,9 +1030,13 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     private suspend fun applyResponse(raw: String) {
         val response = CorrectionParser.parse(raw)
+        // Borraste la página mientras la IA respondía: no hay dónde aplicar la respuesta.
+        if (deleted) return
         val page = _state.value.page ?: return
         // Una sola transacción: correcciones, FSRS y el estado "revisada" quedan todos o ninguno.
         val summary = c.study.applyCorrection(page, response, System.currentTimeMillis())
+        if (deleted) return
+        _state.update { it.copy(reviewSeq = it.reviewSeq + 1) }
         // El estado ya está en la base; esto lo refleja en pantalla y guarda la tinta más reciente.
         // En una escena, suma lo que la IA vio en la página a la escena viva.
         persist {
@@ -1088,6 +1117,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 if (ok == pending.size) maybePaintSceneImage()
                 val read = lines.joinToString(" / ") { it.text }.let { if (it.length > 160) "…" + it.takeLast(160) else it }
                 setPhase(Phase.Writing, "$ok de ${countOf(pending.size, "corrección", "correcciones")} bien ${if (ok == 1) "reescrita" else "reescritas"}. Leí: “$read”")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 setPhase(Phase.Writing, HandwritingRecognizer.inkMessage(e) ?: "No se pudo reconocer: ${e.message ?: e.javaClass.simpleName}")
             }
@@ -1177,7 +1208,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     fun removeSceneImage() = c.sceneImages.delete(pageId)
 
-    private var deleted = false
+    @Volatile private var deleted = false
 
     fun deletePage(onDone: () -> Unit) {
         val page = _state.value.page ?: return
@@ -1191,6 +1222,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
     }
 
     override fun onCleared() {
+        c.openPages -= flush
         if (speechUsed) speech.release()
         // Guardado final: el scope del ViewModel ya se canceló, así que se usa el de la app.
         if (deleted) return

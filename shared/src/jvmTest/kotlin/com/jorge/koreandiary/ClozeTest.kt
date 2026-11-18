@@ -68,6 +68,33 @@ class ClozeTest {
         assertNull(blank("커피를 마셨어요.", "V-고 싶다", ClozeKind.GRAMMAR))
     }
 
+    /**
+     * Lo que el celular no puede distinguir, no lo adivina: el hueco caía en una palabra que no usa el
+     * ítem («-는» en 저는, 하다 en 하지만) y el repaso calificaba con ella.
+     */
+    @Test
+    fun aParticleOrACommonWordIsNotTakenForTheItem() {
+        // Terminaciones de una sílaba que también son partícula o final de sustantivo: las marca la IA.
+        assertNull(blank("저는 어제 영화를 봤어요.", "V-는", ClozeKind.GRAMMAR))
+        assertNull(blank("그리고 친구를 만났어요.", "V-고", ClozeKind.GRAMMAR))
+        assertNull(blank("밥을 먹었어요.", "V-(으)ㄹ", ClozeKind.GRAMMAR))
+        assertNull(blank("오늘은 날씨가 좋아요.", "A-(으)ㄴ", ClozeKind.GRAMMAR))
+        assertNull(blank("고기를 먹었어요.", "V-기", ClozeKind.GRAMMAR))
+        // Las que no se confunden siguen saliendo, y una partícula sigue siendo solo ella.
+        assertEquals("가면", blank("집에 가면 전화할게요.", "V-(으)면", ClozeKind.GRAMMAR))
+        assertEquals("가고 싶어요", blank("그리고 바다에 가고 싶어요.", "V-고 싶다", ClozeKind.GRAMMAR))
+        assertEquals("도", blank("저도 갔어요.", "N도", ClozeKind.GRAMMAR))
+        // Una raíz de una sílaba no es estas palabras comunes…
+        assertNull(blank("하지만 날씨가 추웠어요.", "하다", ClozeKind.VERB))
+        assertNull(blank("할아버지 댁에 갔어요.", "하다", ClozeKind.VERB))
+        assertNull(blank("가을이 왔어요.", "가다", ClozeKind.VERB))
+        assertNull(blank("나는 학생이에요.", "나다", ClozeKind.VERB))
+        assertNull(blank("사자를 봤어요.", "사다", ClozeKind.VERB))
+        // …y el verbo de verdad sigue saliendo en la misma oración.
+        assertEquals("했어요", blank("하지만 숙제를 했어요.", "하다", ClozeKind.VERB))
+        assertEquals("갔어요", blank("가을에 산에 갔어요.", "가다", ClozeKind.VERB))
+    }
+
     @Test
     fun yourSentenceIsReviewedCorrected() {
         val fixed = Cloze.applyCorrections("시험이 있니까 도서관에서 공부했어요.", listOf("있니까" to "있으니까", "없는것" to "x"))

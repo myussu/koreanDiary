@@ -186,7 +186,10 @@ class LiveSession(
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-            webSocket.close(code, null)
+            // Se responde con un cierre normal y no con el mismo código: si el servidor cierra sin
+            // código llega 1005, que no se puede enviar (OkHttp lanza) y el cierre se veía como
+            // «Sin conexión» en vez de como un rechazo.
+            runCatching { webSocket.close(1000, null) }
             // Un cierre del servidor antes de aceptar la sesión es un rechazo de la configuración (p. ej. 1007).
             if (isCurrent(webSocket)) onDrop(webSocket, "Cierre $code${if (reason.isNotBlank()) ": $reason" else ""}", rejected = true)
         }

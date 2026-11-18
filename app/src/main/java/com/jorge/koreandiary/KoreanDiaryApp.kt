@@ -66,9 +66,34 @@ class AppContainer(val app: Application) {
     /** Exportar e importar todo a un archivo, y el estado de la copia automática de Google. */
     val backup = BackupManager(app, database, appScope, updater.currentVersionCode, updater.currentVersionName)
 
+    /**
+     * Las páginas abiertas dejan aquí su «guarda ya». Lo usa el actualizador: al instalar, Android
+     * cierra la app sin pasar por la pantalla, y lo escrito en los últimos segundos se perdía.
+     */
+    val openPages = java.util.concurrent.CopyOnWriteArraySet<suspend () -> Unit>()
+
+    /** Guarda lo pendiente de cada página abierta. Un fallo en una no frena a las demás. */
+    suspend fun saveOpenPages() {
+        for (save in openPages) {
+            try {
+                save()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // La copia y la instalación siguen: la página se guarda igual al salir de ella.
+            }
+        }
+    }
+
     init {
-        // Antes de instalar cada actualización, una copia de todo (carpeta elegida o dentro de la app).
-        updater.beforeInstall = { info -> backup.backupBeforeUpdate(info.versionName) }
+        // Antes de instalar cada actualización: primero se guarda lo que estés escribiendo y después
+        // va una copia de todo (carpeta elegida o dentro de la app).
+        updater.beforeInstall = { info ->
+            saveOpenPages()
+            backup.backupBeforeUpdate(info.versionName)
+        }
+        // Y otra vez justo antes de que Android reemplace la app, por lo escrito durante la copia.
+        updater.beforeCommit = { saveOpenPages() }
     }
 
     /** Proveedor por API listo para usar, o null si le falta configuración. */

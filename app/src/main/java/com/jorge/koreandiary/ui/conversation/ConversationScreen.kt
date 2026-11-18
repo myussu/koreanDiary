@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
@@ -127,7 +128,10 @@ fun ConversationScreen(container: AppContainer, onBack: () -> Unit) {
 
     // Sin servicio en primer plano: al salir de la app se deja de enviar audio y se suelta el
     // micrófono; si no vuelves en un minuto, la sesión termina y se guarda.
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.onBackground() }
+    // Girar el celular (o cualquier cambio que recree la pantalla) también pasa por ON_STOP, pero no es
+    // salir de la app: antes cortaba tu turno a media frase o te dejaba en silencio en modo automático.
+    val activity = LocalActivity.current
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { if (activity?.isChangingConfigurations != true) vm.onBackground() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.onForeground() }
 
     val live = st.stage == ConvStage.Live

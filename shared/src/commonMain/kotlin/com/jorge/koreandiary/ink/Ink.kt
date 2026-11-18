@@ -68,13 +68,23 @@ object InkOps {
     /**
      * Si algo se sale de la hoja por la derecha (páginas guardadas al girar el celular antes de
      * que la hoja tuviera ancho fijo), lo achica todo para que vuelva a verse. null si ya entra.
+     *
+     * Si lo que sobresale es poco (un trazo que terminó fuera del borde, hasta [SMALL_OVERFLOW]), solo
+     * se recorta ese trazo al borde: achicar toda la página por un trazo dejaba la letra fuera de sus
+     * renglones y «Revisar» los leía mezclados.
      */
     fun fitToWidth(strokes: List<InkStroke>, width: Float): List<InkStroke>? {
         if (width <= 0f) return null
         val maxX = strokes.maxOfOrNull { it.maxX } ?: return null
         if (maxX <= width * 1.02f) return null
+        if (maxX <= width * SMALL_OVERFLOW) {
+            return strokes.map { s -> if (s.maxX <= width) s else InkStroke(s.points.map { p -> if (p.x > width) p.copy(x = width) else p }) }
+        }
         return scale(strokes, width * 0.98f / maxX)
     }
+
+    /** Hasta cuánto más ancho que la hoja se considera «un trazo que se escapó» y no una página vieja. */
+    const val SMALL_OVERFLOW = 1.2f
 
     /**
      * Huella de los trazos de un renglón: cuántos son y, de cada uno, cuántos puntos tiene y cuándo

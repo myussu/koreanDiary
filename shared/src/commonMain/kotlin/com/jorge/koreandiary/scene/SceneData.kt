@@ -105,7 +105,7 @@ data class SceneData(
      * de fábrica y los de Claude: si uno ya no existe, la escena lo salta al pintar.
      */
     fun withElements(ids: List<String>): SceneData {
-        val merged = (elements + ids.filter { SceneDictionary.element(it) != null || CustomDrawing.isCustomId(it) }).distinct().takeLast(MAX_ELEMENTS)
+        val merged = (elements + ids.filter { knownElement(it) }).distinct().takeLast(MAX_ELEMENTS)
         return if (merged == elements) this else copy(elements = merged)
     }
 
@@ -150,6 +150,9 @@ data class SceneData(
         /** Ideas de «¿Cómo digo?» que esperan a ser escritas; las más viejas se olvidan. */
         const val MAX_PENDING = 8
 
+        /** Un elemento que la escena puede guardar: uno de la app, o un dibujo de fábrica o de Claude. */
+        private fun knownElement(id: String): Boolean = SceneDictionary.element(id) != null || CustomDrawing.isCustomId(id)
+
         /** Tolerante: JSON vacío, nulo o roto da una escena vacía en vez de fallar. */
         fun parse(json: String?): SceneData {
             if (json.isNullOrBlank()) return SceneData()
@@ -166,8 +169,10 @@ data class SceneData(
                         val text = idea.optString("t").trim()
                         if (text.isEmpty()) null else SceneIdea(text, idea.optInt("p", 1).coerceIn(1, 3))
                     },
+                    // También los dibujos de fábrica y los de Claude (ids f_… y x_…): withElements los
+                    // guarda, y si aquí se descartaran nunca llegarían a pintarse.
                     elements = if (els == null) emptyList() else (0 until els.length()).map { els.optString(it) }
-                        .filter { SceneDictionary.element(it) != null }.distinct(),
+                        .filter { knownElement(it) }.distinct(),
                     mood = tono?.let { SceneMoods.reading(it.optString("id"), it.optInt("n", 2)) },
                     imagePrompt = o.optString("img").trim(),
                     pending = o.optJSONArray("pend").let { arr ->
@@ -177,7 +182,7 @@ data class SceneData(
                             val w = p.optJSONArray("w")
                             val t = p.optJSONObject("tono")
                             PendingScene(
-                                elements = if (e == null) emptyList() else (0 until e.length()).map { e.optString(it) }.filter { SceneDictionary.element(it) != null },
+                                elements = if (e == null) emptyList() else (0 until e.length()).map { e.optString(it) }.filter { knownElement(it) },
                                 mood = t?.let { SceneMoods.reading(it.optString("id"), it.optInt("n", 2)) },
                                 words = if (w == null) emptyList() else (0 until w.length()).map { w.optString(it) }.filter { it.isNotBlank() },
                             )

@@ -73,6 +73,16 @@ class SceneDrawingTest {
         assertEquals("gato", d.element.name)
     }
 
+    /** Un id largo queda igual al guardarlo y releerlo: antes perdía letras y ya no era el de su archivo. */
+    @Test
+    fun aLongIdSurvivesSavingAndReading() {
+        val long = JSONObject(cat).put("id", "subway_station_entrance_north")
+        val d = DrawingFormat.parse(long, ko = "지하철역", es = "entrada del metro")
+        assertEquals("x_subway_station_entrance", d.id)
+        val again = DrawingFormat.parse(DrawingFormat.toJson(d))
+        assertEquals(d.id, again.id)
+    }
+
     @Test
     fun aBadDrawingIsTamedNotTrusted() {
         val bad = JSONObject(

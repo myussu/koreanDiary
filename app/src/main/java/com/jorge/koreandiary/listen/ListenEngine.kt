@@ -680,10 +680,17 @@ class ListenEngine(private val c: AppContainer) {
                 notes += "La IA de voz se desconectó: ${signal.reason}"
                 // Sin la IA la narración sigue, pero sin preguntas: se avisa con un tono aunque no mires.
                 earcon(Earcon.ERROR)
-                showMessage("Se cortó la IA de voz (${signal.reason}): la narración sigue sin preguntas.")
+                // Una pausa es tuya (o de una llamada que tomó el audio): se respeta. Antes la narración
+                // se reanudaba sola al caerse la IA, también en plena llamada.
+                val paused = _state.value.phase == ListenPhase.PAUSED
+                showMessage(
+                    if (paused) "Se cortó la IA de voz (${signal.reason}). Sigue en pausa: con «Seguir» continúa sin preguntas."
+                    else "Se cortó la IA de voz (${signal.reason}): la narración sigue sin preguntas."
+                )
                 when (_state.value.phase) {
                     ListenPhase.COMPREHENSION -> finish("Se cortó la IA de voz.")
-                    ListenPhase.PAUSED, ListenPhase.QUESTION -> resume()
+                    // Esperaba a la IA: sin ella, sigue sola.
+                    ListenPhase.QUESTION -> resume()
                     else -> Unit
                 }
             }

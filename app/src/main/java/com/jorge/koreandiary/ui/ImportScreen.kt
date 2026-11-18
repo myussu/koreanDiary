@@ -34,7 +34,9 @@ import com.jorge.koreandiary.ai.ImportParser
 import com.jorge.koreandiary.ai.ImportPayload
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.Prompts
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -47,6 +49,7 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
     var pastedTxt by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<ImportPayload?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -59,6 +62,11 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                 message = null
             } catch (e: ParseException) {
                 message = e.message
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Un archivo de Drive sin conexión, uno que ya no está: antes esto cerraba la app.
+                message = "No se pudo leer el archivo. Si está en Drive, revisa que tengas conexión."
             }
         }
     }
@@ -138,14 +146,25 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                     (payload.words.take(5).map { "${it.baseForm} (${it.type})" } + payload.grammar.take(5).map { it.pattern })
                         .forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                     AppButton(onClick = {
+                        saving = true
                         scope.launch {
-                            val r = container.study.import(payload)
-                            message = "Guardado: ${r.wordsAdded} palabras y ${r.grammarAdded} puntos de gramática. ${r.duplicates} repetidos omitidos."
-                            preview = null
-                            pasted = ""
-                            pastedTxt = ""
+                            try {
+                                // En el alcance de la app: si sales de la pantalla antes de que termine, la
+                                // lista igual se guarda (antes se cancelaba sin aviso y no entraba nada).
+                                val r = container.appScope.async { container.study.import(payload) }.await()
+                                message = "Guardado: ${r.wordsAdded} palabras y ${r.grammarAdded} puntos de gramática. ${r.duplicates} repetidos omitidos."
+                                preview = null
+                                pasted = ""
+                                pastedTxt = ""
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                message = "No se pudo guardar: ${e.message ?: e.javaClass.simpleName}"
+                            } finally {
+                                saving = false
+                            }
                         }
-                    }) { Text("Guardar") }
+                    }, enabled = !saving) { Text(if (saving) "Guardando…" else "Guardar") }
                 }
             }
         }

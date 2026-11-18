@@ -111,17 +111,28 @@ class Speaker(scope: CoroutineScope) {
     @Volatile private var framesWritten = 0L
     @Volatile private var generation = 0
 
+    @Volatile private var released = false
+
     private val job = scope.launch(Dispatchers.IO) {
         track.play()
         for (chunk in queue) {
+            if (released) break
             val gen = generation
             var offset = 0
-            while (offset < chunk.size && gen == generation) {
+            while (!released && offset < chunk.size && gen == generation) {
                 val n = track.write(chunk, offset, chunk.size - offset)
                 if (n <= 0) break
                 offset += n
             }
             if (gen == generation) framesWritten += offset / 2
+        }
+    }.also { writer ->
+        // El AudioTrack se libera cuando este ciclo ya terminó, nunca mientras escribe: liberarlo desde
+        // otro hilo a mitad de un `write` podía cerrar la app al pulsar «Terminar» con la IA hablando.
+        // Corre también si el ciclo se cancela antes de empezar o si se cancela su alcance.
+        writer.invokeOnCompletion {
+            runCatching { track.stop() }
+            runCatching { track.release() }
         }
     }
 
@@ -149,10 +160,17 @@ class Speaker(scope: CoroutineScope) {
     }
 
     fun release() {
-        job.cancel()
+        released = true
+        generation++
+        while (queue.tryReceive().isSuccess) Unit
         queue.close()
-        runCatching { track.stop() }
-        track.release()
+        // Corta lo que suena y saca al ciclo de un `write` que esté esperando sitio; el ciclo termina
+        // solo y entonces se libera el AudioTrack (ver `job`).
+        runCatching {
+            track.pause()
+            track.flush()
+        }
+        job.cancel()
     }
 
     companion object {

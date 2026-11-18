@@ -1,6 +1,7 @@
 package com.jorge.koreandiary
 
 import com.jorge.koreandiary.ai.Prompts
+import com.jorge.koreandiary.scene.PendingScene
 import com.jorge.koreandiary.scene.SceneData
 import com.jorge.koreandiary.scene.SceneDictionary
 import com.jorge.koreandiary.scene.SceneZone
@@ -110,6 +111,12 @@ class FactoryDrawingsTest {
         // Lo que elige la IA de la lista se guarda con la escena (lo inventado, no).
         val saved = SceneData().withElements(listOf("sea", "f_cat", "x_puppy", "unicornio"))
         assertEquals(listOf("sea", "f_cat", "x_puppy"), saved.elements)
+        // …y siguen ahí al leer la escena guardada: antes se guardaban y al leer se descartaban, así
+        // que el dibujo que eligió la IA nunca llegaba a pintarse. También lo que espera a ser escrito.
+        val waiting = saved.withPending(PendingScene(listOf("f_lighthouse", "moon"), mood = null, words = listOf("등대")))
+        val read = SceneData.parse(waiting.toJson())
+        assertEquals(listOf("sea", "f_cat", "x_puppy"), read.elements)
+        assertEquals(listOf("f_lighthouse", "moon"), read.pending.single().elements)
         // Uno por zona, pintados juntos en la franja.
         val picks = SceneZone.entries.map { z -> factory.first { it.zone == z } }
         val elements = picks.map { it.element }

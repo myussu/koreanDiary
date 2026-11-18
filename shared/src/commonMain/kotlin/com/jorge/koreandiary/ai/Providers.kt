@@ -56,6 +56,9 @@ internal fun postJson(
         throw ProviderException("$providerName devolvió una respuesta que no es JSON.")
     } catch (e: java.net.UnknownHostException) {
         throw ProviderException("Sin conexión o endpoint incorrecto (${e.message}).", offline = true)
+    } catch (e: java.net.SocketTimeoutException) {
+        // Con internet funcionando: la IA tardó más que el límite. No es «sin conexión».
+        throw ProviderException("$providerName tardó demasiado en responder. Inténtalo otra vez.")
     } catch (e: IOException) {
         throw ProviderException("Sin conexión: ${e.message}", offline = true)
     } finally {
@@ -124,16 +127,22 @@ class GeminiProvider(
  * para sus modelos. "model" es el nombre del despliegue. Azure no usa estos datos para entrenar.
  */
 class AzureOpenAIProvider(
-    endpoint: String,
+    private val endpoint: String,
     private val deployment: String,
     private val apiKey: String,
     /** low, medium o high. Bajo = más rápido y barato; la corrección no necesita razonar mucho. */
     private val effort: String,
 ) : CorrectionProvider {
     override val id = "azure"
-    private val url = "${AzureEndpoint.baseUrl(endpoint)}/responses"
 
     override suspend fun complete(request: CorrectionRequest): String = withContext(Dispatchers.IO) {
+        // Se arma aquí y no al crear el proveedor: un endpoint mal escrito (un espacio, un guion bajo)
+        // cerraba la app al pulsar «Probar conexión» o «Revisar»; ahora sale como un error más.
+        val url = try {
+            "${AzureEndpoint.baseUrl(endpoint)}/responses"
+        } catch (e: IllegalArgumentException) {
+            throw ProviderException("El endpoint de Azure no es válido. Revísalo en Ajustes › IA (por ejemplo: mi-recurso.openai.azure.com).")
+        }
         val content = JSONArray().put(JSONObject().put("type", "input_text").put("text", request.prompt))
         request.image?.let {
             val b64 = java.util.Base64.getEncoder().encodeToString(it)
@@ -196,7 +205,13 @@ object AzureEndpoint {
         val trimmed = raw.trim()
         require(trimmed.isNotEmpty()) { "Falta el endpoint de Azure" }
         val withScheme = if ("://" in trimmed) trimmed else "https://$trimmed"
-        val host = java.net.URI(withScheme).host ?: throw IllegalArgumentException("Endpoint de Azure inválido: $raw")
+        val host = try {
+            java.net.URI(withScheme).host
+        } catch (e: java.net.URISyntaxException) {
+            // Un espacio u otro carácter que una dirección no admite.
+            null
+        }
+        if (host.isNullOrBlank()) throw IllegalArgumentException("Endpoint de Azure inválido: $raw")
         return "https://$host/openai/v1"
     }
 }

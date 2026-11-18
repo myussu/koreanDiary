@@ -124,4 +124,18 @@ class InkSerializerTest {
         assertEquals(0.49f, fitted.first().points.last().x / 2000f, 0.001f)
         assertEquals(40f * 0.49f, fitted.first().points.last().y, 0.01f)
     }
+
+    /** Un trazo que terminó un poco fuera del borde se recorta él solo: la página no se achica. */
+    @Test
+    fun aStrokeThatSlippedOffTheEdgeDoesNotShrinkThePage() {
+        val inside = stroke(10f, 10f, 900f, 20f)
+        val slipped = stroke(800f, 200f, 1080f, 210f)
+        val fitted = InkOps.fitToWidth(listOf(inside, slipped), 1000f)!!
+        // El que estaba dentro queda igual (el mismo objeto: no se vuelve a guardar distinto).
+        assertTrue(fitted[0] === inside)
+        assertEquals(1000f, fitted[1].points.maxOf { it.x }, 0.001f)
+        assertEquals(200f, fitted[1].points.first().y, 0.001f)
+        // Ya recortado, no se toca más.
+        assertNull(InkOps.fitToWidth(fitted, 1000f))
+    }
 }

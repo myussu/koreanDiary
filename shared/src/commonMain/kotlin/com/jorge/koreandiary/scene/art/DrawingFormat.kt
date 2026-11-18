@@ -40,8 +40,10 @@ object DrawingFormat {
             .filter { hangul.matches(it) }
             .distinct()
             .take(MAX_KEYS)
-        val slug = json.optString("id").lowercase().replace(Regex("[^a-z0-9_]"), "_").trim('_').take(24)
-        val bare = slug.removePrefix(CustomDrawing.PREFIX).removePrefix(CustomDrawing.FACTORY_PREFIX)
+        // El prefijo se quita antes de recortar: si no, un id largo ya guardado («x_» + 23 letras o más)
+        // perdía sus últimas letras al releerlo y dejaba de coincidir con su archivo.
+        val slug = json.optString("id").lowercase().replace(Regex("[^a-z0-9_]"), "_").trim('_')
+        val bare = slug.removePrefix(CustomDrawing.PREFIX).removePrefix(CustomDrawing.FACTORY_PREFIX).take(24).trim('_')
         val id = prefix + bare.ifEmpty { "d" + (ko.ifEmpty { es }).hashCode().toUInt().toString(16) }
         return CustomDrawing(
             id = id,

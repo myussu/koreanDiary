@@ -22,7 +22,7 @@ Desde la versión 0.1.4 la app se actualiza sola: al abrirla consulta `version.j
    - **Compartir:** manda la imagen y el prompt a Claude o ChatGPT; copia la respuesta y pégala en la app. Gratis.
    - **Gemini:** corrección automática con tu clave gratuita de Google AI Studio.
 4. Reescribe las correcciones debajo de la zona sombreada y pulsa **Verificar**.
-5. **Progreso** (desde el inicio): racha, calendario, memoria FSRS y lo que más te cuesta.
+5. **Estudio → Resumen** (desde el inicio): tu nivel, racha, calendario, memoria FSRS y lo que más te cuesta.
 6. **Ajustes → Recordatorio:** aviso diario opcional, solo si ese día aún no escribiste.
 
 ## Copia de seguridad

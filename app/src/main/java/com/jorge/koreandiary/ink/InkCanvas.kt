@@ -167,7 +167,9 @@ fun InkCanvas(
                         return@awaitEachGesture
                     }
 
-                    fun page(p: Offset) = Offset(p.x, p.y + scroll.offset)
+                    // Dentro de la hoja: el gesto sigue llegando aunque el lápiz salga del lienzo, y un
+                    // trazo que terminaba fuera del borde quedaba guardado con puntos fuera de la página.
+                    fun page(p: Offset) = Offset(p.x.coerceIn(0f, size.width.toFloat()), (p.y + scroll.offset).coerceAtLeast(0f))
                     var erasing = tool == InkTool.ERASER || down.type == PointerType.Eraser
                     var scrolling = false
                     live.clear()

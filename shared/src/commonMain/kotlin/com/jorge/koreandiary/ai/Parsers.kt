@@ -400,15 +400,19 @@ object GrammarTxtParser {
         val grammar = mutableListOf<ImportGrammar>()
         var inAppendix = false
         var inRules = false
-        for (line in text.lines()) {
+        // El Bloc de notas guarda «UTF-8 con BOM»: esa marca invisible al inicio no es un espacio y
+        // hacía que la primera línea («Unit 1: …») no se reconociera.
+        for (line in text.removePrefix("\uFEFF").lines()) {
             val trimmed = line.trim()
             if (trimmed.isEmpty()) continue
             val lower = trimmed.lowercase()
             // Antes que los títulos: «**Unit 1:** …» empieza con ** y no es un título.
             val unitMatch = UNIT_LINE.find(trimmed)
-            if (unitMatch != null) {
-                val unit = unitMatch.groupValues[1].toInt()
-                unitMatch.groupValues[2].split(" | ", "|").map { it.trim().trim('*').trim() }.filter { it.isNotEmpty() }
+            val unit = unitMatch?.groupValues?.get(1)?.toIntOrNull()
+            if (unitMatch != null && unit != null) {
+                // Un patrón siempre trae coreano: una línea «Unit 5:» sin nada no deja un «:» suelto.
+                unitMatch.groupValues[2].split(" | ", "|").map { it.trim().trim('*').trim() }
+                    .filter { piece -> piece.any { it in '\uAC00'..'\uD7A3' || it in '\u3131'..'\u3163' } }
                     .forEach { grammar += point(it, unit, level) }
                 continue
             }

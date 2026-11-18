@@ -84,6 +84,12 @@ class Updater(private val app: Application) {
      */
     var beforeInstall: (suspend (ReleaseInfo) -> String)? = null
 
+    /**
+     * Lo último antes de que Android reemplace la app (y la cierre sin avisar a la pantalla): guardar
+     * lo que estés escribiendo. También lo conecta el `AppContainer`.
+     */
+    var beforeCommit: (suspend () -> Unit)? = null
+
     /** Descargar, copiar e instalar no dependen de la pantalla: siguen aunque salgas de donde empezaste. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var installJob: Job? = null
@@ -116,20 +122,49 @@ class Updater(private val app: Application) {
             val info = fetchReleaseInfo()
             lastCheckAt = android.os.SystemClock.elapsedRealtime()
             if (info.versionCode > currentVersionCode) UpdateState.Available(info) else UpdateState.UpToDate
+        } catch (e: CancellationException) {
+            // Se canceló (giraste el celular, saliste de Ajustes): no es un error ni un chequeo hecho.
+            // Queda como estaba, para que el siguiente chequeo sí consulte.
+            _state.value = busy
+            throw e
         } catch (e: Exception) {
             if (silent) UpdateState.Idle else UpdateState.Error("No se pudo buscar actualizaciones: ${e.message}")
         }
     }
 
+    /** El APK bajado no coincide con el SHA-256 de version.json. */
+    private class HashMismatch : IOException("el archivo descargado está dañado (SHA-256 distinto)")
+
+    /** Lo que dice version.json ahora mismo; si no se puede leer, lo que ya se sabía. */
+    private suspend fun latestOr(known: ReleaseInfo): ReleaseInfo = try {
+        fetchReleaseInfo().takeIf { it.versionCode >= known.versionCode } ?: known
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        known
+    }
+
     /** Con [skipBackup] instala sin guardar la copia antes (si la copia falló y decides seguir). */
-    private suspend fun downloadAndInstall(info: ReleaseInfo, skipBackup: Boolean = false) {
+    private suspend fun downloadAndInstall(requested: ReleaseInfo, skipBackup: Boolean = false) {
         if (!app.packageManager.canRequestPackageInstalls()) {
-            _state.value = UpdateState.NeedsPermission(info)
+            _state.value = UpdateState.NeedsPermission(requested)
             return
         }
+        var info = requested
         try {
             _state.value = UpdateState.Downloading(info, 0f)
-            val apk = download(info)
+            // El APK del release es siempre el último. Si se publicó otra versión desde que salió el
+            // aviso, el SHA-256 que se tenía era el de la anterior: la descarga «estaba dañada» y
+            // «Reintentar» fallaba igual. Se relee version.json justo antes de bajar.
+            info = latestOr(info)
+            val apk = try {
+                download(info)
+            } catch (e: HashMismatch) {
+                // Se publicó justo entre leer la versión y bajar el APK: una vez más, con lo último.
+                info = latestOr(info)
+                _state.value = UpdateState.Downloading(info, 0f)
+                download(info)
+            }
             var note: String? = null
             val backup = beforeInstall
             if (!skipBackup && backup != null) {
@@ -233,7 +268,7 @@ class Updater(private val app: Application) {
             val hash = digest.digest().joinToString("") { "%02x".format(it) }
             if (info.sha256 != null && !hash.equals(info.sha256, ignoreCase = true)) {
                 file.delete()
-                throw IOException("el archivo descargado está dañado (SHA-256 distinto)")
+                throw HashMismatch()
             }
             file
         } finally {
@@ -251,19 +286,39 @@ class Updater(private val app: Application) {
             }
         }
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            apk.inputStream().use { input ->
-                session.openWrite("koreandiary.apk", 0, apk.length()).use { out ->
-                    input.copyTo(out)
-                    session.fsync(out)
+        try {
+            installer.openSession(sessionId).use { session ->
+                apk.inputStream().use { input ->
+                    session.openWrite("koreandiary.apk", 0, apk.length()).use { out ->
+                        input.copyTo(out)
+                        session.fsync(out)
+                    }
                 }
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+                val callback = PendingIntent.getBroadcast(
+                    app, sessionId, Intent(app, InstallResultReceiver::class.java), flags,
+                )
+                // Lo último: al aceptar la instalación, Android cierra la app sin pasar por la pantalla.
+                saveBeforeCommit()
+                session.commit(callback.intentSender)
             }
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-            val callback = PendingIntent.getBroadcast(
-                app, sessionId, Intent(app, InstallResultReceiver::class.java), flags,
-            )
-            session.commit(callback.intentSender)
+        } catch (e: Exception) {
+            // Una instalación que no llegó a pedirse no queda ocupando espacio.
+            runCatching { installer.abandonSession(sessionId) }
+            throw e
+        }
+    }
+
+    /** Guarda lo que estés escribiendo; si falla, la instalación sigue (la copia ya está hecha). */
+    private suspend fun saveBeforeCommit() {
+        val save = beforeCommit ?: return
+        try {
+            withContext(Dispatchers.Main) { save() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Nada: se guardó lo que se pudo.
         }
     }
 

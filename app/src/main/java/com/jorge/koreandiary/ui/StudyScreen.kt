@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.data.ItemRef
@@ -360,6 +361,8 @@ private fun VocabTestDialog(container: AppContainer, onDone: (VocabTest?) -> Uni
 
     AlertDialog(
         onDismissRequest = { onDone(null) },
+        // Son seis niveles: un toque fuera del recuadro no descarta lo que ya marcaste.
+        properties = DialogProperties(dismissOnClickOutside = false),
         title = { Text("Nivel $level de 6: toca las que conoces") },
         text = {
             val words = sample?.get(level)

@@ -165,6 +165,11 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         _state.update { it.copy(checking = true) }
+        // La tarjeta de este pedido: leer la letra tarda (la primera vez baja el modelo) y mientras
+        // tanto puedes pulsar «Ver respuesta» o «Siguiente». Lo leído solo vale para esta tarjeta y
+        // solo si sigue abierta; antes caía en la que estuviera en pantalla y la calificaba.
+        val index = s.index
+        fun stillOpen() = _state.value.let { it.index == index && it.card === card && it.outcome != ClozeOutcome.RIGHT && it.outcome != ClozeOutcome.REVEALED }
         viewModelScope.launch {
             val candidates = try {
                 if (!c.recognizer.isModelDownloaded()) c.recognizer.downloadModel()
@@ -174,7 +179,14 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(checking = false, note = HandwritingRecognizer.inkMessage(e) ?: "No pude leer tu letra: ${e.message ?: e.javaClass.simpleName}") }
+                _state.update {
+                    if (it.index != index) it
+                    else it.copy(checking = false, note = HandwritingRecognizer.inkMessage(e) ?: "No pude leer tu letra: ${e.message ?: e.javaClass.simpleName}")
+                }
+                return@launch
+            }
+            if (!stillOpen()) {
+                _state.update { if (it.index == index) it.copy(checking = false) else it }
                 return@launch
             }
             judge(card, candidates.filter { it.isNotBlank() })
@@ -210,7 +222,10 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     fun reveal() = close(ClozeOutcome.REVEALED, Cloze.rating(_state.value.hints, _state.value.wrong, revealed = true))
 
     private fun close(outcome: ClozeOutcome, rating: Fsrs.Rating) {
-        val card = _state.value.card ?: return
+        val st = _state.value
+        val card = st.card ?: return
+        // Una tarjeta se cierra (y se califica) una sola vez.
+        if (st.outcome == ClozeOutcome.RIGHT || st.outcome == ClozeOutcome.REVEALED) return
         _state.update { it.copy(outcome = outcome, rating = rating, tally = it.tally + (rating to (it.tally[rating] ?: 0) + 1)) }
         // En el alcance de la app: el resultado se guarda aunque cierres la pantalla enseguida.
         c.appScope.launch { c.study.applyQuickReview(card.code, rating, System.currentTimeMillis()) }
@@ -219,7 +234,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     fun next() = _state.update {
         it.copy(
             index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, strokes = emptyList(), note = null,
-            explain = null, explaining = false, explainNote = null,
+            checking = false, explain = null, explaining = false, explainNote = null,
         )
     }
 
@@ -232,10 +247,13 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         val card = _state.value.card ?: return
         if (_state.value.explaining) return
         val key = ExplanationStore.key(card.label, card.kind == ClozeKind.GRAMMAR)
+        // La explicación es de esta tarjeta: si llega cuando ya pasaste a otra, queda guardada pero no
+        // se muestra (antes salía bajo el título de la tarjeta siguiente).
+        val index = _state.value.index
         _state.update { it.copy(explaining = true, explainNote = null) }
         viewModelScope.launch {
             c.explanations.get(key)?.let { found ->
-                _state.update { it.copy(explain = found, explaining = false) }
+                _state.update { if (it.index == index) it.copy(explain = found, explaining = false) else it }
                 return@launch
             }
             val settings = c.settings.state.value
@@ -259,7 +277,8 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                     e.message ?: e.javaClass.simpleName
                 }
             }
-            _state.update { it.copy(explain = c.explanations.get(key), explaining = false, explainNote = note) }
+            val found = c.explanations.get(key)
+            _state.update { if (it.index == index) it.copy(explain = found, explaining = false, explainNote = note) else it }
         }
     }
 }

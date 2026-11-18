@@ -106,12 +106,18 @@ class BackupManager(
     /**
      * Confirma el reemplazo: guarda lo que hay ahora (para poder deshacer), deja la copia lista y
      * reinicia la app. El reemplazo ocurre al arrancar ([StartupRestore]).
+     *
+     * Deshacer también guarda antes lo que hay ahora, como una copia más de las de dentro de la app
+     * («deshacer-<fecha>», con «Restaurar»): el botón sigue disponible mucho después de importar, y sin
+     * esto volver atrás borraba sin remedio todo lo escrito desde entonces.
      */
     fun confirm() {
         val pending = _activity.value as? BackupActivity.Confirm ?: return
-        start(if (pending.undo) "Preparando…" else "Guardando lo que hay ahora, por si quieres deshacer…") {
+        start("Guardando lo que hay ahora, por si quieres volver…") {
             try {
-                if (!pending.undo) {
+                if (pending.undo) {
+                    writeInApp(BackupFormat.autoBackupName(UNDO_LABEL, System.currentTimeMillis()))
+                } else {
                     val tmp = File(files.undo.path + ".tmp")
                     tmp.parentFile?.mkdirs()
                     archive(tmp.outputStream())
@@ -175,20 +181,34 @@ class BackupManager(
                     folderProblem = e.message ?: e.javaClass.simpleName
                 }
             }
-            autoDir.mkdirs()
-            val tmp = File(autoDir, "$name.tmp")
-            val (_, bytes) = try {
-                archive(tmp.outputStream())
-            } catch (e: Exception) {
-                tmp.delete()
-                throw e
-            }
-            if (!tmp.renameTo(File(autoDir, name))) throw IOException("no se pudo guardar la copia")
-            BackupFormat.autoBackupsToDelete(autoDir.list().orEmpty().toList()).forEach { File(autoDir, it).delete() }
+            val bytes = writeInApp(name)
             status.recordAuto(now, bytes, inApp = true)
             if (folderProblem != null) "No pude escribir en tu carpeta ($folderProblem): la copia quedó dentro de la app."
             else "Copia guardada dentro de la app (${BackupFormat.sizeLabel(bytes)})."
         }
+    }
+
+    /**
+     * Escribe una copia completa dentro de la app ([autoDir]) y deja solo las últimas. Devuelve su
+     * tamaño. Quien llama ya tiene el [mutex].
+     */
+    private suspend fun writeInApp(name: String): Long {
+        autoDir.mkdirs()
+        // Restos de una copia que no terminó (la app se cerró a la mitad): pesan como todos tus datos.
+        autoDir.listFiles()?.filter { it.name.endsWith(".tmp") }?.forEach { it.delete() }
+        val tmp = File(autoDir, "$name.tmp")
+        val (_, bytes) = try {
+            archive(tmp.outputStream())
+        } catch (e: Exception) {
+            tmp.delete()
+            throw e
+        }
+        if (!tmp.renameTo(File(autoDir, name))) {
+            tmp.delete()
+            throw IOException("no se pudo guardar la copia")
+        }
+        BackupFormat.autoBackupsToDelete(autoDir.list().orEmpty().toList()).forEach { File(autoDir, it).delete() }
+        return bytes
     }
 
     /** Copias de antes de actualizar que están dentro de la app, la más nueva primero: nombre y tamaño. */
@@ -218,16 +238,18 @@ class BackupManager(
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val doc = DocumentsContract.createDocument(resolver, parent, "application/zip", name)
             ?: throw IOException("no se pudo crear el archivo")
-        try {
+        val bytes = try {
             val output = resolver.openOutputStream(doc) ?: throw IOException("no se pudo abrir el archivo")
-            val (_, bytes) = archive(output)
-            pruneFolder(tree)
-            return bytes
+            archive(output).second
         } catch (e: Exception) {
             // Una copia a medias parece una copia y no lo es.
             runCatching { DocumentsContract.deleteDocument(resolver, doc) }
             throw e
         }
+        // Fuera del try: la copia ya está completa. Si falla quitar las viejas (la carpeta no deja
+        // listar su contenido), no se borra la que se acaba de escribir.
+        runCatching { pruneFolder(tree) }
+        return bytes
     }
 
     /** Deja en la carpeta solo las últimas copias automáticas; tus otros archivos no se tocan. */
@@ -309,5 +331,10 @@ class BackupManager(
             }
         }
         Runtime.getRuntime().exit(0)
+    }
+
+    private companion object {
+        /** Cómo se llama, entre las copias de dentro de la app, la que se guarda antes de deshacer. */
+        const val UNDO_LABEL = "deshacer"
     }
 }

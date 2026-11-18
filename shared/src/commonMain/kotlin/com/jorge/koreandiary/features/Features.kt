@@ -168,7 +168,8 @@ object Features {
                 phone("IA: proveedor por defecto, Gemini o Azure, con «Probar conexión»."),
                 phone("Escenas: «Escena viva» (encender o apagar los dibujos en acuarela de abajo) y «Dibujos nuevos (Claude)»: tu clave de la API de Claude, el modelo, «Probar conexión», «Dibujar al revisar una escena» y «Ver dibujos». Como mucho 12 dibujos por día."),
                 phone("Hablar y escuchar: turnos, corrección durante la conversación, pista automática, texto borroso, voz y modelos; en Escuchar, narrador, velocidad, pausas y micrófono de los audífonos."),
-                phone("Copia y actualizaciones: «Exportar copia» e «Importar copia» (.zip; las claves de API no viajan). La app se actualiza sola cuando hay una versión nueva."),
+                phone("Copia y actualizaciones: «Exportar copia» e «Importar copia» (.zip; las claves de API no viajan). La app avisa cuando hay una versión nueva («Buscar actualización») y se instala con «Actualizar ahora»."),
+                phone("«Deshacer la última importación»: vuelve a lo que había antes de importar. Lo que tenías al deshacer queda guardado dentro de la app, como «deshacer», con «Restaurar»."),
                 phone("Copia antes de actualizar: guarda todo antes de instalar cada versión (quedan las 3 últimas). «Elegir carpeta» para que sobreviva aunque desinstales; sin carpeta queda dentro de la app, con «Restaurar»."),
                 phone("Si esa copia falla, no instala: «Reintentar» o «Actualizar sin copia»."),
                 desktop("«Importar copia del celular…»: trae el .zip exportado en el celular. Si la PC ya tenía páginas, pide confirmación y guarda lo anterior."),
@@ -484,7 +485,7 @@ object Features {
                 ),
                 FlowStep(
                     "Te arrepientes",
-                    "Vuelve a los datos que había antes de importar.",
+                    "Vuelve a los datos que había antes de importar. Lo que tenías en ese momento queda dentro de la app, como «deshacer», con «Restaurar».",
                     listOf("Deshacer la última importación"),
                 ),
             ),

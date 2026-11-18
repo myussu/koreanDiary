@@ -49,7 +49,9 @@ object ScenePalette {
         "tense" to (Color(0xFFC04A5A) to Color(0xFF7A4AA8)),
     )
 
-    private val cache = HashMap<String, Color>()
+    // Lo usan el hilo que pinta la escena y el que arma la imagen de un dibujo para Claude: un
+    // HashMap normal compartido entre hilos puede perder entradas o fallar.
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Color>()
 
     /**
      * El color de una mancha de acuarela por su clave; gris si la clave no existe. Los dibujos nuevos
