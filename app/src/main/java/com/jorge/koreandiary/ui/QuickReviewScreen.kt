@@ -76,6 +76,11 @@ data class QuickReviewState(
     val rating: Fsrs.Rating? = null,
     /** Lo último que escribiste, tal como lo leyó la app. */
     val read: String? = null,
+    /**
+     * Después de «Ver respuesta» el recuadro queda para copiarla a mano: si la comprobaste, si
+     * coincidió (null = no la comprobaste). Es solo práctica: la calificación ya quedó.
+     */
+    val copied: Boolean? = null,
     val checking: Boolean = false,
     val strokes: List<InkStroke> = emptyList(),
     /** Una nota arriba (sin IA, error); no frena el repaso. */
@@ -151,11 +156,14 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
 
     fun addStroke(stroke: InkStroke) = _state.update { it.copy(strokes = it.strokes + stroke) }
 
-    fun clearInk() = _state.update { it.copy(strokes = emptyList(), read = if (it.outcome == ClozeOutcome.WRONG) it.read else null) }
+    fun clearInk() = _state.update { it.copy(strokes = emptyList(), read = if (it.outcome == ClozeOutcome.WRONG) it.read else null, copied = null) }
 
     fun hint() = _state.update { if (it.outcome == null || it.outcome == ClozeOutcome.WRONG) it.copy(hints = (it.hints + 1).coerceAtMost(3)) else it }
 
-    /** Lee lo escrito a mano ([lineHeight] = alto del recuadro, así todo cae en un renglón) y lo compara. */
+    /**
+     * Lee lo escrito a mano ([lineHeight] = alto del recuadro, así todo cae en un renglón) y lo compara.
+     * Con la respuesta ya vista, comprueba la copia sin tocar la calificación.
+     */
     fun checkInk(lineHeight: Float, width: Float) {
         val s = _state.value
         val card = s.card ?: return
@@ -169,7 +177,11 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         // tanto puedes pulsar «Ver respuesta» o «Siguiente». Lo leído solo vale para esta tarjeta y
         // solo si sigue abierta; antes caía en la que estuviera en pantalla y la calificaba.
         val index = s.index
-        fun stillOpen() = _state.value.let { it.index == index && it.card === card && it.outcome != ClozeOutcome.RIGHT && it.outcome != ClozeOutcome.REVEALED }
+        val copying = s.outcome == ClozeOutcome.REVEALED
+        fun stillOpen() = _state.value.let {
+            it.index == index && it.card === card &&
+                (if (copying) it.outcome == ClozeOutcome.REVEALED else it.outcome != ClozeOutcome.RIGHT && it.outcome != ClozeOutcome.REVEALED)
+        }
         viewModelScope.launch {
             val candidates = try {
                 if (!c.recognizer.isModelDownloaded()) c.recognizer.downloadModel()
@@ -203,6 +215,11 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     private fun judge(card: ClozeCard, candidates: List<String>) {
+        if (_state.value.outcome == ClozeOutcome.REVEALED) {
+            // La copia después de verla: solo dice si quedó bien escrita.
+            _state.update { it.copy(checking = false, read = candidates.firstOrNull() ?: "(nada)", copied = Cloze.matches(card, candidates)) }
+            return
+        }
         if (Cloze.matches(card, candidates)) {
             _state.update { it.copy(checking = false, read = candidates.firstOrNull()) }
             close(ClozeOutcome.RIGHT, Cloze.rating(_state.value.hints, _state.value.wrong, revealed = false))
@@ -219,7 +236,14 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     /** «La mía también vale»: tu respuesta era otra forma correcta; cuenta como acierto con las pistas que usaste. */
     fun acceptMine() = close(ClozeOutcome.RIGHT, Cloze.rating(_state.value.hints, wrongTries = 0, revealed = false))
 
-    fun reveal() = close(ClozeOutcome.REVEALED, Cloze.rating(_state.value.hints, _state.value.wrong, revealed = true))
+    /**
+     * «Ver respuesta»: la tarjeta se califica como «vuelve pronto» y el recuadro queda limpio para
+     * copiarla a mano, si hay tiempo (pedido por Jorge: que la mano trabaje aunque no la recordara).
+     */
+    fun reveal() {
+        close(ClozeOutcome.REVEALED, Cloze.rating(_state.value.hints, _state.value.wrong, revealed = true))
+        _state.update { if (it.outcome == ClozeOutcome.REVEALED) it.copy(strokes = emptyList(), read = null, copied = null) else it }
+    }
 
     private fun close(outcome: ClozeOutcome, rating: Fsrs.Rating) {
         val st = _state.value
@@ -233,7 +257,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
 
     fun next() = _state.update {
         it.copy(
-            index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, strokes = emptyList(), note = null,
+            index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, copied = null, strokes = emptyList(), note = null,
             checking = false, explain = null, explaining = false, explainNote = null,
         )
     }
@@ -352,7 +376,6 @@ private fun CardView(
     vm: QuickReviewViewModel,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val paper = LocalPaperStyle.current
     val density = LocalDensity.current
     var typing by remember { mutableStateOf(false) }
     var typed by remember(card.code, state.index) { mutableStateOf("") }
@@ -434,7 +457,24 @@ private fun CardView(
                         color = scheme.error,
                     )
                 }
-                ClozeOutcome.REVEALED -> Text("Era «${card.answer}». Vuelve pronto.", style = MaterialTheme.typography.titleMedium, color = scheme.error)
+                ClozeOutcome.REVEALED -> {
+                    Text("Era «${card.answer}». Vuelve pronto.", style = MaterialTheme.typography.titleMedium, color = scheme.error)
+                    when (state.copied) {
+                        null -> Text("Si tienes tiempo, cópiala abajo a mano.", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        true -> {
+                            ReadBack(state.read, scheme.tertiary)
+                            Text("Bien escrita.", style = MaterialTheme.typography.titleMedium, color = scheme.tertiary)
+                        }
+                        false -> {
+                            ReadBack(state.read, scheme.error)
+                            Text(
+                                "No coincide: mírala arriba y prueba otra vez, o sigue. Si la escribiste bien y la app leyó mal, no pasa nada.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = scheme.error,
+                            )
+                        }
+                    }
+                }
                 null -> {}
             }
             // «Más sobre esto»: la palabra o la gramática de la tarjeta, por partes y con ejemplos.
@@ -465,34 +505,7 @@ private fun CardView(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    Box(
-                        Modifier.fillMaxWidth().height(120.dp).border(1.dp, scheme.outlineVariant)
-                            .paperBackground(paper).clipToBounds().testTag("repaso_recuadro").onSizeChanged { padWidth = it.width.toFloat() },
-                    ) {
-                        InkCanvas(
-                            strokes = state.strokes,
-                            tool = InkTool.PEN,
-                            stylusOnly = stylusOnly,
-                            lineHeightPx = padHeightPx,
-                            reviewedLines = 0,
-                            inkColor = paper.ink,
-                            lineColor = paper.line,
-                            reviewedTint = paper.reviewedTint,
-                            strokeWidthPx = with(density) { penWidthDp.dp.toPx() },
-                            pressureEnabled = pressure,
-                            onStrokeFinished = vm::addStroke,
-                            onErase = {},
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        if (state.strokes.isEmpty()) {
-                            Text(
-                                "Escribe aquí lo que va en el hueco",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = scheme.onSurfaceVariant,
-                                modifier = Modifier.align(Alignment.Center),
-                            )
-                        }
-                    }
+                    AnswerPad(state.strokes, "Escribe aquí lo que va en el hueco", stylusOnly, pressure, penWidthDp, padHeightPx, vm::addStroke) { padWidth = it }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -520,6 +533,30 @@ private fun CardView(
                 }
                 AppTextButton(onClick = vm::reveal) { Text("Ver respuesta") }
             }
+        } else if (state.outcome == ClozeOutcome.REVEALED) {
+            // Viste la respuesta: el recuadro sigue en su sitio para copiarla a mano, si hay tiempo.
+            // «Comprobar» es opcional y «Siguiente» está siempre.
+            AnswerPad(state.strokes, "Si tienes tiempo, cópiala aquí", stylusOnly, pressure, penWidthDp, padHeightPx, vm::addStroke) { padWidth = it }
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                AppTextButton(onClick = vm::clearInk) { Text("Borrar") }
+                Box(Modifier.weight(1f))
+                AppOutlinedButton(
+                    onClick = { vm.checkInk(padHeightPx, padWidth) },
+                    enabled = !state.checking,
+                    modifier = Modifier.testTag("repaso_copia_comprobar"),
+                ) { Text(if (state.checking) "Leyendo…" else "Comprobar") }
+                AppButton(onClick = vm::next) { Text(if (state.index + 1 < state.cards.size) "Siguiente" else "Terminar") }
+            }
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                if (BuildConfig.PRUEBA) {
+                    AppTextButton(onClick = { vm.checkTyped(card.answer) }, modifier = Modifier.testTag("repaso_copia_bien")) { Text("Prueba: bien") }
+                    AppTextButton(onClick = { vm.checkTyped("x") }, modifier = Modifier.testTag("repaso_copia_mal")) { Text("Prueba: mal") }
+                    Box(Modifier.weight(1f))
+                }
+                if (state.explain == null && !state.explaining) {
+                    AppTextButton(onClick = vm::explain, modifier = Modifier.testTag("repaso_mas_boton")) { Text("Más sobre esto") }
+                }
+            }
         } else {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
                 if (state.explain == null && !state.explaining) {
@@ -527,6 +564,51 @@ private fun CardView(
                 }
                 AppButton(onClick = vm::next) { Text(if (state.index + 1 < state.cards.size) "Siguiente" else "Terminar") }
             }
+        }
+    }
+}
+
+/** El recuadro de un renglón donde escribes a mano: para responder y, tras «Ver respuesta», para copiarla. */
+@Composable
+private fun AnswerPad(
+    strokes: List<InkStroke>,
+    placeholder: String,
+    stylusOnly: Boolean,
+    pressure: Boolean,
+    penWidthDp: Float,
+    lineHeightPx: Float,
+    onStroke: (InkStroke) -> Unit,
+    onWidth: (Float) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val paper = LocalPaperStyle.current
+    val density = LocalDensity.current
+    Box(
+        Modifier.fillMaxWidth().height(120.dp).border(1.dp, scheme.outlineVariant)
+            .paperBackground(paper).clipToBounds().testTag("repaso_recuadro").onSizeChanged { onWidth(it.width.toFloat()) },
+    ) {
+        InkCanvas(
+            strokes = strokes,
+            tool = InkTool.PEN,
+            stylusOnly = stylusOnly,
+            lineHeightPx = lineHeightPx,
+            reviewedLines = 0,
+            inkColor = paper.ink,
+            lineColor = paper.line,
+            reviewedTint = paper.reviewedTint,
+            strokeWidthPx = with(density) { penWidthDp.dp.toPx() },
+            pressureEnabled = pressure,
+            onStrokeFinished = onStroke,
+            onErase = {},
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (strokes.isEmpty()) {
+            Text(
+                placeholder,
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
     }
 }
