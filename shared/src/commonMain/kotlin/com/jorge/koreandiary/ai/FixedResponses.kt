@@ -11,8 +11,8 @@ import org.json.JSONObject
  * IA de respuestas fijas, para la versión de prueba (la que se instala al lado de la tuya). No usa
  * la red ni gasta cuota: reconoce cada pedido por su texto y contesta con un JSON válido armado con
  * lo que el pedido trae (tus oraciones, los candidatos, los ítems). Así las pruebas con el emulador
- * recorren Revisar, «¿Cómo digo?», «Actualizar», las explicaciones, el repaso rápido y el workbook
- * siempre igual. Lo que no reconoce devuelve `{}`.
+ * recorren Revisar, «¿Cómo digo?», «Actualizar», las explicaciones, el repaso rápido (con tocar una
+ * palabra) y el workbook siempre igual. Lo que no reconoce devuelve `{}`.
  *
  * Errores fijos para probar Revisar y Verificar (ver docs/PRUEBAS.md):
  * - «만나요» en una oración con «어제» → «만났어요» (conjugación).
@@ -37,8 +37,19 @@ object FixedResponses {
         "repasa con oraciones en las que falta una parte" in prompt -> cloze(prompt)
         "es una página de un libro de coreano" in prompt -> workbookHints(prompt)
         "escribió a mano en una página de su libro" in prompt -> workbookReview(prompt)
+        "\"f\": la forma de diccionario de la palabra de contenido" in prompt -> word(prompt)
         else -> "{}"
     }
+
+    /** Tocar una palabra: le quita la partícula del final, si tiene una de las comunes, y la da como sustantivo. */
+    private fun word(prompt: String): String {
+        val word = Regex("""aparece «(.+?)»""").find(prompt)?.groupValues?.get(1)?.trim().orEmpty()
+        val form = WORD_PARTICLES.firstOrNull { word.length > it.length && word.endsWith(it) }?.let { word.dropLast(it.length) } ?: word
+        return JSONObject().put("f", form).put("t", "sustantivo").put("s", "significado de prueba")
+            .put("p", "Partes fijas de la versión de prueba: $form = A + B.").put("nota", JSONObject.NULL).toString()
+    }
+
+    private val WORD_PARTICLES = listOf("에서", "을", "를", "이", "가", "은", "는", "에", "도", "와", "과")
 
     /** Las líneas de una sección: desde la que empieza con [header] hasta la primera vacía. */
     private fun section(prompt: String, header: String): List<String> {

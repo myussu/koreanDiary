@@ -59,6 +59,12 @@ data class ClozeCard(
     val after: String get() = sentence.substring(start + answer.length)
 }
 
+/** Un trozo de una palabra de la oración; [blank]: es (parte de) lo que va en el hueco. */
+data class ClozePiece(val text: String, val blank: Boolean)
+
+/** Una palabra de la oración (o los espacios entre palabras) y lo que se busca al tocarla (null: no se toca). */
+data class ClozeWord(val pieces: List<ClozePiece>, val tap: String?)
+
 /**
  * Repaso rápido (decidido con Jorge el 2026-11-15): en vez de tarjetas como Anki, oraciones con un
  * espacio en blanco. Primero tus oraciones (ya corregidas); para lo que nunca usaste, oraciones de
@@ -295,7 +301,64 @@ object Cloze {
         return out.filter { it.first.isNotEmpty() }
     }
 
-    private val WORD_EDGE = Regex("""[\s.,!?~…·"'“”‘’()\[\]「」『』:;]""")
+    /**
+     * La oración en palabras para dibujarla y poder tocar cada una (pedido por Jorge el 2026-11-19:
+     * saber qué es 은메달 sin salir del repaso). Con la tarjeta abierta ([shown] = false) la palabra
+     * del hueco no se toca, porque daría la respuesta, y sus trozos marcan el hueco; cerrada, se
+     * tocan todas las que tienen coreano. Juntando los trozos sale la oración tal cual.
+     */
+    fun words(card: ClozeCard, shown: Boolean): List<ClozeWord> {
+        val text = card.sentence
+        val bs = card.start
+        val be = card.start + card.answer.length
+        val tokens = Regex("""\S+""").findAll(text).map { it.range.first until it.range.last + 1 }.toList()
+        val out = mutableListOf<ClozeWord>()
+        var pos = 0
+        fun space(until: Int) {
+            if (until > pos) out += ClozeWord(listOf(ClozePiece(text.substring(pos, until), blank = false)), tap = null)
+            pos = maxOf(pos, until)
+        }
+        fun pieces(from: Int, to: Int): List<ClozePiece> = listOf(
+            ClozePiece(text.substring(from, maxOf(from, minOf(to, bs))), blank = false),
+            ClozePiece(text.substring(maxOf(from, bs), maxOf(maxOf(from, bs), minOf(to, be))), blank = true),
+            ClozePiece(text.substring(minOf(to, maxOf(from, be)), to), blank = false),
+        ).filter { it.text.isNotEmpty() }
+        var i = 0
+        while (i < tokens.size) {
+            val t = tokens[i]
+            if (t.first >= be || t.last + 1 <= bs) {
+                space(t.first)
+                out += ClozeWord(listOf(ClozePiece(text.substring(t.first, t.last + 1), blank = false)), tap = tapTarget(text.substring(t.first, t.last + 1)))
+                pos = t.last + 1
+                i++
+                continue
+            }
+            // Las palabras que tocan el hueco: más de una si lo que falta lleva espacios.
+            var j = i
+            while (j + 1 < tokens.size && tokens[j + 1].first < be) j++
+            if (shown) {
+                for (k in i..j) {
+                    val tk = tokens[k]
+                    space(tk.first)
+                    out += ClozeWord(pieces(tk.first, tk.last + 1), tap = tapTarget(text.substring(tk.first, tk.last + 1)))
+                    pos = tk.last + 1
+                }
+            } else {
+                space(t.first)
+                out += ClozeWord(pieces(t.first, tokens[j].last + 1), tap = null)
+                pos = tokens[j].last + 1
+            }
+            i = j + 1
+        }
+        space(text.length)
+        return out
+    }
+
+    /** Lo que se busca al tocar una palabra: sin la puntuación de los bordes, y solo si tiene coreano. */
+    fun tapTarget(word: String): String? =
+        word.trim().replace(LEADING, "").replace(TRAILING, "").takeIf { w -> w.any { it in '가'..'힣' } }
+
+    private val WORD_EDGE =Regex("""[\s.,!?~…·"'“”‘’()\[\]「」『』:;]""")
 
     /**
      * Dónde va el hueco que trajo la IA. Si aparece una vez, ahí. Si aparece más (이 en 이것 y en

@@ -184,17 +184,19 @@ object ConversationPrompts {
     fun askedHowTo(idea: String, korean: String) =
         "[APP] Preguntó cómo decir «$idea» y la app le mostró: «$korean». Espera a que lo intente; si lo dice bien, felicítalo brevemente y sigue con el tema."
 
-    /** Traducción de una palabra que dijo la IA, en el contexto de su oración. */
+    /** Traducción de una palabra en el contexto de su oración (la de la IA en la conversación, o una del repaso rápido). */
     fun word(word: String, sentence: String): String = """
         Eres profesor de coreano para hispanohablantes. En la oración «${sentence.trim()}» aparece «${word.trim()}».
         Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.
         ${Prompts.SPANISH}
         1. "f": la forma de diccionario de la palabra de contenido (먹었어요 → 먹다); si es una partícula o terminación, su notación estándar (-어서, 처럼).
-        2. "s": su significado en español en este contexto, máximo 8 palabras.
-        3. "nota": si la forma conjugada o una partícula pegada cambia el sentido, explícalo en 1 frase en español; si no, null.
+        2. "t": qué es "f": "sustantivo", "verbo", "adjetivo", "adverbio", "partícula", "terminación" u "otro".
+        3. "s": su significado en español en este contexto, máximo 8 palabras.
+        4. "p": si "f" es compuesta o derivada, de qué partes se forma, con el significado de cada una (은메달 → 은 «plata» + 메달 «medalla»; 꿈꾸다 → 꿈 «sueño» + 꾸다 «soñar, tener un sueño»); si es simple, null.
+        5. "nota": si la forma conjugada o una partícula pegada cambia el sentido, explícalo en 1 frase en español; si no, null.
 
         FORMATO:
-        {"f": "...", "s": "...", "nota": null}
+        {"f": "...", "t": "sustantivo", "s": "...", "p": null, "nota": null}
     """.trimIndent()
 
     /** Qué significa y cómo se usa un objetivo de repaso (palabra o gramática). */

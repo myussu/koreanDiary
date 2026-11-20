@@ -70,6 +70,8 @@ object ItemSource {
     const val WORKBOOK = "workbook"
     /** Del estándar, desde «Para agregar» («Agregar» o «Ya lo sé»). */
     const val STANDARD = "estandar"
+    /** Una palabra que tocaste en una oración del repaso rápido y agregaste. */
+    const val REVIEW = "repaso"
 }
 
 /** «Tu nivel»: cuánto cubres de cada nivel del estándar y la gramática que te falta. */
@@ -499,6 +501,26 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         }
         if (added != null && known) review(added, Fsrs.Rating.EASY, EventKind.DECLARED, now, pageId = null)
         added
+    }
+
+    /** ¿Esta palabra (forma de diccionario) ya está en tu lista? */
+    suspend fun hasWord(form: String): Boolean = study.findWord(form.trim()) != null
+
+    /**
+     * Una palabra que tocaste en el repaso rápido y no conocías: entra a tu lista como nueva, sin
+     * contar como repaso, así la app te la sugiere y la trae al repaso como algo que nunca usaste. El
+     * tipo y el nivel salen del estándar si la tiene; si no, del tipo que dijo la IA.
+     */
+    suspend fun addLookedUpWord(form: String, type: String?, meaning: String?): ItemRef = db.withWriteTransaction {
+        val base = form.trim()
+        val id = study.findWord(base)?.id ?: run {
+            val std = standardWord(base)
+            val kind = type?.trim()?.lowercase()?.takeIf { it in WORD_KINDS } ?: std?.type ?: "otro"
+            study.insertWord(
+                Word(baseForm = base, type = kind, meaning = meaning?.trim(), level = std?.let { "${it.level}급" } ?: "desconocido", source = ItemSource.REVIEW)
+            )
+        }
+        ItemRef(ItemType.WORD, id)
     }
 
     /**

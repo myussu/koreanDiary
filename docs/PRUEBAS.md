@@ -90,7 +90,7 @@ adb shell input tap X Y
 | `aviso_cierre` | aviso de cierre por error |
 | `hoja` | el lienzo de la página |
 | `confirmar_texto`, `texto_de_prueba` | el texto a confirmar en Revisar y su botón de prueba |
-| `repaso_recuadro`, `repaso_prueba_bien`, `repaso_prueba_mal`, `repaso_copia_comprobar`, `repaso_copia_bien`, `repaso_copia_mal` | el repaso rápido |
+| `repaso_recuadro`, `repaso_prueba_bien`, `repaso_prueba_mal`, `repaso_copia_comprobar`, `repaso_copia_bien`, `repaso_copia_mal`, `repaso_oracion`, `repaso_palabra`, `repaso_palabra_agregar` | el repaso rápido |
 
 ### Escribir en la hoja
 
@@ -175,6 +175,7 @@ agrega el detalle del aviso o el logcat.
   - «Prueba: bien» cierra la tarjeta.
   - «Prueba: mal», luego «La mía también vale» y «Otra vez».
   - «Ver respuesta», «Siguiente» y al final el resumen con «Otra ronda».
+- [ ] Tocar una palabra de la oración (`repaso_oracion`), p. ej. la primera: se abre `repaso_palabra` con «palabra → forma», «significado de prueba» y «Partes fijas…». Si no está en tu lista, «Agregar a mi lista» (`repaso_palabra_agregar`) → «Agregada a tu lista…», y en Estudio › Palabras aparece como «buscada en el repaso rápido». Tocarla otra vez (o ✕) la cierra; en la tarjeta siguiente ya no está abierta. Con la tarjeta abierta, la palabra del hueco no responde al toque; al cerrarla, sí.
 - [ ] Tras «Ver respuesta» el recuadro (`repaso_recuadro`) sigue en el mismo lugar, vacío, con «Si tienes tiempo, cópiala aquí». «Prueba: bien» (`repaso_copia_bien`) dice «Bien escrita.» con «LEÍ»; «Prueba: mal» (`repaso_copia_mal`), «No coincide…». El resumen la sigue contando en «Vuelven pronto». «Siguiente» funciona sin copiarla.
 - [ ] Con stylus: tras «Ver respuesta», escribir la respuesta en el recuadro y «Comprobar» (`repaso_copia_comprobar`); «Borrar» limpia el recuadro y el resultado.
 - [ ] Al cerrar una tarjeta (acierto o «Ver respuesta»), «Más sobre esto» abre la explicación: significado, «Partes:», uso y ejemplos (con respuestas fijas, «Partes fijas de la versión de prueba…»). En la tarjeta siguiente ya no está abierta.

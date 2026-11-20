@@ -27,9 +27,13 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -44,6 +48,9 @@ import com.jorge.koreandiary.ai.ItemExplanation
 import com.jorge.koreandiary.ai.ExplainParser
 import com.jorge.koreandiary.ai.ParseException
 import com.jorge.koreandiary.ai.ProviderException
+import com.jorge.koreandiary.conversation.ConversationParser
+import com.jorge.koreandiary.conversation.ConversationPrompts
+import com.jorge.koreandiary.conversation.WordGloss
 import com.jorge.koreandiary.data.ExplanationStore
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.ink.InkCanvas
@@ -62,6 +69,18 @@ import kotlinx.coroutines.launch
 
 /** Cómo terminó la respuesta de una tarjeta. */
 enum class ClozeOutcome { RIGHT, WRONG, REVEALED }
+
+/** Una palabra que tocaste en la oración: qué es, de qué partes se forma y si ya está en tu lista. */
+data class WordLookup(
+    val word: String,
+    val gloss: WordGloss? = null,
+    val loading: Boolean = true,
+    val note: String? = null,
+    /** null mientras no se sabe (o si es gramática); true si ya está en tu lista. */
+    val inList: Boolean? = null,
+    /** La acabas de agregar desde aquí. */
+    val added: Boolean = false,
+)
 
 data class QuickReviewState(
     val loading: Boolean = true,
@@ -91,6 +110,8 @@ data class QuickReviewState(
     val explain: ItemExplanation? = null,
     val explaining: Boolean = false,
     val explainNote: String? = null,
+    /** La palabra de la oración que tocaste, si hay una abierta. */
+    val lookup: WordLookup? = null,
     val tally: Map<Fsrs.Rating, Int> = emptyMap(),
 ) {
     val card: ClozeCard? get() = cards.getOrNull(index)
@@ -258,8 +279,75 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     fun next() = _state.update {
         it.copy(
             index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, copied = null, strokes = emptyList(), note = null,
-            checking = false, explain = null, explaining = false, explainNote = null,
+            checking = false, explain = null, explaining = false, explainNote = null, lookup = null,
         )
+    }
+
+    /** Lo ya buscado en esta ronda, por palabra y oración: tocarla otra vez no gasta otra llamada. */
+    private val glosses = mutableMapOf<String, WordGloss>()
+
+    /**
+     * Tocar una palabra de la oración: qué significa ahí, de qué partes se forma y si está en tu
+     * lista (con IA, una llamada por palabra). Tocarla otra vez la cierra. No toca el repaso.
+     */
+    fun lookup(word: String) {
+        val st = _state.value
+        val card = st.card ?: return
+        if (st.lookup?.word == word) {
+            closeLookup()
+            return
+        }
+        val index = st.index
+        val key = "$word|${card.sentence}"
+        _state.update { it.copy(lookup = WordLookup(word)) }
+        viewModelScope.launch {
+            var note: String? = null
+            val gloss = glosses[key] ?: run {
+                val settings = c.settings.state.value
+                val provider = c.coachProvider()
+                when {
+                    provider == null -> null.also { note = "Para ver qué significa, configura Gemini (es gratis) en Ajustes › IA." }
+                    c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also { note = "Llegaste al límite diario de la IA." }
+                    else -> try {
+                        val raw = provider.second.complete(CorrectionRequest(ConversationPrompts.word(word, card.sentence)))
+                        c.settings.registerUse(provider.first)
+                        ConversationParser.word(raw, word).also { glosses[key] = it }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: ProviderException) {
+                        null.also { note = if (e.offline) "Sin conexión." else e.message ?: "Error de la IA." }
+                    } catch (e: ParseException) {
+                        null.also { note = "No se pudo leer la respuesta de la IA." }
+                    } catch (e: Exception) {
+                        null.also { note = e.message ?: e.javaClass.simpleName }
+                    }
+                }
+            }
+            val inList = gloss?.takeIf { !it.isGrammar }?.let { c.study.hasWord(it.form) }
+            _state.update { s ->
+                val open = s.lookup
+                if (s.index == index && open != null && open.word == word) s.copy(lookup = open.copy(gloss = gloss, loading = false, note = note, inList = inList)) else s
+            }
+        }
+    }
+
+    fun closeLookup() = _state.update { it.copy(lookup = null) }
+
+    /** «Agregar a mi lista»: la palabra tocada entra como nueva (la app te la va a sugerir). */
+    fun addLookup() {
+        val st = _state.value
+        val open = st.lookup ?: return
+        val gloss = open.gloss ?: return
+        if (open.inList != false || gloss.isGrammar) return
+        val index = st.index
+        // En el alcance de la app: queda agregada aunque cierres la pantalla enseguida.
+        c.appScope.launch {
+            c.study.addLookedUpWord(gloss.form, gloss.type, gloss.meaning)
+            _state.update { s ->
+                val latest = s.lookup
+                if (s.index == index && latest != null && latest.word == open.word) s.copy(lookup = latest.copy(inList = true, added = true)) else s
+            }
+        }
     }
 
     /**
@@ -408,30 +496,50 @@ private fun CardView(
                     color = scheme.onSurfaceVariant,
                 )
             }
-            // La oración con el hueco; al cerrar la tarjeta, con la respuesta.
+            // La oración con el hueco; al cerrar la tarjeta, con la respuesta. Cada palabra se toca
+            // para ver qué es (la del hueco, solo al cerrar la tarjeta).
+            val blankColor = when (state.outcome) {
+                ClozeOutcome.RIGHT -> scheme.tertiary
+                ClozeOutcome.REVEALED -> scheme.error
+                else -> scheme.primary
+            }
+            val plain = TextLinkStyles(SpanStyle(color = scheme.onSurface))
+            val selected = TextLinkStyles(SpanStyle(color = scheme.primary))
             Text(
                 buildAnnotatedString {
-                    append(card.before)
-                    val blank = if (shown) card.answer else "＿".repeat(card.answer.count { !it.isWhitespace() }.coerceAtLeast(2))
-                    val color = when (state.outcome) {
-                        ClozeOutcome.RIGHT -> scheme.tertiary
-                        ClozeOutcome.REVEALED -> scheme.error
-                        else -> scheme.primary
+                    Cloze.words(card, shown).forEach { w ->
+                        val pieces: () -> Unit = {
+                            w.pieces.forEach { p ->
+                                if (!p.blank) append(p.text)
+                                else withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = blankColor)) {
+                                    append(if (shown) p.text else "＿".repeat(p.text.count { !it.isWhitespace() }.coerceAtLeast(2)))
+                                }
+                            }
+                        }
+                        val tap = w.tap
+                        if (tap == null) pieces()
+                        else withLink(
+                            LinkAnnotation.Clickable(
+                                tag = tap,
+                                styles = if (state.lookup?.word == tap) selected else plain,
+                                linkInteractionListener = LinkInteractionListener { vm.lookup(tap) },
+                            ),
+                        ) { pieces() }
                     }
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = color)) { append(blank) }
-                    append(card.after)
                 },
                 style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.testTag("repaso_oracion"),
             )
             Text(
                 (if (card.own) "Tu oración" else "Oración de la IA") + " · " + when (card.kind) {
                     ClozeKind.WORD -> "palabra"
                     ClozeKind.VERB -> "verbo o adjetivo"
                     ClozeKind.GRAMMAR -> "gramática"
-                },
+                } + " · toca una palabra para ver qué es",
                 style = MaterialTheme.typography.labelMedium,
                 color = scheme.onSurfaceVariant,
             )
+            state.lookup?.let { WordPanel(it, onAdd = vm::addLookup, onClose = vm::closeLookup) }
             if (state.hints > 0) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Cloze.hints(card).take(state.hints).forEachIndexed { i, h ->
@@ -564,6 +672,45 @@ private fun CardView(
                 }
                 AppButton(onClick = vm::next) { Text(if (state.index + 1 < state.cards.size) "Siguiente" else "Terminar") }
             }
+        }
+    }
+}
+
+/** La palabra tocada: lo que es en esta oración, de qué partes se forma y, si no está en tu lista, «Agregar a mi lista». */
+@Composable
+private fun WordPanel(lookup: WordLookup, onAdd: () -> Unit, onClose: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val gloss = lookup.gloss
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(start = 12.dp, end = 4.dp, bottom = 12.dp).testTag("repaso_palabra"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (gloss != null && gloss.form != lookup.word) "${lookup.word} → ${gloss.form}" else lookup.word,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            AppTextButton(onClick = onClose) { Text("✕") }
+        }
+        Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (lookup.loading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Buscando…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            }
+            gloss?.let { g ->
+                Text(g.meaning, style = MaterialTheme.typography.bodyLarge)
+                g.parts?.let { Text("Partes: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.secondary) }
+                g.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                when {
+                    g.isGrammar -> {}
+                    lookup.added -> Text("Agregada a tu lista: la app te la va a sugerir.", style = MaterialTheme.typography.bodySmall, color = scheme.tertiary)
+                    lookup.inList == true -> Text("Ya está en tu lista.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                    lookup.inList == false -> AppOutlinedButton(onClick = onAdd, modifier = Modifier.testTag("repaso_palabra_agregar")) { Text("Agregar a mi lista") }
+                }
+            }
+            lookup.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
         }
     }
 }

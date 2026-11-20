@@ -533,6 +533,7 @@ internal fun CoachPanelView(
                     val g = panel.gloss
                     Text(if (g.form != g.word) "${g.word} → ${g.form}" else g.word, fontWeight = FontWeight.SemiBold)
                     Text(g.meaning)
+                    g.parts?.let { Text("Partes: $it", style = MaterialTheme.typography.bodySmall) }
                     g.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
                 is CoachPanel.SentenceShown -> {

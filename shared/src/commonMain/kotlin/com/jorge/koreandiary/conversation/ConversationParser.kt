@@ -9,7 +9,19 @@ import org.json.JSONObject
 
 data class Hint(val key: String, val half: String, val full: String, val spanish: String)
 
-data class WordGloss(val word: String, val form: String, val meaning: String, val note: String?)
+/** Una palabra tocada: [form] de diccionario, [type] (sustantivo, verbo…) y [parts], de qué partes se forma si es compuesta. */
+data class WordGloss(
+    val word: String,
+    val form: String,
+    val meaning: String,
+    val note: String?,
+    val type: String? = null,
+    val parts: String? = null,
+) {
+    /** Es una partícula o una terminación, no una palabra para la lista de vocabulario. */
+    val isGrammar: Boolean get() = form.startsWith("-") ||
+        type?.lowercase()?.let { it.startsWith("partícula") || it.startsWith("particula") || it.startsWith("terminaci") } == true
+}
 
 data class ItemExplanation(val meaning: String, val usage: String, val example: String, val exampleSpanish: String)
 
@@ -29,7 +41,7 @@ object ConversationParser {
     fun word(raw: String, word: String): WordGloss {
         val o = obj(raw)
         val meaning = o.text("s") ?: throw ParseException("La traducción no trae el significado.")
-        return WordGloss(word = word, form = o.text("f") ?: word, meaning = meaning, note = o.text("nota"))
+        return WordGloss(word = word, form = o.text("f") ?: word, meaning = meaning, note = o.text("nota"), type = o.text("t"), parts = o.text("p"))
     }
 
     fun sentence(raw: String, sentence: String): SentenceGloss {

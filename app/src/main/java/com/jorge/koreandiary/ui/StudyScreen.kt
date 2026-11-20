@@ -529,6 +529,7 @@ private fun sourceLabel(source: String): String? = when (source) {
     ItemSource.GAP -> "laguna cubierta"
     ItemSource.WORKBOOK -> "vista en el workbook"
     ItemSource.STANDARD -> "del estándar"
+    ItemSource.REVIEW -> "buscada en el repaso rápido"
     else -> null
 }
 

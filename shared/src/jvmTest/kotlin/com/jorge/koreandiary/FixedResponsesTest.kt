@@ -10,11 +10,16 @@ import com.jorge.koreandiary.ai.ReviewStatus
 import com.jorge.koreandiary.ai.SceneSuggestionsParser
 import com.jorge.koreandiary.ai.WorkbookExercise
 import com.jorge.koreandiary.ai.WorkbookParser
+import com.jorge.koreandiary.conversation.ConversationParser
+import com.jorge.koreandiary.conversation.ConversationPrompts
+import com.jorge.koreandiary.conversation.WordGloss
 import com.jorge.koreandiary.review.Cloze
 import com.jorge.koreandiary.review.ClozeBlank
 import com.jorge.koreandiary.review.ClozeKind
 import com.jorge.koreandiary.review.ClozeTarget
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -86,6 +91,19 @@ class FixedResponsesTest {
         assertEquals("-느라고", hints.grammar.single { it.focus }.form)
         val review = WorkbookParser.parseReview(FixedResponses.answer(Prompts.workbookReview("3A", 3, hints.exercises + WorkbookExercise("3", "x", emptyList(), ""))))
         assertEquals(listOf(ReviewStatus.FIX, ReviewStatus.NATURAL, ReviewStatus.OK), review.items.map { it.status })
+    }
+
+    @Test
+    fun tappingAWordGivesItsPartsWithoutTheParticle() {
+        val gloss = ConversationParser.word(FixedResponses.answer(ConversationPrompts.word("은메달을", "우리 팀은 은메달을 받았어요.")), "은메달을")
+        assertEquals("은메달", gloss.form)
+        assertEquals("sustantivo", gloss.type)
+        assertTrue(gloss.parts!!.contains("은메달"))
+        assertNull(gloss.note)
+        assertFalse(gloss.isGrammar)
+        // Una partícula o una terminación no se ofrece para la lista de vocabulario.
+        assertTrue(WordGloss("을", "을", "objeto", null, type = "partícula").isGrammar)
+        assertTrue(WordGloss("먹어서", "-어서", "porque", null).isGrammar)
     }
 
     @Test
