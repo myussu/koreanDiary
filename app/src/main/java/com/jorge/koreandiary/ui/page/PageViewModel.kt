@@ -575,9 +575,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         }
         explainJob = viewModelScope.launch {
             val settings = c.settings.state.value
-            val providerId = listOf(settings.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
-                .firstOrNull { it != ProviderId.SHARE && c.isConfigured(it) }
-            val api = providerId?.let { c.apiProvider(it) }
+            // El modelo de las explicaciones (Ajustes › IA › Explicaciones), más fuerte que el de corregir.
+            val explainer = c.explainProvider()
+            val providerId = explainer?.first
+            val api = explainer?.second
             if (providerId == null || api == null) {
                 updateExplain { it.copy(note = "Para ver el significado con ejemplos naturales, configura Gemini (es gratis) en Ajustes › IA.") }
                 return@launch
@@ -601,7 +602,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 c.explanations.putAll(ExplanationStore.match(missing, ExplainParser.parse(raw)))
                 null
             } catch (e: ProviderException) {
-                if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor."
+                c.explainError(e, providerId)
             } catch (e: ParseException) {
                 "No se pudo leer la respuesta: ${e.message}"
             } catch (e: kotlinx.coroutines.CancellationException) {

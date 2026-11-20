@@ -46,7 +46,14 @@ object FixedResponses {
         val word = Regex("""aparece «(.+?)»""").find(prompt)?.groupValues?.get(1)?.trim().orEmpty()
         val form = WORD_PARTICLES.firstOrNull { word.length > it.length && word.endsWith(it) }?.let { word.dropLast(it.length) } ?: word
         return JSONObject().put("f", form).put("t", "sustantivo").put("s", "significado de prueba")
-            .put("p", "Partes fijas de la versión de prueba: $form = A + B.").put("nota", JSONObject.NULL).toString()
+            .put("p", fixedParts(form) ?: JSONObject.NULL).put("nota", JSONObject.NULL).toString()
+    }
+
+    /** Un desglose que cuadra (la primera sílaba + el resto), para ver «Partes» en la versión de prueba. */
+    private fun fixedParts(form: String): String? {
+        val bare = form.replace("-", "").trim()
+        if (bare.length < 2 || bare.any { it !in '가'..'힣' }) return null
+        return "${bare.take(1)} «parte de prueba» + ${bare.drop(1)} «parte de prueba»"
     }
 
     private val WORD_PARTICLES = listOf("에서", "을", "를", "이", "가", "은", "는", "에", "도", "와", "과")
@@ -161,7 +168,7 @@ object FixedResponses {
             items.put(
                 JSONObject().put("f", form).put("s", "significado de prueba").put("u", "Explicación fija de la versión de prueba.")
                     .put("c", if (m.groupValues[2] == "gramática") "가다 → 가요" else JSONObject.NULL)
-                    .put("p", "Partes fijas de la versión de prueba: $form = A + B.")
+                    .put("p", fixedParts(form) ?: JSONObject.NULL)
                     .put("ej", JSONArray().put(JSONObject().put("ko", "오늘 공원에 갔어요.").put("en", "I went to the park today.")))
             )
         }

@@ -192,7 +192,7 @@ object ConversationPrompts {
         1. "f": la forma de diccionario de la palabra de contenido (먹었어요 → 먹다); si es una partícula o terminación, su notación estándar (-어서, 처럼).
         2. "t": qué es "f": "sustantivo", "verbo", "adjetivo", "adverbio", "partícula", "terminación" u "otro".
         3. "s": su significado en español en este contexto, máximo 8 palabras.
-        4. "p": si "f" es compuesta o derivada, de qué partes se forma, con el significado de cada una (은메달 → 은 «plata» + 메달 «medalla»; 꿈꾸다 → 꿈 «sueño» + 꾸다 «soñar, tener un sueño»); si es simple, null.
+        4. "p": si "f" es compuesta o derivada, de qué partes se forma, con el significado de cada una (은메달 → 은 «plata» + 메달 «medalla»; 꿈꾸다 → 꿈 «sueño» + 꾸다 «soñar, tener un sueño»; 일으키다 → 일다 «surgir» + -으키- «sufijo causativo»). Las partes, juntas, tienen que formar exactamente "f" (일 + 으키 + 다 = 일으키다); usa solo afijos que existen en coreano, no inventes. Si es simple o no estás seguro de cómo se forma, null.
         5. "nota": si la forma conjugada o una partícula pegada cambia el sentido, explícalo en 1 frase en español; si no, null.
 
         FORMATO:

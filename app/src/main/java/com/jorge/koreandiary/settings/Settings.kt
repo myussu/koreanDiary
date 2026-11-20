@@ -53,6 +53,14 @@ data class AppSettings(
     /** Esfuerzo de razonamiento: low, medium o high. */
     val azureEffort: String = "low",
     val azureDailyLimit: Int = 30,
+    /**
+     * Quién explica palabras y gramática (desgloses, «Más sobre esto», tocar una palabra): Azure o
+     * Gemini con [explainModel], más fuertes que el modelo de corregir porque un desglose inventado
+     * desvía el estudio (pedido por Jorge el 2026-11-20). Si Azure no está configurado, Gemini.
+     */
+    val explainProvider: String = ProviderId.AZURE,
+    /** Modelo de Gemini para las explicaciones. */
+    val explainModel: String = "gemini-3.8-flash",
     val showMascot: Boolean = true,
     /** Grosor del lápiz: fino, medio o grueso. */
     val penWidth: String = "medio",
@@ -170,6 +178,8 @@ class SettingsStore(context: Context) {
         azureDeployment = prefs.getString("azureDeployment", "") ?: "",
         azureEffort = prefs.getString("azureEffort", "low") ?: "low",
         azureDailyLimit = prefs.getInt("azureDailyLimit", 30),
+        explainProvider = prefs.getString("explainProvider", ProviderId.AZURE) ?: ProviderId.AZURE,
+        explainModel = prefs.getString("explainModel", "gemini-3.8-flash") ?: "gemini-3.8-flash",
         showMascot = prefs.getBoolean("showMascot", true),
         penWidth = prefs.getString("penWidth", "medio") ?: "medio",
         penPressure = prefs.getBoolean("penPressure", true),
@@ -225,6 +235,8 @@ class SettingsStore(context: Context) {
             .putString("azureDeployment", s.azureDeployment)
             .putString("azureEffort", s.azureEffort)
             .putInt("azureDailyLimit", s.azureDailyLimit)
+            .putString("explainProvider", s.explainProvider)
+            .putString("explainModel", s.explainModel)
             .putBoolean("showMascot", s.showMascot)
             .putString("penWidth", s.penWidth)
             .putBoolean("penPressure", s.penPressure)

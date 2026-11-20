@@ -69,6 +69,7 @@ import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.PartsLine
 import com.jorge.koreandiary.ui.ReviewLevelsLine
 import com.jorge.koreandiary.ui.rememberSlowClock
 import com.jorge.koreandiary.voice.TurnMode
@@ -533,7 +534,7 @@ internal fun CoachPanelView(
                     val g = panel.gloss
                     Text(if (g.form != g.word) "${g.word} → ${g.form}" else g.word, fontWeight = FontWeight.SemiBold)
                     Text(g.meaning)
-                    g.parts?.let { Text("Partes: $it", style = MaterialTheme.typography.bodySmall) }
+                    g.parts?.let { PartsLine(g.form, it) }
                     g.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
                 is CoachPanel.SentenceShown -> {

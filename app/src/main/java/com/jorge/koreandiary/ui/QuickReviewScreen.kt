@@ -304,7 +304,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             var note: String? = null
             val gloss = glosses[key] ?: run {
                 val settings = c.settings.state.value
-                val provider = c.coachProvider()
+                val provider = c.explainProvider()
                 when {
                     provider == null -> null.also { note = "Para ver qué significa, configura Gemini (es gratis) en Ajustes › IA." }
                     c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also { note = "Llegaste al límite diario de la IA." }
@@ -315,7 +315,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: ProviderException) {
-                        null.also { note = if (e.offline) "Sin conexión." else e.message ?: "Error de la IA." }
+                        null.also { note = c.explainError(e, provider.first) }
                     } catch (e: ParseException) {
                         null.also { note = "No se pudo leer la respuesta de la IA." }
                     } catch (e: Exception) {
@@ -369,7 +369,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                 return@launch
             }
             val settings = c.settings.state.value
-            val provider = c.coachProvider()
+            val provider = c.explainProvider()
             val note = when {
                 provider == null -> "Para ver más, configura Gemini (es gratis) en Ajustes › IA."
                 c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> "Llegaste al límite diario de la IA."
@@ -382,7 +382,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: ProviderException) {
-                    if (e.offline) "Sin conexión." else e.message ?: "Error de la IA."
+                    c.explainError(e, provider.first)
                 } catch (e: ParseException) {
                     "No se pudo leer la respuesta de la IA."
                 } catch (e: Exception) {
@@ -701,7 +701,7 @@ private fun WordPanel(lookup: WordLookup, onAdd: () -> Unit, onClose: () -> Unit
             }
             gloss?.let { g ->
                 Text(g.meaning, style = MaterialTheme.typography.bodyLarge)
-                g.parts?.let { Text("Partes: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.secondary) }
+                g.parts?.let { PartsLine(g.form, it) }
                 g.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 when {
                     g.isGrammar -> {}

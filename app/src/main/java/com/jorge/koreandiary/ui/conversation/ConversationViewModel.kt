@@ -681,7 +681,8 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
     fun lookup(word: String, sentence: String) {
         val clean = word.trim { !it.isLetterOrDigit() }
         if (clean.isEmpty()) return
-        coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence)) { raw ->
+        // Con el modelo de las explicaciones: el desglose de la palabra tiene que ser confiable.
+        coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence), explains = true) { raw ->
             val gloss = ConversationParser.word(raw, clean)
             if (c.listen.state.value.phase.active) {
                 c.listen.noteLookup(clean, "${gloss.form}: ${gloss.meaning}")
@@ -804,8 +805,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         _state.update { it.copy(panel = CoachPanel.None) }
     }
 
-    private fun coach(loading: String, prompt: String, onResult: (String) -> CoachPanel) {
-        val (providerId, provider) = c.coachProvider() ?: run {
+    /** [explains]: explicar una palabra, con el modelo de las explicaciones (más fuerte) en vez del coach. */
+    private fun coach(loading: String, prompt: String, explains: Boolean = false, onResult: (String) -> CoachPanel) {
+        val (providerId, provider) = (if (explains) c.explainProvider() else c.coachProvider()) ?: run {
             _state.update { it.copy(panel = CoachPanel.Error("Configura Gemini o Azure en Ajustes › IA para usar pistas y traducciones.")) }
             return
         }
@@ -825,7 +827,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 if (!isActive) return@launch
                 onResult(raw)
             } catch (e: ProviderException) {
-                CoachPanel.Error(if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.")
+                CoachPanel.Error(if (explains) c.explainError(e, providerId) else if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.")
             } catch (e: ParseException) {
                 CoachPanel.Error("No se pudo leer la respuesta: ${e.message}")
             } catch (e: kotlinx.coroutines.CancellationException) {

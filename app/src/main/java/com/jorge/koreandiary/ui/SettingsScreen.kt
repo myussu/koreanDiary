@@ -100,6 +100,7 @@ fun SettingsScreen(
     var azureEndpoint by remember { mutableStateOf(s.azureEndpoint) }
     var azureDeployment by remember { mutableStateOf(s.azureDeployment) }
     var azureLimit by remember { mutableStateOf(s.azureDailyLimit.toString()) }
+    var explainModel by remember { mutableStateOf(s.explainModel) }
     var modelStatus by remember { mutableStateOf<String?>(null) }
     var voiceModel by remember { mutableStateOf(s.voiceModel) }
     var voiceName by remember { mutableStateOf(s.voiceName) }
@@ -117,6 +118,7 @@ fun SettingsScreen(
             azureEndpoint = azureEndpoint.trim(),
             azureDeployment = azureDeployment.trim(),
             azureDailyLimit = azureLimit.toIntOrNull()?.coerceAtLeast(1) ?: 30,
+            explainModel = explainModel.trim().ifEmpty { "gemini-3.8-flash" },
             voiceModel = voiceModel.trim().ifEmpty { "gemini-3.8-live" },
             voiceName = voiceName.trim().ifEmpty { "Kore" },
             voiceDailyMinutes = voiceDaily.toIntOrNull()?.coerceAtLeast(1) ?: 30,
@@ -271,6 +273,35 @@ fun SettingsScreen(
                     }
                     Text(
                         "Al revisar una página solo aparecen los proveedores configurados.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+
+                Section("Explicaciones") {
+                    Text(
+                        "Quién explica palabras y gramática: tocar una palabra, «Más sobre esto» y las tarjetas de sugerencias. Conviene un modelo más fuerte que el de corregir: un desglose inventado desvía el estudio.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(ProviderId.AZURE to "Azure OpenAI", ProviderId.GEMINI to "Gemini").forEach { (id, label) ->
+                            AppToggle(label, s.explainProvider == id) { container.settings.update { it.copy(explainProvider = id) } }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = explainModel, onValueChange = { explainModel = it },
+                        label = { Text("Modelo de Gemini para explicaciones") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    )
+                    val azureReady = container.isConfigured(ProviderId.AZURE)
+                    val geminiReady = container.isConfigured(ProviderId.GEMINI)
+                    Text(
+                        when {
+                            s.explainProvider == ProviderId.AZURE && azureReady -> "Ahora explica Azure (despliegue «${s.azureDeployment}»). Cada consulta cuenta en su límite diario."
+                            geminiReady -> "Ahora explica Gemini con ${explainModel.trim().ifEmpty { "gemini-3.8-flash" }}" +
+                                (if (s.explainProvider == ProviderId.AZURE) " porque Azure no está configurado." else ".") +
+                                " Su capa gratis da menos consultas al día que el modelo de corregir."
+                            azureReady -> "Ahora explica Azure (despliegue «${s.azureDeployment}»): Gemini no está configurado."
+                            else -> "Configura Gemini o Azure más abajo."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }

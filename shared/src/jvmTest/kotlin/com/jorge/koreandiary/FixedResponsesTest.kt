@@ -9,6 +9,7 @@ import com.jorge.koreandiary.ai.Prompts
 import com.jorge.koreandiary.ai.ReviewStatus
 import com.jorge.koreandiary.ai.SceneSuggestionsParser
 import com.jorge.koreandiary.ai.WorkbookExercise
+import com.jorge.koreandiary.ai.WordParts
 import com.jorge.koreandiary.ai.WorkbookParser
 import com.jorge.koreandiary.conversation.ConversationParser
 import com.jorge.koreandiary.conversation.ConversationPrompts
@@ -98,7 +99,7 @@ class FixedResponsesTest {
         val gloss = ConversationParser.word(FixedResponses.answer(ConversationPrompts.word("은메달을", "우리 팀은 은메달을 받았어요.")), "은메달을")
         assertEquals("은메달", gloss.form)
         assertEquals("sustantivo", gloss.type)
-        assertTrue(gloss.parts!!.contains("은메달"))
+        assertEquals(true, WordParts.fits(gloss.form, gloss.parts!!))
         assertNull(gloss.note)
         assertFalse(gloss.isGrammar)
         // Una partícula o una terminación no se ofrece para la lista de vocabulario.

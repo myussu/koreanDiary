@@ -14,7 +14,8 @@ import java.io.File
 /**
  * Explicaciones de sugerencias ya pedidas a la IA, guardadas para no volver a gastar tokens.
  * Un archivo JSON en `filesDir/explanations/` (entra en la copia de seguridad), no en Room:
- * así no hace falta una migración de la base.
+ * así no hace falta una migración de la base. Lleva una versión ([VERSION]): las guardadas con
+ * otra se descartan y se vuelven a pedir.
  */
 class ExplanationStore(context: Context) {
     private val file = File(context.filesDir, "explanations/cache.json")
@@ -29,7 +30,7 @@ class ExplanationStore(context: Context) {
             val all = load()
             all.putAll(items)
             withContext(Dispatchers.IO) {
-                val json = JSONObject()
+                val json = JSONObject().put(VERSION_KEY, VERSION)
                 all.forEach { (k, v) -> json.put(k, ExplainParser.toJson(v)) }
                 file.parentFile?.mkdirs()
                 val tmp = File(file.parentFile, "cache.json.tmp")
@@ -46,7 +47,9 @@ class ExplanationStore(context: Context) {
             runCatching {
                 if (file.exists()) {
                     val json = JSONObject(file.readText())
-                    json.keys().forEach { k -> json.optJSONObject(k)?.let(ExplainParser::fromJson)?.let { map[k] = it } }
+                    if (json.optInt(VERSION_KEY, 1) == VERSION) {
+                        json.keys().forEach { k -> json.optJSONObject(k)?.let(ExplainParser::fromJson)?.let { map[k] = it } }
+                    }
                 }
             }
             map
@@ -56,6 +59,14 @@ class ExplanationStore(context: Context) {
     }
 
     companion object {
+        /**
+         * 2: desde el 2026-11-20 las explicaciones las da un modelo más fuerte y con el desglose
+         * revisado; las de antes (del modelo liviano, con desgloses que podían ser inventados) se
+         * descartan.
+         */
+        private const val VERSION = 2
+        private const val VERSION_KEY = "_version"
+
         /** "g:-느라고" o "w:미용실". */
         fun key(form: String, isGrammar: Boolean) = (if (isGrammar) "g:" else "w:") + form.trim()
 

@@ -7,6 +7,8 @@ import com.jorge.koreandiary.ai.AzureOpenAIProvider
 import com.jorge.koreandiary.ai.CorrectionProvider
 import com.jorge.koreandiary.ai.FixedProvider
 import com.jorge.koreandiary.ai.GeminiProvider
+import com.jorge.koreandiary.ai.HttpProviderException
+import com.jorge.koreandiary.ai.ProviderException
 import com.jorge.koreandiary.backup.BackupManager
 import com.jorge.koreandiary.backup.StartupRestore
 import com.jorge.koreandiary.conversation.ConversationStore
@@ -121,6 +123,37 @@ class AppContainer(val app: Application) {
         val id = listOf(s.defaultProvider, ProviderId.GEMINI, ProviderId.AZURE)
             .firstOrNull { it != ProviderId.SHARE && isConfigured(it) } ?: return null
         return apiProvider(id)?.let { id to it }
+    }
+
+    /**
+     * Para explicar palabras y gramática (desgloses, «Más sobre esto», tocar una palabra, las tarjetas
+     * de sugerencias): un modelo más fuerte que el de corregir, porque un desglose inventado desvía el
+     * estudio (Ajustes › IA › Explicaciones). Azure si lo elegiste y está configurado; si no, Gemini
+     * con el modelo de explicaciones; si Gemini tampoco está, Azure. Sin ninguno, null.
+     */
+    fun explainProvider(): Pair<String, CorrectionProvider>? {
+        val s = settings.state.value
+        val azure = if (isConfigured(ProviderId.AZURE)) apiProvider(ProviderId.AZURE) else null
+        if (s.explainProvider == ProviderId.AZURE && azure != null) return ProviderId.AZURE to azure
+        if (isConfigured(ProviderId.GEMINI)) {
+            if (fixedAi(ProviderId.GEMINI)) return ProviderId.GEMINI to FixedProvider()
+            secrets.get(SecretStore.GEMINI_KEY)?.let { return ProviderId.GEMINI to GeminiProvider(it, s.explainModel) }
+        }
+        return azure?.let { ProviderId.AZURE to it }
+    }
+
+    /** Qué decir si falla el modelo de las explicaciones: sin cuota o sin acceso, dónde cambiarlo. */
+    fun explainError(e: ProviderException, providerId: String): String {
+        if (e.offline) return "Sin conexión."
+        val code = (e as? HttpProviderException)?.code
+        val model = settings.state.value.explainModel
+        return when {
+            providerId == ProviderId.GEMINI && code == 429 ->
+                "Se acabó por hoy la cuota gratis de $model, el modelo de las explicaciones. Puedes usar Azure en Ajustes › IA › Explicaciones."
+            providerId == ProviderId.GEMINI && (code == 403 || code == 404) ->
+                "Tu clave de Gemini no puede usar $model: cámbialo en Ajustes › IA › Explicaciones."
+            else -> e.message ?: "Error de la IA."
+        }
     }
 
     /** ¿Este proveedor contesta con respuestas fijas? Solo en la versión de prueba y con el ajuste puesto. */
