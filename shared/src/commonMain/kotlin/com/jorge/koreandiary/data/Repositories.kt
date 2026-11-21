@@ -74,6 +74,17 @@ object ItemSource {
     const val REVIEW = "repaso"
 }
 
+/** Cómo terminó «Corregir» una palabra en Estudio. */
+enum class WordFix {
+    RENAMED,
+    /** Igual que antes: no había nada que cambiar. */
+    UNCHANGED,
+    /** La forma nueva ya está en tu lista: se quita esta en vez de juntarlas. */
+    EXISTS,
+    /** No es una palabra en coreano (vacía, con espacios o letras sueltas). */
+    INVALID,
+}
+
 /** «Tu nivel»: cuánto cubres de cada nivel del estándar y la gramática que te falta. */
 data class LevelReport(
     val grammar: List<LevelCoverage>,
@@ -503,6 +514,45 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         added
     }
 
+    /**
+     * «Corregir» en Estudio: una palabra que quedó mal escrita (como «이난», que entró así del diario)
+     * pasa a [newForm] con su historial, porque lo que usaste era la palabra que querías. El tipo y el
+     * nivel salen del estándar si la tiene. Si [newForm] ya está en tu lista no se juntan: [WordFix.EXISTS],
+     * para que quites esta.
+     */
+    suspend fun correctWord(id: Long, newForm: String): WordFix = db.withWriteTransaction {
+        val form = newForm.trim()
+        val word = study.wordsByIds(listOf(id)).firstOrNull()
+        when {
+            word == null || !looksLikeKoreanWord(form) -> WordFix.INVALID
+            form == word.baseForm -> WordFix.UNCHANGED
+            study.findWord(form) != null -> WordFix.EXISTS
+            else -> {
+                val std = standardWord(form)
+                study.updateWord(
+                    word.copy(
+                        baseForm = form,
+                        type = std?.type?.takeIf { word.type !in WORD_KINDS } ?: word.type,
+                        level = std?.let { "${it.level}급" } ?: "desconocido",
+                        irregular = null,
+                    )
+                )
+                WordFix.RENAMED
+            }
+        }
+    }
+
+    /**
+     * «Quitar de mi lista»: la palabra, su memoria y su historial de repaso. Las correcciones que la
+     * nombraban se quedan, sin enlace a ella.
+     */
+    suspend fun removeWord(id: Long): Unit = db.withWriteTransaction {
+        memory.deleteState(ItemType.WORD, id)
+        memory.deleteEvents(ItemType.WORD, id)
+        db.diaryDao().unlinkCorrections(ItemType.WORD, id)
+        study.deleteWord(id)
+    }
+
     /** ¿Esta palabra (forma de diccionario) ya está en tu lista? */
     suspend fun hasWord(form: String): Boolean = study.findWord(form.trim()) != null
 
@@ -797,7 +847,9 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         val base = (stdWord?.word ?: u.form).trim()
         study.findWord(base)?.let { return Resolved(ItemRef(ItemType.WORD, it.id), isNew = false, wasSuggested = wasSuggested) }
         val std = stdWord ?: standardWord(base)
-        if (std == null && !looksLikeKoreanWord(base)) {
+        // Fuera del estándar, lo que no parece palabra o lo que usaste mal va a «Por revisar»: puede
+        // ser una palabra mal escrita o mal leída (así entró «이난», pedido por Jorge el 2026-11-21).
+        if (std == null && (!looksLikeKoreanWord(base) || !u.correct)) {
             if (study.findPendingWord(base) == null) {
                 study.insertPendingWord(PendingWord(baseForm = base, type = u.kind, meaning = u.meaning, pageId = pageId, createdAt = now))
                 onPending()

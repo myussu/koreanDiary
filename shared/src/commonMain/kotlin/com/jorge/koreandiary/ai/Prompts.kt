@@ -11,6 +11,12 @@ import com.jorge.koreandiary.scene.art.CustomDrawing
 object Prompts {
 
     /**
+     * En «usados», la palabra bien escrita: si quedó con la forma escrita o leída mal, entra así a la
+     * lista (pasó con «이난», pedido por Jorge el 2026-11-21).
+     */
+    const val USED_CORRECT_FORM = "Si una palabra está mal escrita o se leyó mal (p. ej. 이난 donde quiso decir 올해), ponla con la forma correcta, la de tu corrección, y \"ok\": false. En \"usados\" solo van palabras y gramática que existen en coreano."
+
+    /**
      * El español de las respuestas: el de Perú. Sin esto algunos modelos escriben con palabras de
      * España («guay», «vale», «coger») que aquí no se usan. Va en todo prompt que pida español.
      */
@@ -124,6 +130,7 @@ object Prompts {
                    - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
                    - "id": el de la lista de sugeridos si coincide; si no, null.
                    - "t": n (sustantivo), v (verbo), a (adjetivo), adv (adverbio), g (gramática) u o (otro). "ok": false si lo usó mal.
+                   - $USED_CORRECT_FORM
                 """.trimIndent()
             )
             add(
@@ -347,7 +354,7 @@ object Prompts {
         appendLine(
             """
             1. "rev": por cada ejercicio que respondió: "n"; "w": lo que escribió, transcrito tal cual; "s": "ok" (correcto y natural), "fix" (tiene errores) o "nat" (correcto, pero un coreano lo diría distinto); "c": la versión corregida si s es "fix"; "nat": la versión más natural si s es "nat" (o si es "fix" y hay una forma mejor), si no null; "x": explicación breve en español. Omite los ejercicios sin respuesta.
-            2. "usados": TODO lo que el estudiante escribió, solo lo suyo y no lo impreso: palabras en forma de diccionario y gramática en notación estándar (-어서, -느라고). Omite 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-. Cada uno: "f", "t" (n, v, a, adv, g u o) y "ok" (false si lo usó mal).
+            2. "usados": TODO lo que el estudiante escribió, solo lo suyo y no lo impreso: palabras en forma de diccionario y gramática en notación estándar (-어서, -느라고). Omite 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-. Cada uno: "f", "t" (n, v, a, adv, g u o) y "ok" (false si lo usó mal). $USED_CORRECT_FORM
 
             FORMATO:
             {"rev": [{"n": "1", "w": "...", "s": "fix", "c": "...", "nat": null, "x": "..."}], "usados": [{"f": "-느라고", "t": "g", "ok": true}]}

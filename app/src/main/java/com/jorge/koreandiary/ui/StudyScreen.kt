@@ -37,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -44,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.data.ItemRef
 import com.jorge.koreandiary.data.ItemSource
+import com.jorge.koreandiary.data.WordFix
 import com.jorge.koreandiary.data.ItemUsage
 import com.jorge.koreandiary.data.LevelReport
 import com.jorge.koreandiary.data.db.ItemType
@@ -521,6 +523,72 @@ private fun ItemDetail(container: AppContainer, ref: ItemRef, label: String, mem
                 u.corrections.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
             }
         }
+        if (ref.type == ItemType.WORD) WordFixRow(container, ref.id, label)
+    }
+}
+
+/**
+ * «Corregir» y «Quitar de mi lista» para una palabra (pedido por Jorge el 2026-11-21: «이난» entró
+ * mal escrita del diario y no había cómo sacarla). Corregir la renombra con su historial; quitar
+ * borra también su historial de repaso, así que pide confirmar.
+ */
+@Composable
+private fun WordFixRow(container: AppContainer, id: Long, form: String) {
+    val scheme = MaterialTheme.colorScheme
+    var editing by remember(id) { mutableStateOf(false) }
+    var confirming by remember(id) { mutableStateOf(false) }
+    var text by remember(id, form) { mutableStateOf(form) }
+    var note by remember(id) { mutableStateOf<String?>(null) }
+    var busy by remember(id) { mutableStateOf(false) }
+    Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when {
+            editing -> {
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it; note = null },
+                    label = { Text("Forma correcta") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("palabra_corregir_campo"),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppButton(
+                        onClick = {
+                            busy = true
+                            container.appScope.launch {
+                                val result = container.study.correctWord(id, text)
+                                busy = false
+                                note = when (result) {
+                                    WordFix.RENAMED -> null.also { editing = false }
+                                    WordFix.UNCHANGED -> null.also { editing = false }
+                                    WordFix.EXISTS -> "Ya tienes «${text.trim()}» en tu lista: quita esta."
+                                    WordFix.INVALID -> "Escribe la palabra en coreano, sin espacios."
+                                }
+                            }
+                        },
+                        enabled = !busy,
+                        modifier = Modifier.testTag("palabra_corregir_guardar"),
+                    ) { Text("Guardar") }
+                    AppTextButton(onClick = { editing = false; text = form; note = null }) { Text("Cancelar") }
+                }
+            }
+            confirming -> {
+                Text("¿Quitar «$form» de tu lista? Se borra también su historial de repaso.", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppButton(
+                        onClick = {
+                            busy = true
+                            container.appScope.launch { container.study.removeWord(id) }
+                        },
+                        enabled = !busy,
+                        modifier = Modifier.testTag("palabra_quitar_confirmar"),
+                    ) { Text("Quitar") }
+                    AppTextButton(onClick = { confirming = false }) { Text("Cancelar") }
+                }
+            }
+            else -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppTextButton(onClick = { editing = true; text = form }, modifier = Modifier.testTag("palabra_corregir")) { Text("Corregir") }
+                AppTextButton(onClick = { confirming = true }, modifier = Modifier.testTag("palabra_quitar")) { Text("Quitar de mi lista") }
+            }
+        }
+        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
     }
 }
 

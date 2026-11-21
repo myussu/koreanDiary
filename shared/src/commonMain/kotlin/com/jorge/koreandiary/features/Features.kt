@@ -156,9 +156,10 @@ object Features {
                 phone("«Prueba de vocabulario»: unas 15 palabras al azar por nivel, tocas las que conoces; suma su resultado a «Tu nivel». «Repetir la prueba» cuando quieras."),
                 phone("«Para agregar»: la gramática del estándar que te falta hasta tu nivel y uno más, y las palabras que no conociste en la prueba, de lo más básico arriba. «Agregar» la suma como nueva (te la va a sugerir); «Ya lo sé», como conocida (vuelve mucho después)."),
                 phone("En «Vocabulario» y «Gramática», buscador; al tocar un ítem, su memoria, tus oraciones con él y lo que te corrigieron."),
+                phone("Si una palabra quedó mal escrita en tu lista, tócala: «Corregir» la cambia sin perder su historial y «Quitar de mi lista» la borra con su historial."),
                 phone("«Importar» tu lista de gramática (TXT) o vocabulario."),
                 phone("Lo que usas en el diario entra solo a tu lista, con su nivel."),
-                phone("«Por revisar»: palabras que la app no reconoció o que preguntaste al escuchar; las agregas o las descartas."),
+                phone("«Por revisar»: palabras que la app no reconoció, que usaste mal y no están en el estándar (pueden estar mal escritas), o que preguntaste al escuchar; las agregas o las descartas."),
             ),
         ),
         FeatureGroup(
@@ -463,7 +464,7 @@ object Features {
                     listOf("Para agregar", "Agregar", "Ya lo sé"),
                 ),
             ),
-            note = "«Vocabulario» y «Gramática» tienen buscador; toca un ítem para ver tus oraciones con él. Debajo de «Tu nivel» están la racha, el calendario y la memoria.",
+            note = "«Vocabulario» y «Gramática» tienen buscador; toca un ítem para ver tus oraciones con él, y en una palabra, «Corregir» o «Quitar de mi lista». Debajo de «Tu nivel» están la racha, el calendario y la memoria.",
         ),
         FeatureFlow(
             title = "Copia de seguridad",

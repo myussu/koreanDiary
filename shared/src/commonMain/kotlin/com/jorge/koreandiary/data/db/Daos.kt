@@ -36,6 +36,12 @@ interface StudyDao {
     @Query("SELECT * FROM words WHERE baseForm = :baseForm LIMIT 1")
     suspend fun findWord(baseForm: String): Word?
 
+    @Update
+    suspend fun updateWord(word: Word)
+
+    @Query("DELETE FROM words WHERE id = :id")
+    suspend fun deleteWord(id: Long)
+
     @Query("SELECT * FROM grammar_points WHERE pattern = :pattern LIMIT 1")
     suspend fun findGrammar(pattern: String): GrammarPoint?
 
@@ -98,6 +104,12 @@ interface MemoryDao {
 
     @Query("SELECT * FROM memory_states WHERE itemType = :itemType")
     suspend fun allOfType(itemType: String): List<MemoryState>
+
+    @Query("DELETE FROM memory_states WHERE itemType = :itemType AND itemId = :itemId")
+    suspend fun deleteState(itemType: String, itemId: Long)
+
+    @Query("DELETE FROM review_events WHERE itemType = :itemType AND itemId = :itemId")
+    suspend fun deleteEvents(itemType: String, itemId: Long)
 
     @Query("SELECT * FROM memory_states")
     fun observeAll(): Flow<List<MemoryState>>
@@ -236,6 +248,10 @@ interface DiaryDao {
     /** Los números de las oraciones de una página (para el resumen bien / corregir / más natural). */
     @Query("SELECT number FROM sentences WHERE pageId = :pageId")
     fun observeSentenceNumbers(pageId: Long): Flow<List<Int>>
+
+    /** Al quitar un ítem de la lista, sus correcciones quedan sin enlace. */
+    @Query("UPDATE corrections SET itemType = NULL, itemId = NULL WHERE itemType = :itemType AND itemId = :itemId")
+    suspend fun unlinkCorrections(itemType: String, itemId: Long)
 
     @Query("DELETE FROM corrections WHERE id = :id")
     suspend fun deleteCorrection(id: Long)

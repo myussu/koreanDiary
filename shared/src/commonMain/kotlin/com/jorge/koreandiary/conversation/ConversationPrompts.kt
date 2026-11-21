@@ -267,6 +267,7 @@ object ConversationPrompts {
                - Omite solo: 이/가, 은/는, 을/를, 에, 의, 도, 와/과, -어요/아요, -습니다/ㅂ니다, -었-/았-.
                - "id": el de los objetivos si coincide; si no, null.
                - "t": n, v, a, adv, g u o. "ok": false si lo usó mal.
+               - ${Prompts.USED_CORRECT_FORM}
             5. "mejoras": como máximo 2 estructuras de nivel $standardLevel o menor que encajarían donde dijo algo demasiado básico. Si no aplica, [].
             6. "comentario": 2 o 3 frases en español sobre cómo le fue (fluidez, lo que hizo bien, qué practicar).${if (listen) LISTEN_ASKED else ""}
 
