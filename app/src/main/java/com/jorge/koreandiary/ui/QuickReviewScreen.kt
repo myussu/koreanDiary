@@ -129,6 +129,9 @@ data class QuickReviewState(
     val explain: ItemExplanation? = null,
     val explaining: Boolean = false,
     val explainNote: String? = null,
+    /** «¿De qué partes se forma?» en «Más sobre esto» (palabra nativa): lo que dijo la IA. */
+    val explainParts: String? = null,
+    val explainPartsLoading: Boolean = false,
     /** La palabra de la oración que tocaste, si hay una abierta. */
     val lookup: WordLookup? = null,
     val tally: Map<Fsrs.Rating, Int> = emptyMap(),
@@ -298,7 +301,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     fun next() = _state.update {
         it.copy(
             index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, copied = null, strokes = emptyList(), note = null,
-            checking = false, explain = null, explaining = false, explainNote = null, lookup = null,
+            checking = false, explain = null, explaining = false, explainNote = null, explainParts = null, explainPartsLoading = false, lookup = null,
         )
     }
 
@@ -445,20 +448,21 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /**
-     * «Más sobre esto» al cerrar una tarjeta: significado, de qué partes se forma, uso, conjugación y
-     * ejemplos. Sale de las explicaciones ya guardadas (las mismas de las sugerencias); si no está, se
-     * pide a la IA una vez y queda guardada.
+     * «Más sobre esto» al cerrar una tarjeta: significado, origen, uso, formas y ejemplos. Primero del
+     * 한국어기초사전, sin IA; si no lo tiene, de las explicaciones ya guardadas (las mismas de las
+     * sugerencias) y si tampoco, se pide a la IA una vez y queda guardada, marcada «Según la IA».
      */
     fun explain() {
         val card = _state.value.card ?: return
         if (_state.value.explaining) return
-        val key = ExplanationStore.key(card.label, card.kind == ClozeKind.GRAMMAR)
+        val isGrammar = card.kind == ClozeKind.GRAMMAR
+        val key = ExplanationStore.key(card.label, isGrammar)
         // La explicación es de esta tarjeta: si llega cuando ya pasaste a otra, queda guardada pero no
         // se muestra (antes salía bajo el título de la tarjeta siguiente).
         val index = _state.value.index
         _state.update { it.copy(explaining = true, explainNote = null) }
         viewModelScope.launch {
-            c.explanations.get(key)?.let { found ->
+            c.knownExplanation(card.label, isGrammar, card.meaning)?.let { found ->
                 _state.update { if (it.index == index) it.copy(explain = found, explaining = false) else it }
                 return@launch
             }
@@ -485,6 +489,20 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             }
             val found = c.explanations.get(key)
             _state.update { if (it.index == index) it.copy(explain = found, explaining = false, explainNote = note) else it }
+        }
+    }
+
+    /** «¿De qué partes se forma?» en «Más sobre esto»: el diccionario no desglosa las palabras nativas. */
+    fun askExplainParts() {
+        val st = _state.value
+        val card = st.card ?: return
+        val e = st.explain ?: return
+        if (st.explainPartsLoading || st.explainParts != null) return
+        val index = st.index
+        _state.update { it.copy(explainPartsLoading = true, explainNote = null) }
+        viewModelScope.launch {
+            val (parts, note) = c.askParts(e.form, card.sentence)
+            _state.update { if (it.index == index) it.copy(explainParts = parts, explainPartsLoading = false, explainNote = note) else it }
         }
     }
 }
@@ -686,7 +704,14 @@ private fun CardView(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(card.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    state.explain?.let { ExplanationBody(it) }
+                    state.explain?.let {
+                        ExplanationBody(
+                            it,
+                            parts = state.explainParts,
+                            partsLoading = state.explainPartsLoading,
+                            onAskParts = vm::askExplainParts.takeIf { card.kind != ClozeKind.GRAMMAR },
+                        )
+                    }
                     if (state.explaining) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Text("Buscando la explicación…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)

@@ -7,10 +7,14 @@ import com.jorge.koreandiary.ai.AzureOpenAIProvider
 import com.jorge.koreandiary.ai.CorrectionProvider
 import com.jorge.koreandiary.ai.FixedProvider
 import com.jorge.koreandiary.ai.GeminiProvider
+import com.jorge.koreandiary.ai.CorrectionRequest
 import com.jorge.koreandiary.ai.HttpProviderException
+import com.jorge.koreandiary.ai.ItemExplanation
 import com.jorge.koreandiary.ai.ProviderException
 import com.jorge.koreandiary.backup.BackupManager
 import com.jorge.koreandiary.backup.StartupRestore
+import com.jorge.koreandiary.conversation.ConversationParser
+import com.jorge.koreandiary.conversation.ConversationPrompts
 import com.jorge.koreandiary.conversation.ConversationStore
 import com.jorge.koreandiary.data.DiaryRepository
 import com.jorge.koreandiary.data.ExplanationStore
@@ -19,6 +23,7 @@ import com.jorge.koreandiary.data.db.AppDatabase
 import com.jorge.koreandiary.data.db.androidKoreanDictionary
 import com.jorge.koreandiary.data.db.androidStandardCatalog
 import com.jorge.koreandiary.data.db.create
+import com.jorge.koreandiary.dictionary.DictionaryExplain
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.listen.ListenAudioStore
 import com.jorge.koreandiary.listen.ListenEngine
@@ -34,6 +39,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Inyección de dependencias manual: suficiente para una app de este tamaño. */
 class AppContainer(val app: Application) {
@@ -148,6 +154,42 @@ class AppContainer(val app: Application) {
             secrets.get(SecretStore.GEMINI_KEY)?.let { return ProviderId.GEMINI to GeminiProvider(it, s.explainModel) }
         }
         return azure?.let { ProviderId.AZURE to it }
+    }
+
+    /**
+     * «Más sobre esto» y las tarjetas de sugerencias: primero el 한국어기초사전, sin IA; si no lo
+     * tiene, la explicación de la IA ya guardada. Null: hay que preguntarle a la IA. [meaning] (lo
+     * que dice tu lista) elige el homónimo y el sentido que estudias.
+     */
+    suspend fun knownExplanation(label: String, isGrammar: Boolean, meaning: String? = null): ItemExplanation? =
+        dictionaryExplanation(label, isGrammar, meaning) ?: explanations.get(ExplanationStore.key(label, isGrammar))
+
+    /** ¿El diccionario tiene esta palabra o gramática? Sin leer el detalle: para no pedírsela a la IA. */
+    suspend fun dictionaryCovers(label: String, isGrammar: Boolean): Boolean =
+        withContext(Dispatchers.Default) { runCatching { DictionaryExplain.covers(dictionary, label, isGrammar) }.getOrDefault(false) }
+
+    /** Lo que da el diccionario, o null si no tiene la palabra o la gramática. */
+    suspend fun dictionaryExplanation(label: String, isGrammar: Boolean, meaning: String? = null): ItemExplanation? =
+        withContext(Dispatchers.Default) { runCatching { DictionaryExplain.explain(dictionary, label, isGrammar, meaning) }.getOrNull() }
+
+    /**
+     * «¿De qué partes se forma?» de una palabra nativa (꿈꾸다, 일으키다), que el diccionario no
+     * desglosa: la IA con el modelo de las explicaciones. Devuelve las partes, o null y por qué.
+     */
+    suspend fun askParts(word: String, sentence: String): Pair<String?, String?> {
+        val provider = explainProvider() ?: return null to "Para pedir las partes, configura Gemini o Azure en Ajustes › IA."
+        if (settings.usageToday(provider.first) >= settings.state.value.dailyLimit(provider.first)) return null to "Llegaste al límite diario de la IA."
+        return try {
+            val raw = provider.second.complete(CorrectionRequest(ConversationPrompts.word(word, sentence.ifBlank { word })))
+            settings.registerUse(provider.first)
+            (ConversationParser.word(raw, word).parts ?: "Es una palabra simple: no se forma de otras partes.") to null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: ProviderException) {
+            null to explainError(e, provider.first)
+        } catch (e: Exception) {
+            null to (e.message ?: e.javaClass.simpleName)
+        }
     }
 
     /** Qué decir si falla el modelo de las explicaciones: sin cuota o sin acceso, dónde cambiarlo. */

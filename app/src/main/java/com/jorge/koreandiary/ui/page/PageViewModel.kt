@@ -111,8 +111,8 @@ data class SuggestionChip(
 }
 
 /**
- * Tarjeta al tocar una sugerencia. Al instante muestra lo que la app ya sabe; el significado y
- * los ejemplos naturales vienen de la IA una sola vez y quedan guardados.
+ * Tarjeta al tocar una sugerencia: lo que dice el 한국어기초사전, sin IA. Si no lo tiene, al instante
+ * lo que la app ya sabe y la explicación de la IA, que se pide una sola vez y queda guardada.
  */
 data class ExplainCard(
     val chip: SuggestionChip,
@@ -120,6 +120,9 @@ data class ExplainCard(
     val loading: Boolean = false,
     val note: String? = null,
     val canRetry: Boolean = false,
+    /** «¿De qué partes se forma?» (palabra nativa del diccionario): lo que dijo la IA. */
+    val parts: String? = null,
+    val partsLoading: Boolean = false,
 )
 
 data class PageUiState(
@@ -542,16 +545,35 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
 
     // ---------- Significado y ejemplos de las sugerencias ----------
 
-    /** Tocar una sugerencia abre su tarjeta; tocarla otra vez la cierra. */
+    /**
+     * Tocar una sugerencia abre su tarjeta; tocarla otra vez la cierra. Primero el diccionario (sin
+     * IA), luego lo guardado de la IA; si no hay nada, se le pregunta.
+     */
     fun toggleExplain(chip: SuggestionChip) {
         if (_explain.value?.chip == chip) {
             _explain.value = null
             return
         }
         viewModelScope.launch {
-            val cached = c.explanations.get(chip.key)
-            _explain.value = ExplainCard(chip, cached)
-            if (cached == null) fetchExplanations()
+            val known = c.knownExplanation(chip.label, chip.isGrammar, meaningOf(chip))
+            _explain.value = ExplainCard(chip, known)
+            if (known == null) fetchExplanations()
+        }
+    }
+
+    /** Lo que dice tu lista de una palabra (su detalle es «tipo · significado»), para elegir el sentido. */
+    private fun meaningOf(chip: SuggestionChip): String? =
+        chip.detail.takeIf { !chip.isGrammar && !chip.isGap }?.substringAfter(" · ", chip.detail)
+
+    /** «¿De qué partes se forma?» en la tarjeta: el diccionario no desglosa las palabras nativas. */
+    fun askExplainParts() {
+        val card = _explain.value ?: return
+        val e = card.explanation ?: return
+        if (card.partsLoading || card.parts != null) return
+        updateExplain { it.copy(partsLoading = true, note = null) }
+        viewModelScope.launch {
+            val (parts, note) = c.askParts(e.form, "")
+            _explain.update { open -> if (open?.chip == card.chip) open.copy(parts = parts, partsLoading = false, note = note) else open }
         }
     }
 
@@ -588,7 +610,10 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 return@launch
             }
             val open = _explain.value?.chip
-            val missing = (listOfNotNull(open) + _state.value.newGrammar + _state.value.suggestions)
+            // La abierta (no la tiene el diccionario) y las demás que el diccionario tampoco tiene: esas
+            // se explican sin IA al tocarlas.
+            val others = (_state.value.newGrammar + _state.value.suggestions).filter { it.key != open?.key && !c.dictionaryCovers(it.label, it.isGrammar) }
+            val missing = (listOfNotNull(open) + others)
                 .distinctBy { it.key }
                 .filter { c.explanations.get(it.key) == null }
                 .take(MAX_EXPLAIN)
@@ -612,7 +637,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
             }
             // La tarjeta abierta puede ser otra que la que se tocó primero.
             val current = _explain.value ?: return@launch
-            val found = c.explanations.get(current.chip.key)
+            val found = c.knownExplanation(current.chip.label, current.chip.isGrammar, meaningOf(current.chip))
             _explain.value = current.copy(
                 explanation = found,
                 loading = false,

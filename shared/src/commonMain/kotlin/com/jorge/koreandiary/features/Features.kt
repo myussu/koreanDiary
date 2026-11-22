@@ -69,7 +69,7 @@ object Features {
             "Diario",
             listOf(
                 phone("«Nueva página» trae sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel."),
-                phone("Toca una sugerencia para ver su significado, de qué partes se forma, cómo se usa y ejemplos."),
+                phone("Toca una sugerencia para ver lo que dice el diccionario 한국어기초사전, sin IA: significado (el sentido de tu lista primero), otros sentidos, origen (은메달 = 은 銀 + medal), cómo se une una gramática (-을 tras consonante, -ㄹ tras vocal), sus formas y ejemplos. En palabras nativas, «¿De qué partes se forma?» (IA). Si el diccionario no la tiene, la explica la IA y sale «Según la IA»."),
                 phone("«¿Cómo digo?»: «Dictar» o escribes la idea en español; la ayuda llega por partes: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase», a tu nivel y, si cambia, la natural. Igual en el diario, las escenas y la conversación."),
                 phone("«Actualizar» en las sugerencias: lee lo que llevas escrito y suma palabras y gramática que encajan con lo que cuentas (también después de «Revisar»). Lo que viste hace poco en el workbook y lo que fallaste hace poco va primero, si encaja."),
                 phone("Notas de sentido (≈): si lo escrito dice otra cosa que lo que dijiste en «¿Cómo digo?», «Revisar» avisa sin pedir reescribir; «Descartar» si cambiaste de idea."),
@@ -148,7 +148,7 @@ object Features {
                 phone("«Resumen»: «Repaso rápido», «Tu nivel» y abajo racha, calendario, memoria del repaso, tiempos verbales, lo que más te cuesta y minutos hablados."),
                 phone("«Repaso rápido»: unas diez oraciones con un espacio en blanco, con lo que te toca repasar y algo que nunca usaste. Primero tus oraciones (ya corregidas); para lo demás, la IA escribe una (una sola llamada por ronda). La traducción se ve desde el inicio, con lo que falta resaltado."),
                 phone("En el repaso rápido escribes la respuesta a mano en el recuadro («Teclado» si prefieres) y «Comprobar». Lo que la app leyó sale en grande («LEÍ»), para ver si leyó bien tu letra; si leyó mal, «La mía también vale». «Pista» abre hasta tres: en una palabra, cuántas sílabas, la primera y las fichas desordenadas; en un verbo, la forma de diccionario, la terminación y las fichas; en una gramática, el verbo, el patrón y las fichas."),
-                phone("Al cerrar una tarjeta del repaso rápido, «Más sobre esto»: significado, de qué partes se forma (꿈꾸다 = 꿈 + 꾸다), cómo se usa, cómo se conjuga y dos ejemplos. Con IA la primera vez; después queda guardado. Si las partes no forman la palabra letra por letra, salen como «Partes (dudoso)»: puede ser irregular o un error de la IA."),
+                phone("Al cerrar una tarjeta del repaso rápido, «Más sobre esto»: lo que dice el diccionario 한국어기초사전, sin IA (significado, otros sentidos, origen, cómo se une, formas y ejemplos que de verdad la usan). En palabras nativas, «¿De qué partes se forma?» (IA, 꿈꾸다 = 꿈 + 꾸다). Si el diccionario no la tiene, la explica la IA, marcada «Según la IA», y queda guardada. Si las partes de la IA no forman la palabra letra por letra, salen como «Partes (dudoso)»."),
                 phone("En el repaso rápido, toca cualquier palabra de la oración: el diccionario 한국어기초사전 te da su forma de diccionario (만났어요 → 만나다), todos sus sentidos con los comunes primero y su origen (은메달 = 은 銀 + medal), sin IA. «Ver todo» abre el resto; después de un número salen primero los contadores (세 장). En palabras nativas, «¿De qué partes se forma? (IA)». Si no está en tu lista, «Agregar «…» a mi lista». Si el diccionario no la tiene, la explica la IA y lo marca. La palabra del hueco se puede tocar al cerrar la tarjeta."),
                 phone("Con «Ver respuesta» el recuadro se queda: si tienes tiempo, cópiala a mano y «Comprobar» dice si quedó bien escrita (es opcional, y «Siguiente» está siempre). No cambia lo que cuenta para tu repaso."),
                 phone("Cuenta para tu repaso al momento: sin pistas o con una = bien; con más, o si fallaste antes = difícil; «Ver respuesta» = vuelve pronto. Si tu forma también es correcta, «La mía también vale». Sin IA van solo tus oraciones, sin traducción."),
@@ -170,7 +170,7 @@ object Features {
                 phone("General: perfil, nivel y niveles de gramática a sugerir; tema claro u oscuro y papel en modo oscuro; mascota (mostrarla u ocultarla, o importar la tuya; en el inicio, toca su globo para traducir); recordatorio diario, que solo avisa si ese día no escribiste."),
                 phone("Escritura: grosor del lápiz, presión del S Pen, «Solo el S Pen dibuja» (el dedo desplaza) y «Descargar modelo de escritura coreana» (una sola vez)."),
                 phone("IA: proveedor por defecto, Gemini o Azure, con «Probar conexión»."),
-                phone("IA › Explicaciones: quién explica palabras y gramática (tocar una palabra, «Más sobre esto», las tarjetas de sugerencias). Azure o un modelo de Gemini más fuerte que el de corregir, para que los desgloses sean confiables."),
+                phone("IA › Explicaciones: quién explica lo que el diccionario no tiene (palabras o gramática que no están, las partes de una palabra nativa). Azure o un modelo de Gemini más fuerte que el de corregir, para que los desgloses sean confiables."),
                 phone("Escenas: «Escena viva» (encender o apagar los dibujos en acuarela de abajo) y «Dibujos nuevos (Claude)»: tu clave de la API de Claude, el modelo, «Probar conexión», «Dibujar al revisar una escena» y «Ver dibujos». Como mucho 12 dibujos por día."),
                 phone("Hablar y escuchar: turnos, corrección durante la conversación, pista automática, texto borroso, voz y modelos; en Escuchar, narrador, velocidad, pausas y micrófono de los audífonos."),
                 phone("Copia y actualizaciones: «Exportar copia» e «Importar copia» (.zip; las claves de API no viajan). La app avisa cuando hay una versión nueva («Buscar actualización») y se instala con «Actualizar ahora»."),
@@ -231,7 +231,7 @@ object Features {
             steps = listOf(
                 FlowStep(
                     "Abres una página",
-                    "Llega con sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel. Toca una para ver su significado y ejemplos.",
+                    "Llega con sugerencias de palabras y gramática según tu repaso; las marcadas con «+» son nuevas de tu nivel. Toca una para ver lo que dice el diccionario: significado, origen y ejemplos.",
                     listOf("Nueva página"),
                 ),
                 FlowStep(
@@ -450,7 +450,7 @@ object Features {
                 ),
                 FlowStep(
                     "Repasas en unos minutos",
-                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco y su traducción. Escribes a mano lo que falta; si no sale, pides pistas o ves la respuesta, y el recuadro se queda para copiarla a mano. Toca cualquier palabra de la oración para ver qué es y agregarla a tu lista. Cuenta para tu repaso al momento. Al cerrar la tarjeta, «Más sobre esto» la explica por partes y con ejemplos.",
+                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco y su traducción. Escribes a mano lo que falta; si no sale, pides pistas o ves la respuesta, y el recuadro se queda para copiarla a mano. Toca cualquier palabra de la oración para ver qué es y agregarla a tu lista. Cuenta para tu repaso al momento. Al cerrar la tarjeta, «Más sobre esto» la explica con el diccionario: significado, origen y ejemplos.",
                     listOf("Repaso rápido", "Comprobar", "Pista", "Ver respuesta", "La mía también vale", "Más sobre esto", "Agregar a mi lista"),
                     aside = FlowAside("Si prefieres", listOf("Teclado", "Borrar")),
                 ),

@@ -7,22 +7,51 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jorge.koreandiary.ai.ItemExplanation
 import com.jorge.koreandiary.ai.WordParts
 
 /**
- * Lo que la IA explicó de una palabra o una gramática: significado, de qué partes se forma, cómo se
- * usa, cómo se conjuga y ejemplos. La usan la tarjeta de una sugerencia y «Más sobre esto» del
- * repaso rápido, así se ve igual en los dos lados.
+ * Lo que se sabe de una palabra o una gramática: significado, origen o partes, cómo se usa, sus
+ * formas y ejemplos. La usan la tarjeta de una sugerencia y «Más sobre esto» del repaso rápido, así
+ * se ve igual en los dos lados. Viene del 한국어기초사전 y, si no lo tiene, de la IA, marcada
+ * «Según la IA» (decidido con Jorge el 2026-11-22).
+ *
+ * Para una palabra nativa el diccionario no dice de qué partes se forma: con [onAskParts] sale
+ * «¿De qué partes se forma?», que se le pregunta a la IA; su respuesta llega en [parts].
  */
 @Composable
-fun ExplanationBody(e: ItemExplanation, modifier: Modifier = Modifier) {
+fun ExplanationBody(
+    e: ItemExplanation,
+    modifier: Modifier = Modifier,
+    parts: String? = null,
+    partsLoading: Boolean = false,
+    onAskParts: (() -> Unit)? = null,
+) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (!e.fromDictionary) {
+            Text("Según la IA", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        }
         Text(e.meaning, style = MaterialTheme.typography.bodyLarge)
-        e.structure?.let { PartsLine(e.form, it) }
+        e.structure?.let {
+            if (e.fromDictionary) Text("Origen: $it", style = MaterialTheme.typography.bodySmall, color = scheme.secondary)
+            else PartsLine(e.form, it)
+        }
+        if (e.fromDictionary && e.structure == null && onAskParts != null) {
+            when {
+                parts != null -> Column {
+                    Text("Según la IA", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    PartsLine(e.form, parts)
+                }
+                partsLoading -> Text("Preguntando a la IA…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                else -> AppTextButton(onClick = onAskParts, modifier = Modifier.testTag("explicacion_partes")) {
+                    Text("¿De qué partes se forma?")
+                }
+            }
+        }
         e.usage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         e.conjugation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.secondary) }
         e.examples.forEach { ex ->
@@ -30,6 +59,9 @@ fun ExplanationBody(e: ItemExplanation, modifier: Modifier = Modifier) {
                 Text(ex.korean, fontSize = 17.sp)
                 ex.english?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
             }
+        }
+        if (e.fromDictionary) {
+            Text("Del diccionario 한국어기초사전", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
         }
     }
 }

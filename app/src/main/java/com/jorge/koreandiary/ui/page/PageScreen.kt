@@ -255,6 +255,7 @@ fun PageScreen(container: AppContainer, pageId: Long, onBack: () -> Unit) {
             onChip = vm::toggleExplain,
             onCloseExplain = vm::closeExplain,
             onRetryExplain = vm::retryExplain,
+            onAskExplainParts = vm::askExplainParts,
             onHowTo = { howToOpen = !howToOpen },
             mascot = if (settings.showMascot) {
                 { AppMascot(container.mascotPack, mascotMood, 36.dp, Modifier.padding(end = 6.dp)) }
@@ -506,6 +507,7 @@ private fun SuggestionsBar(
     onChip: (SuggestionChip) -> Unit,
     onCloseExplain: () -> Unit,
     onRetryExplain: () -> Unit,
+    onAskExplainParts: () -> Unit,
     onHowTo: () -> Unit,
     mascot: (@Composable () -> Unit)? = null,
 ) {
@@ -559,7 +561,7 @@ private fun SuggestionsBar(
                 )
             }
         }
-        explain?.let { SuggestionCard(it, onClose = onCloseExplain, onRetry = onRetryExplain) }
+        explain?.let { SuggestionCard(it, onClose = onCloseExplain, onRetry = onRetryExplain, onAskParts = onAskExplainParts) }
         if (selected == null && chips.any { it.isGap }) {
             Text(
                 "“+” = posible laguna: de tu nivel según el estándar, pero no está en tus listas.",
@@ -577,7 +579,7 @@ private fun SuggestionsBar(
  * mano que escribe no la tape; tiene alto máximo y desplazamiento para no comerse el papel.
  */
 @Composable
-private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -> Unit) {
+private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -> Unit, onAskParts: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val chip = card.chip
     val e = card.explanation
@@ -602,7 +604,7 @@ private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -
             AppTextButton(onClick = onClose) { Text("Cerrar") }
         }
         if (e != null) {
-            ExplanationBody(e)
+            ExplanationBody(e, parts = card.parts, partsLoading = card.partsLoading, onAskParts = onAskParts.takeIf { !chip.isGrammar })
         } else {
             // Lo que la app ya sabe, mientras llega la IA o si no hay API.
             Text(chip.detail, style = MaterialTheme.typography.bodySmall)

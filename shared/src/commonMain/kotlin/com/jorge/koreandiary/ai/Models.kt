@@ -109,6 +109,11 @@ data class ItemExplanation(
      * o cómo se arma una gramática. Null si no tiene partes o si la explicación es anterior.
      */
     val structure: String? = null,
+    /**
+     * Viene del 한국어기초사전 (no de la IA): [structure] es el origen (은 銀 + medal) y los ejemplos no
+     * traen traducción. Las de la IA se muestran marcadas «Según la IA».
+     */
+    val fromDictionary: Boolean = false,
 )
 
 data class ExampleSentence(val korean: String, val english: String?)

@@ -49,6 +49,9 @@ object Hangul {
     /** ¿Es una letra suelta (ㄴ, ㄹ, ㅂ...), como las que empiezan algunas terminaciones? */
     fun isJamo(c: Char): Boolean = c in 'ㄱ'..'ㅣ'
 
+    /** El índice de una letra suelta como consonante final (ㄹ → 8), o 0 si no puede ir al final. */
+    fun finalIndex(jamo: Char): Int = FINALS.indexOf(jamo.toString()).coerceAtLeast(0)
+
     private val CONTRACTIONS = mapOf(
         "ㅜㅓ" to 'ㅝ', "ㅗㅏ" to 'ㅘ', "ㅣㅓ" to 'ㅕ', "ㅐㅓ" to 'ㅐ', "ㅔㅓ" to 'ㅔ', "ㅚㅓ" to 'ㅙ',
         "ㅏㅏ" to 'ㅏ', "ㅓㅓ" to 'ㅓ', "ㅕㅓ" to 'ㅕ', "ㅡㅓ" to 'ㅓ', "ㅡㅏ" to 'ㅏ', "ㅐㅏ" to 'ㅐ',
