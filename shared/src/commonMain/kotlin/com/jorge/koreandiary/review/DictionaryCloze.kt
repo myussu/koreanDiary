@@ -8,8 +8,8 @@ import kotlin.random.Random
 
 /**
  * Oraciones del 한국어기초사전 para el repaso rápido (decidido con Jorge el 2026-11-22): lo que no
- * tiene oración tuya sale con una del diccionario antes que pedírsela a la IA. La pista es
- * «Falta: …» con el significado; la traducción, solo si la pides («Traducir»).
+ * tiene oración tuya sale con una del diccionario antes que pedírsela a la IA. La traducción la pone
+ * la llamada de la ronda; sin IA queda la línea «Usa:» con lo que dice el diccionario.
  */
 object DictionaryCloze {
 
@@ -25,7 +25,7 @@ object DictionaryCloze {
         if (grammar) {
             if (family.isEmpty()) return null
             sentences = family.flatMap { e -> dictionary.detail(e)?.senses.orEmpty().flatMap { it.examples } }
-            meaning = dictionary.detail(family.first())?.senses?.firstOrNull()?.let(DictionaryExplain::senseMeaning)
+            meaning = dictionary.detail(family.first())?.senses?.firstOrNull()?.definition?.let(DictionaryExplain::grammarGloss)
         } else {
             val choice = DictionaryExplain.wordChoice(dictionary, target.label, target.meaning) ?: return null
             sentences = choice.ordered.flatMap { it.examples }
@@ -41,18 +41,44 @@ object DictionaryCloze {
         // Corteses primero (el repaso va en -아요/어요) y de esas, las más cortas.
         val pool = options.filter { POLITE.containsMatchIn(it.first) }.ifEmpty { options }.sortedBy { it.first.length }.take(POOL)
         val (sentence, blank) = pool[random.nextInt(pool.size)]
-        return ClozeCard(
+        val card = ClozeCard(
             code = target.code, label = target.label, kind = target.kind,
-            meaning = target.meaning?.takeIf { it.isNotBlank() } ?: meaning?.takeIf { it.isNotBlank() },
+            meaning = target.meaning?.takeIf { it.isNotBlank() },
             sentence = sentence, start = blank.start, answer = blank.text,
-            base = when (target.kind) {
-                ClozeKind.VERB -> target.label.trim()
-                ClozeKind.GRAMMAR -> grammarBase(dictionary, sentence, blank)
-                ClozeKind.WORD -> null
-            },
             fromDictionary = true,
+            dictionaryMeaning = meaning?.takeIf { it.isNotBlank() },
         )
+        return card.copy(base = base(dictionary, card))
     }
+
+    /**
+     * Lo que acompaña al hueco en «Usa:» y en las pistas: un verbo, su forma de diccionario; una
+     * gramática, el verbo o adjetivo al que va unida (읽을 수 있어요 → 읽다). Null si no se sabe.
+     */
+    fun base(dictionary: KoreanDictionary, card: ClozeCard): String? = when (card.kind) {
+        ClozeKind.VERB -> card.label.trim()
+        ClozeKind.GRAMMAR -> tokens(card.sentence).firstOrNull { card.start >= it.start && card.start < it.start + it.text.length }
+            ?.let { first -> dictionary.baseForms(first.text).firstOrNull { it.isVerb }?.form }
+        ClozeKind.WORD -> null
+    }
+
+    /**
+     * Si lo que escribiste usa la misma palabra que la respuesta pero otra terminación (먹으면서 en vez
+     * de 먹는 동안), lo dice: la palabra está bien y lo que cambia es la gramática o la conjugación.
+     * Null si no es el caso.
+     */
+    fun nearMiss(dictionary: KoreanDictionary, card: ClozeCard, written: String): String? {
+        if (card.kind == ClozeKind.WORD) return null
+        val mine = verbOf(dictionary, written) ?: return null
+        val expected = card.base?.let { b -> dictionary.entries(b).firstOrNull { it.isVerb } } ?: verbOf(dictionary, card.answer) ?: return null
+        if (mine.form != expected.form) return null
+        val what = if (expected.pos.contains("형용사")) "El adjetivo" else "El verbo"
+        return if (card.kind == ClozeKind.GRAMMAR) "$what está bien (${expected.form}), pero aquí va otra gramática: la de «Usa:»."
+        else "$what está bien (${expected.form}), pero va conjugado de otra forma: mira la traducción."
+    }
+
+    private fun verbOf(dictionary: KoreanDictionary, text: String): DictEntry? =
+        tokens(text).firstOrNull()?.let { t -> dictionary.baseForms(t.text).firstOrNull { it.isVerb } }
 
     /**
      * El ítem en una oración (también tuya, cuando [Cloze.blankIn] no lo encuentra): un verbo
@@ -91,12 +117,6 @@ object DictionaryCloze {
             return ClozeBlank(span.start, sentence.substring(span.start, span.end))
         }
         return null
-    }
-
-    /** Para la pista «Con: …»: el verbo o adjetivo al que va unida la gramática (읽을 수 있어요 → 읽다). */
-    private fun grammarBase(dictionary: KoreanDictionary, sentence: String, blank: ClozeBlank): String? {
-        val first = tokens(sentence).firstOrNull { blank.start >= it.start && blank.start < it.start + it.text.length } ?: return null
-        return dictionary.baseForms(first.text).firstOrNull { it.isVerb }?.form
     }
 
     /** Las palabras de la oración, sin la puntuación de los bordes, con su posición. */

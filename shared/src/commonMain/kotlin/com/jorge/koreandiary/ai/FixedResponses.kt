@@ -181,12 +181,12 @@ object FixedResponses {
         section(prompt, "ÍTEMS (código").forEach { line ->
             val m = Regex("""^- (\w+): (.+?) \((palabra|verbo o adjetivo|gramática)\)""").find(line) ?: return@forEach
             val (code, label, kind) = m.destructured
-            val own = Regex("""oración suya: «(.+?)»""").find(line)?.groupValues?.get(1)
-            val ownBlank = Regex("""hueco: «(.+?)»""").find(line)?.groupValues?.get(1)
+            // Las que ya tienen oración (tuyas o del diccionario) traen el hueco entre corchetes: solo se traducen.
+            val given = Regex("""oración: «(.+?)»""").find(line)?.groupValues?.get(1)
             val o = JSONObject().put("id", code)
+            if (kind == "gramática") o.put("sentido", "sentido de prueba")
             when {
-                own != null -> {
-                    o.put("oracion", own).put("hueco", ownBlank ?: own.split(' ').first())
+                given != null -> {
                     o.put("traduccion", "Traducción fija de tu oración con [la parte que falta].")
                 }
                 kind == "verbo o adjetivo" -> {

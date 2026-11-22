@@ -297,6 +297,17 @@ object DictionaryExplain {
     }
 
     /**
+     * Qué expresa una gramática, corto, desde su definición del diccionario, para la línea «Usa:» del
+     * repaso cuando no hay IA: «Expresión que indica el tiempo que dura un acto o estado que representa
+     * el comentario anterior.» → «el tiempo que dura un acto o estado».
+     */
+    fun grammarGloss(definition: String): String {
+        var g = cleanDefinition(definition).replace(Regex("""^\([^)]*\)\s*"""), "")
+        g = g.replace(GLOSS_LEAD, "").replace(GLOSS_TRAIL, "").trim().trimEnd('.', ' ', ',')
+        return shorten(g.ifBlank { cleanDefinition(definition) }, 70)
+    }
+
+    /**
      * La definición sin la etiqueta en mayúsculas del diccionario, en palabras de la app:
      * «(TRATAMIENTO HONORÍFICO GENERAL) Desinencia…» → «(cortés, 해요체) Desinencia…».
      */
@@ -306,6 +317,15 @@ object DictionaryExplain {
         val label = m.groupValues[1].trim()
         return "(" + (REGISTERS[label] ?: label.lowercase()) + ") " + d.substring(m.range.last + 1)
     }
+
+    /** «Expresión que (se usa para) indica(r)…», «Desinencia conectora que se usa cuando…», «Posposición que…». */
+    private val GLOSS_LEAD = Regex(
+        """^(Expresión|Desinencia( conectora| de terminación| final)?|Posposición|Sufijo)( que)?( usa el hablante)?( se)?( usa| utiliza| emplea)?( para| cuando| al)?( indicar| mostrar| expresar| señalar| manifestar| indica| muestra| expresa)?( que)?\s+""",
+    )
+    /** «…lo que dice el comentario anterior», «…que representa la palabra anterior de la cláusula». */
+    private val GLOSS_TRAIL = Regex(
+        """\s*(\b(de )?lo que |\bque |\bel acto que )?(representa|dice|indica|expresa|se dice en) (el comentario|la palabra|el contenido|la parte)( anterior| precedente)?( de la cláusula)?\.?$""",
+    )
 
     private const val MAX_EXAMPLES = 3
     private const val MAX_HOMONYMS = 8

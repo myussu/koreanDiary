@@ -90,7 +90,7 @@ adb shell input tap X Y
 | `aviso_cierre` | aviso de cierre por error |
 | `hoja` | el lienzo de la página |
 | `confirmar_texto`, `texto_de_prueba` | el texto a confirmar en Revisar y su botón de prueba |
-| `repaso_recuadro`, `repaso_prueba_bien`, `repaso_prueba_mal`, `repaso_copia_comprobar`, `repaso_copia_bien`, `repaso_copia_mal`, `repaso_oracion`, `repaso_palabra`, `repaso_palabra_agregar`, `repaso_palabra_partes`, `diccionario`, `diccionario_todo`, `repaso_falta`, `repaso_traducir`, `repaso_traduccion`, `explicacion_partes` | el repaso rápido |
+| `repaso_recuadro`, `repaso_prueba_bien`, `repaso_prueba_mal`, `repaso_copia_comprobar`, `repaso_copia_bien`, `repaso_copia_mal`, `repaso_oracion`, `repaso_palabra`, `repaso_palabra_agregar`, `repaso_palabra_partes`, `diccionario`, `diccionario_todo`, `repaso_usa`, `repaso_traducir`, `repaso_traduccion`, `repaso_casi`, `explicacion_partes` | el repaso rápido |
 
 ### Escribir en la hoja
 
@@ -172,8 +172,11 @@ agrega el detalle del aviso o el logcat.
   - En Vocabulario, salen las palabras que no conociste en la prueba.
   - «Ya lo sé» la agrega con repaso lejano.
 - [ ] «Repaso rápido»:
-  - Primero tus oraciones («Tu oración»), luego las del diccionario («Oración del diccionario») y solo para lo que no tiene ninguna, las de la IA («Oración de la IA», con traducción y lo que falta resaltado).
-  - Las tuyas y las del diccionario llevan «Falta: …» con el significado (`repaso_falta`) y «Traducir» (`repaso_traducir`): con respuestas fijas trae «Traducción de prueba con [lo que falta].» (`repaso_traduccion`) y «Traducción según la IA». Al volver a esa tarjeta en la misma ronda ya está traducida.
+  - Primero tus oraciones («Tu oración»), luego las del diccionario («Oración del diccionario») y solo para lo que no tiene ninguna, las de la IA («Oración de la IA»).
+  - Todas llegan traducidas (`repaso_traduccion`), con lo que falta resaltado y «Traducción según la IA» (con respuestas fijas, «Traducción fija de tu oración con [la parte que falta].»).
+  - En una gramática, «Usa:» (`repaso_usa`) dice qué expresa y con qué verbo va: con respuestas fijas, «la gramática de «sentido de prueba»» y «Traducción y pista según la IA»; si la gramática tiene significado en tu lista, sale el tuyo.
+  - Con «Respuestas fijas» apagado (Ajustes › IA › Versión de prueba, sin claves) la ronda dice «Sin IA las oraciones van sin traducción…», las palabras muestran «Usa: la palabra de «…»» con el significado del diccionario y «Traducir» (`repaso_traducir`) avisa que falta configurar la IA.
+  - Escribe con «Teclado» la misma palabra con otra terminación (p. ej. en una gramática con 먹다, «먹으면서»; «Prueba: mal» no sirve, escribe «x»): sale «El verbo está bien (먹다), pero aquí va otra gramática…» (`repaso_casi`).
   - «Pista» abre hasta tres.
   - «Prueba: bien» cierra la tarjeta.
   - «Prueba: mal», luego «La mía también vale» y «Otra vez».

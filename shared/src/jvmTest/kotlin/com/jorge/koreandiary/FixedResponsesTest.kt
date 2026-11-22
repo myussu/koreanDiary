@@ -16,6 +16,7 @@ import com.jorge.koreandiary.conversation.ConversationPrompts
 import com.jorge.koreandiary.conversation.WordGloss
 import com.jorge.koreandiary.review.Cloze
 import com.jorge.koreandiary.review.ClozeBlank
+import com.jorge.koreandiary.review.ClozeCard
 import com.jorge.koreandiary.review.ClozeKind
 import com.jorge.koreandiary.review.ClozeTarget
 import org.junit.Assert.assertEquals
@@ -83,11 +84,15 @@ class FixedResponsesTest {
         assertEquals(listOf("w1", "w2", "w3", "g4"), cards.map { it.code })
         assertEquals("먹고", cards[1].answer)
         assertTrue(cards.all { it.translation?.contains('[') == true })
+        // En gramática, qué expresa (para «Usa:»), marcado como de la IA.
+        assertEquals("sentido de prueba", cards[3].aiSense)
+        assertTrue(cards[3].senseByAi)
     }
 
     @Test
     fun quickReviewTranslatesOnDemand() {
-        val t = Cloze.parseTranslation(FixedResponses.answer(Cloze.translatePrompt("날씨가 무척 덥군요.", "덥군요")))
+        val card = ClozeCard("w1", "덥다", ClozeKind.VERB, null, "날씨가 무척 덥군요.", 7, "덥군요")
+        val t = Cloze.parseTranslation(FixedResponses.answer(Cloze.translatePrompt(card)))
         assertTrue(t.contains('['))
     }
 

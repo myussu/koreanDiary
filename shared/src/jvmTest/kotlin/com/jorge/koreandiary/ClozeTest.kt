@@ -122,8 +122,9 @@ class ClozeTest {
         assertEquals("-었어요", Cloze.localEnding("먹다", "먹었어요"))
         assertEquals("…어요", Cloze.localEnding("공부하다", "공부했어요"))
 
+        // En gramática el verbo y qué expresa ya están arriba («Usa:»): la primera pista son las sílabas.
         val grammar = Cloze.hints(card("있으니까", ClozeKind.GRAMMAR, "A/V-(으)니까", base = "있다"))
-        assertEquals("Con: 있다", grammar[0])
+        assertEquals("4 sílabas: □□□□", grammar[0])
         assertEquals("Gramática: A/V-(으)니까", grammar[1])
 
         // Una sílaba: la última pista es su consonante y su vocal.
@@ -165,7 +166,8 @@ class ClozeTest {
             ClozeTarget("w4", "사과", ClozeKind.WORD, "manzana", "사과를 먹었어요.", ClozeBlank(0, "사과")),
         )
         val prompt = Cloze.prompt("Vivo en Lima.", "3A", 3, targets)
-        assertTrue(prompt.contains("- w1: 공부하다 (verbo o adjetivo) | oración suya: «시험이 있으니까 도서관에서 공부했어요.» | hueco: «공부했어요»"))
+        // Tu oración va con el hueco marcado: así la IA resalta el trozo correcto al traducir.
+        assertTrue(prompt.contains("- w1: 공부하다 (verbo o adjetivo) | oración: «시험이 있으니까 도서관에서 [공부했어요].»"))
         assertTrue(prompt.contains("- g2: V-고 싶다 (gramática)\n"))
         assertTrue(prompt.contains("SOBRE EL ESTUDIANTE: Vivo en Lima."))
         val raw = """```json

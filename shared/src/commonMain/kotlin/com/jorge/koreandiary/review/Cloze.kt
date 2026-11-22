@@ -54,11 +54,26 @@ data class ClozeCard(
     val ending: String? = null,
     /** La oración es tuya (de una página), no de la IA. */
     val own: Boolean = false,
-    /** La oración es del 한국어기초사전 ([DictionaryCloze]): sin traducción, con «Falta: …» y «Traducir». */
+    /** La oración es del 한국어기초사전 ([DictionaryCloze]). */
     val fromDictionary: Boolean = false,
+    /** Lo que dice el diccionario del ítem: el significado de una palabra, qué expresa una gramática. */
+    val dictionaryMeaning: String? = null,
+    /** Gramática: qué expresa en esta oración, según la IA («durante el tiempo que»), sin la forma coreana. */
+    val aiSense: String? = null,
 ) {
     val before: String get() = sentence.substring(0, start)
     val after: String get() = sentence.substring(start + answer.length)
+
+    /** La oración con el hueco entre corchetes: así la IA sabe qué trozo resaltar al traducir. */
+    val marked: String get() = "$before[$answer]$after"
+
+    /**
+     * Qué va en el hueco, para la línea «Usa:» (pedido por Jorge el 2026-11-22: sin saberlo la tarjeta
+     * era adivinar, y con gramáticas parecidas peor): lo que dice tu lista; si no tiene, lo de la IA
+     * ([senseByAi]); si no, lo del diccionario.
+     */
+    val sense: String? get() = meaning?.takeIf { it.isNotBlank() } ?: aiSense ?: dictionaryMeaning
+    val senseByAi: Boolean get() = meaning.isNullOrBlank() && aiSense != null
 }
 
 /** Un trozo de una palabra de la oración; [blank]: es (parte de) lo que va en el hueco. */
@@ -70,10 +85,10 @@ data class ClozeWord(val pieces: List<ClozePiece>, val tap: String?)
 /**
  * Repaso rápido (decidido con Jorge el 2026-11-15): en vez de tarjetas como Anki, oraciones con un
  * espacio en blanco. Primero tus oraciones (ya corregidas); para lo que nunca usaste, una del
- * 한국어기초사전 ([DictionaryCloze], desde el 2026-11-22) y solo si no hay, de la IA (una sola
- * llamada por sesión). Las de la IA traen su traducción con lo que falta resaltado; las tuyas y las
- * del diccionario, «Falta: …» con el significado y «Traducir» si la quieres. Respondes a mano. Tres
- * pistas según el tipo; la calificación sale de cuántas usaste.
+ * 한국어기초사전 ([DictionaryCloze], desde el 2026-11-22) y solo si no hay, una de la IA. Una sola
+ * llamada por ronda traduce todas con lo que falta resaltado y dice qué expresa cada gramática
+ * (la línea «Usa:», para distinguir -는 동안 de -면서). Respondes a mano. Tres pistas según el tipo;
+ * la calificación sale de cuántas usaste.
  */
 object Cloze {
 
@@ -243,8 +258,9 @@ object Cloze {
                 "Terminación: ${card.ending ?: localEnding(card.base ?: card.label, card.answer)}",
                 last,
             )
+            // El verbo y qué expresa ya están arriba, en «Usa:».
             ClozeKind.GRAMMAR -> listOf(
-                card.base?.let { "Con: $it" } ?: card.meaning?.let { "Significa: $it" } ?: "${s.size} sílabas: $boxes",
+                "${s.size} ${if (s.size == 1) "sílaba" else "sílabas"}: $boxes",
                 "Gramática: ${card.label}",
                 last,
             )
@@ -402,11 +418,16 @@ object Cloze {
         ClozeKind.GRAMMAR -> "gramática"
     }
 
+    /** Con tus oraciones ya armadas ([localCards]) y lo que no tiene oración. */
+    fun prompt(profile: String, level: String, standardLevel: Int, targets: List<ClozeTarget>): String =
+        prompt(profile, level, standardLevel, localCards(targets), targets.filter { it.sentence == null || it.blank == null })
+
     /**
-     * Una sola llamada para toda la sesión: traduce tus oraciones (y marca el hueco si el celular no
-     * lo encontró) y escribe una oración para lo que no tiene.
+     * Una sola llamada para toda la ronda: traduce las oraciones que ya tienen hueco ([given]: tuyas y
+     * del diccionario), con el hueco marcado entre corchetes para que resalte el trozo correcto; dice
+     * qué expresa cada gramática y escribe una oración para lo que no tiene ([missing]).
      */
-    fun prompt(profile: String, level: String, standardLevel: Int, targets: List<ClozeTarget>): String = buildString {
+    fun prompt(profile: String, level: String, standardLevel: Int, given: List<ClozeCard>, missing: List<ClozeTarget>): String = buildString {
         appendLine("Eres profesor de coreano. Un estudiante hispanohablante de nivel $level (≈ nivel $standardLevel de 6 del 국제 통용 한국어 표준 교육과정) repasa con oraciones en las que falta una parte (el hueco) y la escribe a mano. Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código.")
         appendLine(Prompts.SPANISH)
         if (profile.isNotBlank()) {
@@ -415,34 +436,29 @@ object Cloze {
         }
         appendLine()
         appendLine("ÍTEMS (código: forma, tipo):")
-        targets.forEach { t ->
-            append("- ${t.code}: ${t.label} (${kindLabel(t.kind)})")
-            if (t.sentence != null) {
-                append(" | oración suya: «${t.sentence}»")
-                t.blank?.let { append(" | hueco: «${it.text}»") }
-            }
-            appendLine()
-        }
+        given.forEach { c -> appendLine("- ${c.code}: ${c.label} (${kindLabel(c.kind)}) | oración: «${c.marked}»") }
+        missing.forEach { t -> appendLine("- ${t.code}: ${t.label} (${kindLabel(t.kind)})") }
         appendLine()
         appendLine("TAREAS:")
-        appendLine("1. Si el ítem trae «oración suya», úsala tal cual (ya está corregida; no la cambies). Si trae «hueco», devuélvelo igual.")
-        appendLine("2. Si no trae oración, escribe una corta (una sola oración, 5 a 10 palabras), natural y cotidiana, sobre su vida, que use el ítem como lo usaría un coreano. Solo vocabulario y gramática de su nivel o menor, en estilo -아요/어요.")
-        appendLine("3. \"hueco\": el trozo de la oración que corresponde al ítem, copiado letra por letra: un sustantivo o adverbio tal cual (sin la partícula); un verbo o adjetivo, la palabra conjugada entera; una terminación, la palabra que la lleva entera (si la expresión ocupa dos palabras, las dos); una partícula, solo la partícula.")
-        appendLine("4. \"traduccion\": la traducción natural al español, fiel al sentido de la oración, con lo que corresponde al hueco entre corchetes, por ejemplo: «Como hay examen, [estudié] en la biblioteca».")
+        appendLine("1. Si el ítem trae «oración», úsala tal cual (no la cambies): lo que está entre corchetes es el hueco.")
+        appendLine("2. Si no trae oración, escribe una corta (una sola oración, 5 a 10 palabras), natural y cotidiana, sobre su vida, que use el ítem como lo usaría un coreano. Solo vocabulario y gramática de su nivel o menor, en estilo -아요/어요. Devuélvela en \"oracion\" y en \"hueco\" el trozo que corresponde al ítem, copiado letra por letra: un sustantivo o adverbio tal cual (sin la partícula); un verbo o adjetivo, la palabra conjugada entera; una terminación, la palabra que la lleva entera (si la expresión ocupa dos palabras, las dos); una partícula, solo la partícula.")
+        appendLine("3. \"traduccion\": la traducción natural al español de la oración entera, fiel a su sentido, con entre corchetes exactamente lo que traduce al hueco y nada más (no otra palabra parecida de la oración). Por ejemplo, «[먹는 동안] 다른 음식도 먹어 봤어요.» → «[Mientras comía], probé otra comida».")
+        appendLine("4. \"sentido\": solo en una gramática, qué expresa en esa oración, en español, de 2 a 6 palabras, sin coreano y sin nombrar la gramática, de forma que la distinga de las parecidas: -는 동안 → «durante el tiempo que»; -(으)면서 → «a la vez que»; -다가 → «deja una acción y pasa a otra»; -아서/어서 → «porque» o «y luego», según la oración. En los demás ítems, null.")
         appendLine("5. \"base\": en un verbo o adjetivo, su forma de diccionario; en una gramática, la forma de diccionario del verbo, adjetivo o sustantivo al que va unida. \"terminacion\": en un verbo o adjetivo, la terminación que lleva en el hueco escrita como en un libro (\"-았/었어요\", \"-고\", \"-(으)니까\"); si no, null.")
         appendLine()
         appendLine("FORMATO:")
-        appendLine("{\"items\": [{\"id\": \"w12\", \"oracion\": \"시험이 있으니까 도서관에서 공부했어요.\", \"hueco\": \"공부했어요\", \"traduccion\": \"Como hay examen, [estudié] en la biblioteca.\", \"base\": \"공부하다\", \"terminacion\": \"-았/었어요\"}]}")
+        appendLine("{\"items\": [{\"id\": \"w12\", \"oracion\": \"시험이 있으니까 도서관에서 공부했어요.\", \"hueco\": \"공부했어요\", \"traduccion\": \"Como hay examen, [estudié] en la biblioteca.\", \"sentido\": null, \"base\": \"공부하다\", \"terminacion\": \"-았/었어요\"}]}")
     }
 
     /**
-     * «Traducir» en una oración tuya o del diccionario: la traducción con lo que corresponde al hueco
-     * entre corchetes, como las de las oraciones de la IA.
+     * «Traducir» en una tarjeta que quedó sin traducción (la llamada de la ronda falló): la traducción
+     * con lo que corresponde al hueco entre corchetes. El hueco va marcado en la oración: si solo se
+     * nombraba, la IA a veces resaltaba otra palabra parecida (probé en vez de «Mientras comía»).
      */
-    fun translatePrompt(sentence: String, answer: String): String = buildString {
-        appendLine("Traduce al español esta oración coreana del repaso de un estudiante: «${sentence.trim()}».")
+    fun translatePrompt(card: ClozeCard): String = buildString {
+        appendLine("Traduce al español esta oración coreana del repaso de un estudiante: «${card.marked}». Lo que está entre corchetes es el hueco.")
         appendLine(Prompts.SPANISH)
-        appendLine("Traducción natural y fiel al sentido de la oración, con lo que corresponde a «${answer.trim()}» entre corchetes, por ejemplo: «Como hay examen, [estudié] en la biblioteca».")
+        appendLine("Traducción natural y fiel al sentido de la oración, con entre corchetes exactamente lo que traduce al hueco y nada más. Por ejemplo, «[먹는 동안] 다른 음식도 먹어 봤어요.» → «[Mientras comía], probé otra comida».")
         appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código:")
         appendLine("{\"traduccion\": \"...\"}")
     }
@@ -457,12 +473,16 @@ object Cloze {
             ?: throw ParseException("La respuesta no trae la traducción.")
     }
 
+    /** Con tus oraciones ya armadas ([localCards]) y lo que no tiene oración. */
+    fun parse(raw: String, targets: List<ClozeTarget>): List<ClozeCard> =
+        parse(raw, localCards(targets), targets.filter { it.sentence == null || it.blank == null })
+
     /**
-     * Las tarjetas de la sesión, tus oraciones primero. De la IA solo se toma un hueco que esté en la
-     * oración; si no, se usa el que encontró el celular o se deja el ítem. Tus oraciones que la IA no
-     * devolvió quedan sin traducción.
+     * Las tarjetas de la ronda: las que ya tenían oración ([given], en su orden) con su traducción y,
+     * en gramática, qué expresa; después las que escribió la IA. De la IA solo se toma un hueco que
+     * esté en su oración; si no, se deja el ítem. Las que la IA no devolvió quedan sin traducción.
      */
-    fun parse(raw: String, targets: List<ClozeTarget>): List<ClozeCard> {
+    fun parse(raw: String, given: List<ClozeCard>, missing: List<ClozeTarget>): List<ClozeCard> {
         val json = try {
             JSONObject(extractJsonObject(raw))
         } catch (e: org.json.JSONException) {
@@ -476,23 +496,37 @@ object Cloze {
             if (id.isNotEmpty() && id !in byCode) byCode[id] = o
         }
         fun JSONObject.text(key: String): String? =
-            if (isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() && it != "null" }
+            if (!has(key) || isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() && it != "null" }
+        fun JSONObject.sense(kind: ClozeKind): String? = if (kind != ClozeKind.GRAMMAR) null else text("sentido")?.let(::cleanSense)
 
-        val cards = targets.mapNotNull { t ->
-            val o = byCode[t.code]
-            val sentence = t.sentence ?: o?.text("oracion") ?: return@mapNotNull null
-            val blank = t.blank ?: o?.text("hueco")?.let { hueco -> placeBlank(sentence, hueco, t.label, t.kind) } ?: return@mapNotNull null
+        val translated = given.map { c ->
+            val o = byCode[c.code] ?: return@map c
+            c.copy(
+                translation = o.text("traduccion") ?: c.translation,
+                aiSense = o.sense(c.kind) ?: c.aiSense,
+                base = c.base ?: o.text("base"),
+                ending = c.ending ?: o.text("terminacion"),
+            )
+        }
+        val written = missing.mapNotNull { t ->
+            val o = byCode[t.code] ?: return@mapNotNull null
+            val sentence = o.text("oracion") ?: return@mapNotNull null
+            val blank = o.text("hueco")?.let { hueco -> placeBlank(sentence, hueco, t.label, t.kind) } ?: return@mapNotNull null
             ClozeCard(
                 code = t.code, label = t.label, kind = t.kind, meaning = t.meaning,
                 sentence = sentence, start = blank.start, answer = blank.text,
-                translation = o?.text("traduccion"),
-                base = o?.text("base"),
-                ending = o?.text("terminacion"),
-                own = t.own,
+                translation = o.text("traduccion"),
+                base = o.text("base"),
+                ending = o.text("terminacion"),
+                aiSense = o.sense(t.kind),
             )
         }
-        return cards.sortedBy { if (it.own) 0 else 1 }
+        return translated + written
     }
+
+    /** Lo que dice la IA que expresa una gramática, solo si no da la respuesta: sin coreano y corto. */
+    private fun cleanSense(text: String): String? =
+        text.trim().trim('«', '»', '"', '\'', '.').takeIf { t -> t.isNotEmpty() && t.length <= 60 && t.none { it in '가'..'힣' || it in 'ㄱ'..'ㅣ' } }
 }
 
 /**
