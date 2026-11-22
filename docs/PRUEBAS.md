@@ -161,6 +161,7 @@ agrega el detalle del aviso o el logcat.
 
 - [ ] «Importar» con un TXT de gramática (`Unit 1: V-고 싶다 | A/V-(으)니까`): entra a «Gramática».
 - [ ] Pestañas Resumen, Vocabulario, Gramática, Por revisar y Para agregar.
+- [ ] Diccionario: revisar una página (respuestas fijas) agrega a la lista las palabras que existen (con significado del diccionario) y manda a «Por revisar» las que no. Importar una lista con una palabra inventada dice «… no están en el diccionario: quedaron en «Por revisar».». Ajustes › General › Fuentes nombra el 한국어기초사전.
 - [ ] Tocar un ítem de la lista abre su memoria, tus oraciones y lo que te corrigieron.
 - [ ] En una palabra: «Corregir» (`palabra_corregir`) abre el campo (`palabra_corregir_campo`); «Guardar» (`palabra_corregir_guardar`) con otra forma la cambia en la lista y mantiene «Usada N veces»; con una que ya está en la lista dice «Ya tienes … quita esta.»; con espacios, «Escribe la palabra en coreano, sin espacios.». «Quitar de mi lista» (`palabra_quitar`) pide confirmar y «Quitar» (`palabra_quitar_confirmar`) la saca de la lista.
 - [ ] «Te corrigieron»: con gramática importada, una página nueva cuyas sugerencias traigan una gramática tuya, «Revisar» con «Usar texto de prueba». En Estudio › Gramática, esa gramática muestra «만나요 → 만났어요» en «Te corrigieron».

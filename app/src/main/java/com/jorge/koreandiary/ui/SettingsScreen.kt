@@ -196,6 +196,11 @@ fun SettingsScreen(
                             "어휘, 문법 등급 목록» (rev. 2020-11-17). Licencia 공공누리 제1유형 (uso libre con atribución).",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text(
+                        "Diccionario: 국립국어원, «한국어기초사전» (krdict.korean.go.kr), datos de 2019 con traducción al español. " +
+                            "Licencia CC BY-SA 2.0 KR. Algunas palabras de España se muestran como en Perú (coche → carro).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Text("Tu nivel ${s.level} se compara con el nivel ${s.standardLevel} de 6 del estándar.", style = MaterialTheme.typography.bodySmall)
                 }
             }

@@ -152,7 +152,8 @@ fun ImportScreen(container: AppContainer, onBack: () -> Unit) {
                                 // En el alcance de la app: si sales de la pantalla antes de que termine, la
                                 // lista igual se guarda (antes se cancelaba sin aviso y no entraba nada).
                                 val r = container.appScope.async { container.study.import(payload) }.await()
-                                message = "Guardado: ${r.wordsAdded} palabras y ${r.grammarAdded} puntos de gramática. ${r.duplicates} repetidos omitidos."
+                                message = "Guardado: ${r.wordsAdded} palabras y ${r.grammarAdded} puntos de gramática. ${r.duplicates} repetidos omitidos." +
+                                    (if (r.pending > 0) " ${r.pending} no están en el diccionario: quedaron en «Por revisar»." else "")
                                 preview = null
                                 pasted = ""
                                 pastedTxt = ""

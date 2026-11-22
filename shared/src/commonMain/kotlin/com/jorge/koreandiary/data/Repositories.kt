@@ -27,6 +27,9 @@ import com.jorge.koreandiary.data.standard.GrammarKeys
 import com.jorge.koreandiary.data.standard.StandardCatalog
 import com.jorge.koreandiary.data.standard.StdGrammar
 import com.jorge.koreandiary.data.standard.StdWord
+import com.jorge.koreandiary.dictionary.DictEntry
+import com.jorge.koreandiary.dictionary.KoreanDictionary
+import com.jorge.koreandiary.dictionary.PeruSpanish
 import com.jorge.koreandiary.progress.LevelCoverage
 import com.jorge.koreandiary.progress.LevelEstimate
 import com.jorge.koreandiary.review.Cloze
@@ -42,7 +45,8 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.random.Random
 
-data class ImportSummary(val wordsAdded: Int, val grammarAdded: Int, val duplicates: Int)
+/** [pending]: palabras que no están en el estándar ni en el diccionario y quedaron en «Por revisar». */
+data class ImportSummary(val wordsAdded: Int, val grammarAdded: Int, val duplicates: Int, val pending: Int = 0)
 
 data class ApplySummary(
     val corrections: Int,
@@ -135,7 +139,15 @@ data class ItemRef(val type: String, val id: Long) {
     }
 }
 
-class StudyRepository(private val db: AppDatabase, private val catalog: StandardCatalog) {
+/**
+ * [dictionary]: el 한국어기초사전 para verificar que una palabra existe antes de agregarla. Sin él
+ * (algunos tests) se usa la validación simple de antes.
+ */
+class StudyRepository(
+    private val db: AppDatabase,
+    private val catalog: StandardCatalog,
+    private val dictionary: KoreanDictionary? = null,
+) {
     private val study = db.studyDao()
     private val memory = db.memoryDao()
 
@@ -165,13 +177,24 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         var words = 0
         var grammar = 0
         var dupes = 0
+        var pending = 0
         for (w in payload.words) {
             val base = w.baseForm.trim()
             if (base.isEmpty() || study.findWord(base) != null) { dupes++; continue }
+            val std = standardWord(base)
+            // Lo que no está en el estándar ni en el diccionario puede venir mal escrito: «Por revisar».
+            if (std == null && dictionary != null && dictionaryWord(base) == null) {
+                if (study.findPendingWord(base) == null) {
+                    study.insertPendingWord(PendingWord(baseForm = base, type = w.type, meaning = w.meaning, pageId = null, createdAt = System.currentTimeMillis()))
+                }
+                pending++
+                continue
+            }
             // Si no trae nivel, se toma del estándar.
             val level = w.level.takeUnless { it.isBlank() || it == "desconocido" }
-                ?: standardWord(base)?.let { "${it.level}급" } ?: "desconocido"
-            study.insertWord(Word(baseForm = base, type = w.type, meaning = w.meaning, level = level, irregular = w.irregular, source = source))
+                ?: std?.let { "${it.level}급" } ?: "desconocido"
+            val meaning = w.meaning?.takeIf { it.isNotBlank() } ?: dictionaryMeaning(base)
+            study.insertWord(Word(baseForm = base, type = w.type, meaning = meaning, level = level, irregular = w.irregular, source = source))
             words++
         }
         for (g in payload.grammar) {
@@ -186,7 +209,7 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             )
             grammar++
         }
-        ImportSummary(words, grammar, dupes)
+        ImportSummary(words, grammar, dupes, pending)
     }
 
     /**
@@ -720,11 +743,13 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
             val base = v.form.trim()
             if (base.isEmpty() || v.isGrammar || study.findWord(base) != null) continue
             val std = standardWord(base)
-            if (std == null && !looksLikeKoreanWord(base)) continue
-            val type = if (v.kind in WORD_KINDS) v.kind else std?.type ?: "otro"
+            val dict = if (std == null) dictionaryWord(base) else null
+            // Impresas en el libro: si no está en el estándar ni en el diccionario, la foto se leyó mal.
+            if (std == null && (if (dictionary != null) dict == null else !looksLikeKoreanWord(base))) continue
+            val type = if (v.kind in WORD_KINDS) v.kind else std?.type ?: dict?.wordType ?: "otro"
             study.insertWord(
                 Word(
-                    baseForm = base, type = type, meaning = v.meaning,
+                    baseForm = base, type = type, meaning = v.meaning ?: dictionaryMeaning(base),
                     level = std?.let { "${it.level}급" } ?: "desconocido",
                     source = ItemSource.WORKBOOK,
                 )
@@ -847,24 +872,40 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
         val base = (stdWord?.word ?: u.form).trim()
         study.findWord(base)?.let { return Resolved(ItemRef(ItemType.WORD, it.id), isNew = false, wasSuggested = wasSuggested) }
         val std = stdWord ?: standardWord(base)
-        // Fuera del estándar, lo que no parece palabra o lo que usaste mal va a «Por revisar»: puede
-        // ser una palabra mal escrita o mal leída (así entró «이난», pedido por Jorge el 2026-11-21).
-        if (std == null && (!looksLikeKoreanWord(base) || !u.correct)) {
+        val dict = if (std == null) dictionaryWord(base) else null
+        // Lo que no está en el estándar ni en el 한국어기초사전 va a «Por revisar»: puede ser una palabra
+        // mal escrita o mal leída (así entró «이난», pedido por Jorge el 2026-11-21). Sin diccionario
+        // (tests): lo que no parece palabra, o lo que usaste mal.
+        val doubtful = if (dictionary != null) std == null && dict == null else std == null && (!looksLikeKoreanWord(base) || !u.correct)
+        if (doubtful) {
             if (study.findPendingWord(base) == null) {
                 study.insertPendingWord(PendingWord(baseForm = base, type = u.kind, meaning = u.meaning, pageId = pageId, createdAt = now))
                 onPending()
             }
             return null
         }
-        val type = if (u.kind in WORD_KINDS) u.kind else std?.type ?: "otro"
+        val type = if (u.kind in WORD_KINDS) u.kind else std?.type ?: dict?.wordType ?: "otro"
         val id = study.insertWord(
             Word(
-                baseForm = base, type = type, meaning = u.meaning,
+                baseForm = base, type = type, meaning = u.meaning ?: dictionaryMeaning(base),
                 level = std?.let { "${it.level}급" } ?: "desconocido",
                 source = if (wasSuggested) ItemSource.GAP else ItemSource.DIARY,
             )
         )
         return Resolved(ItemRef(ItemType.WORD, id), isNew = true, wasSuggested = wasSuggested)
+    }
+
+    /** La palabra en el 한국어기초사전 (la más común si hay homónimos); null si no está o no hay diccionario. */
+    private suspend fun dictionaryWord(form: String): DictEntry? =
+        dictionary?.let { d -> withContext(Dispatchers.Default) { d.entries(form).firstOrNull { !it.grammar } } }
+
+    /** La traducción corta del diccionario (primer sentido), en el español de Perú. */
+    private suspend fun dictionaryMeaning(form: String): String? = dictionary?.let { d ->
+        withContext(Dispatchers.Default) {
+            val entry = d.entries(form).firstOrNull { !it.grammar } ?: return@withContext null
+            val sense = d.detail(entry)?.senses?.firstOrNull() ?: return@withContext null
+            (sense.lemma ?: sense.definition)?.let(PeruSpanish::adaptLemma)?.take(80)
+        }
     }
 
     private suspend fun standardWord(form: String): StdWord? = withContext(Dispatchers.Default) { catalog.word(form) }
@@ -888,8 +929,8 @@ class StudyRepository(private val db: AppDatabase, private val catalog: Standard
     }
 
     /**
-     * Validación de palabras que no están en el estándar: solo sílabas hangul y largo razonable.
-     * TODO: validar contra la API abierta del 한국어기초사전 (requiere clave gratuita).
+     * Validación simple, solo cuando no hay diccionario (algunos tests): sílabas hangul y largo
+     * razonable. En la app las palabras se verifican contra el 한국어기초사전 ([dictionary]).
      */
     private fun looksLikeKoreanWord(s: String): Boolean =
         s.length in 1..12 && s.all { it in '가'..'힣' }

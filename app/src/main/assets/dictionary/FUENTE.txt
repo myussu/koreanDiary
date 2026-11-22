@@ -1,0 +1,12 @@
+Diccionario de palabras y gramática con traducción al español
+
+Fuente: 국립국어원 «한국어기초사전» (Diccionario Básico de Coreano del Instituto Nacional de la
+Lengua Coreana), https://krdict.korean.go.kr
+Datos: respaldo XML del 2019-08-02, https://github.com/spellcheck-ko/korean-dict-nikl-krdict
+
+Licencia: Creative Commons Atribución-CompartirIgual 2.0 Corea (CC BY-SA 2.0 KR),
+https://creativecommons.org/licenses/by-sa/2.0/kr/
+Cambios: se guardan solo palabras y gramática, con la traducción al español y algunos ejemplos;
+la app cambia algunas palabras de España por las de Perú al mostrarlas. Estos archivos se
+comparten con la misma licencia.
+Formato: tools/build_dictionary.py

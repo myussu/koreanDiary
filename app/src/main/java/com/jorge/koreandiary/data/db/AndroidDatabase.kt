@@ -5,6 +5,7 @@ import android.content.res.AssetManager
 import androidx.room3.Room
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.jorge.koreandiary.data.standard.StandardCatalog
+import com.jorge.koreandiary.dictionary.KoreanDictionary
 
 /**
  * Lo único de la base que depende de Android: dónde vive el archivo. La definición (entidades,
@@ -15,6 +16,11 @@ fun AppDatabase.Companion.create(context: Context): AppDatabase =
         // Room 3 exige un driver. El bundled trae su propio SQLite: mismo comportamiento en todo Android.
         .setDriver(BundledSQLiteDriver())
         .build()
+
+/** El 한국어기초사전 leído de assets/dictionary (tools/build_dictionary.py). */
+fun androidKoreanDictionary(assets: AssetManager): KoreanDictionary = KoreanDictionary { name ->
+    assets.open("dictionary/$name").bufferedReader(Charsets.UTF_8).use { it.readLines() }
+}
 
 /** Catálogo estándar leído de assets/standard. */
 fun androidStandardCatalog(assets: AssetManager): StandardCatalog = StandardCatalog { name ->

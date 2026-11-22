@@ -159,7 +159,8 @@ object Features {
                 phone("Si una palabra quedó mal escrita en tu lista, tócala: «Corregir» la cambia sin perder su historial y «Quitar de mi lista» la borra con su historial."),
                 phone("«Importar» tu lista de gramática (TXT) o vocabulario."),
                 phone("Lo que usas en el diario entra solo a tu lista, con su nivel."),
-                phone("«Por revisar»: palabras que la app no reconoció, que usaste mal y no están en el estándar (pueden estar mal escritas), o que preguntaste al escuchar; las agregas o las descartas."),
+                phone("Las palabras nuevas (del diario, el libro, la conversación o una lista importada) se verifican con el diccionario 한국어기초사전, que va dentro de la app: si no está ahí, puede estar mal escrita o mal leída y queda en «Por revisar»."),
+                phone("«Por revisar»: palabras que no están en el diccionario o que preguntaste al escuchar; las agregas o las descartas."),
             ),
         ),
         FeatureGroup(

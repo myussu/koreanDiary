@@ -16,6 +16,7 @@ import com.jorge.koreandiary.data.DiaryRepository
 import com.jorge.koreandiary.data.ExplanationStore
 import com.jorge.koreandiary.data.StudyRepository
 import com.jorge.koreandiary.data.db.AppDatabase
+import com.jorge.koreandiary.data.db.androidKoreanDictionary
 import com.jorge.koreandiary.data.db.androidStandardCatalog
 import com.jorge.koreandiary.data.db.create
 import com.jorge.koreandiary.ink.HandwritingRecognizer
@@ -39,7 +40,12 @@ class AppContainer(val app: Application) {
     val database = AppDatabase.create(app)
     /** Catálogo estándar del 국립국어원 (en assets); se carga la primera vez que se usa. */
     val catalog = androidStandardCatalog(app.assets)
-    val study = StudyRepository(database, catalog)
+    /**
+     * El 한국어기초사전 (en assets): verifica las palabras nuevas y da formas de diccionario y
+     * significados sin IA. Su lista se carga en segundo plano al abrir la app.
+     */
+    val dictionary = androidKoreanDictionary(app.assets)
+    val study = StudyRepository(database, catalog, dictionary)
     val diary = DiaryRepository(database)
     val suggestions = SuggestionEngine(database.studyDao(), database.memoryDao(), catalog)
     val settings = SettingsStore(app)
@@ -96,6 +102,8 @@ class AppContainer(val app: Application) {
         }
         // Y otra vez justo antes de que Android reemplace la app, por lo escrito durante la copia.
         updater.beforeCommit = { saveOpenPages() }
+        // La lista del diccionario (~51.000 entradas) se carga ya, para que la primera búsqueda no espere.
+        appScope.launch { runCatching { dictionary.warmUp() } }
     }
 
     /** Proveedor por API listo para usar, o null si le falta configuración. */
