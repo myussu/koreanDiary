@@ -1,11 +1,13 @@
 package com.jorge.koreandiary
 
+import com.jorge.koreandiary.dictionary.DictionaryLookup
 import com.jorge.koreandiary.dictionary.Hangul
 import com.jorge.koreandiary.dictionary.KoreanDictionary
 import com.jorge.koreandiary.dictionary.PeruSpanish
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -77,6 +79,34 @@ class DictionaryTest {
         val jang = dictionary.entries("장")
         assertTrue(jang.size >= 5)
         assertEquals(1, jang.first().level)
+    }
+
+    @Test
+    fun tocarUnaPalabra() {
+        val medal = DictionaryLookup.lookup(dictionary, "은메달을")!!
+        assertEquals(listOf("은메달"), medal.forms)
+        assertEquals("medalla de plata", medal.entries.first().senses.first().lemma)
+        assertEquals("은 銀 + medal", medal.entries.first().origin)
+        // Después de un número, primero el contador: 세 장 = tres hojas.
+        val counted = DictionaryLookup.lookup(dictionary, "장", previous = "세")!!
+        assertEquals("의존 명사", counted.entries.first().entry.pos)
+        assertEquals("contador o unidad", counted.entries.first().kind)
+        // Nativa: sin origen.
+        assertNull(DictionaryLookup.lookup(dictionary, "시원해요")!!.entries.first().origin)
+        // No está: la app le pregunta a la IA.
+        assertNull(DictionaryLookup.lookup(dictionary, "이난"))
+    }
+
+    @Test
+    fun origenPorPartes() {
+        assertEquals("은 銀 + medal", DictionaryLookup.originParts("은메달", "銀 medal"))
+        assertEquals("공 工 · 부 夫 + 하다", DictionaryLookup.originParts("공부하다", "工夫 하다"))
+        assertEquals("노래 + 방 房", DictionaryLookup.originParts("노래방", "노래 房"))
+        assertEquals("대 大 · 회 會", DictionaryLookup.originParts("대회", "大會"))
+        assertEquals("shirt", DictionaryLookup.originParts("셔츠", "←shirt"))
+        assertEquals("hand phone", DictionaryLookup.originParts("핸드폰", "▼hand phone"))
+        assertTrue(DictionaryLookup.isNumber("세"))
+        assertTrue(DictionaryLookup.isNumber("3"))
     }
 
     @Test

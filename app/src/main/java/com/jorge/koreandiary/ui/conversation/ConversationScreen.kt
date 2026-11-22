@@ -69,6 +69,9 @@ import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.DictionaryEntries
+import com.jorge.koreandiary.ui.fadingEdges
+import androidx.compose.foundation.layout.heightIn
 import com.jorge.koreandiary.ui.PartsLine
 import com.jorge.koreandiary.ui.ReviewLevelsLine
 import com.jorge.koreandiary.ui.rememberSlowClock
@@ -516,7 +519,12 @@ internal fun CoachPanelView(
         contentColor = scheme.onSurface,
         modifier = Modifier.fillMaxWidth().border(1.dp, scheme.outline),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Con alto máximo y desplazamiento: lo del diccionario o una ayuda larga no empujan los botones.
+        val scroll = rememberScrollState()
+        Column(
+            Modifier.heightIn(max = 360.dp).fadingEdges(scroll, vertical = true).verticalScroll(scroll).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             when (panel) {
                 is CoachPanel.Loading -> Text(panel.what, style = MaterialTheme.typography.bodyMedium)
                 is CoachPanel.Error -> Text(panel.message, color = scheme.error, style = MaterialTheme.typography.bodyMedium)
@@ -530,9 +538,16 @@ internal fun CoachPanelView(
                         if (h.spanish.isNotBlank()) Text(h.spanish, style = MaterialTheme.typography.bodySmall)
                     }
                 }
+                is CoachPanel.DictShown -> {
+                    val r = panel.result
+                    val base = r.forms.first()
+                    Text(if (base != r.written) "${r.written} → $base" else r.written, fontWeight = FontWeight.SemiBold)
+                    DictionaryEntries(r)
+                }
                 is CoachPanel.WordShown -> {
                     val g = panel.gloss
                     Text(if (g.form != g.word) "${g.word} → ${g.form}" else g.word, fontWeight = FontWeight.SemiBold)
+                    Text("No está en el diccionario. Según la IA:", style = MaterialTheme.typography.labelSmall)
                     Text(g.meaning)
                     g.parts?.let { PartsLine(g.form, it) }
                     g.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }

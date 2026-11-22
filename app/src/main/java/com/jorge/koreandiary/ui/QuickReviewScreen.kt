@@ -57,6 +57,10 @@ import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.InkTool
 import com.jorge.koreandiary.review.Cloze
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.jorge.koreandiary.dictionary.WordLookupResult
+import com.jorge.koreandiary.dictionary.DictionaryLookup
 import com.jorge.koreandiary.review.ClozeCard
 import com.jorge.koreandiary.review.ClozeKind
 import com.jorge.koreandiary.srs.Fsrs
@@ -70,17 +74,32 @@ import kotlinx.coroutines.launch
 /** Cómo terminó la respuesta de una tarjeta. */
 enum class ClozeOutcome { RIGHT, WRONG, REVEALED }
 
-/** Una palabra que tocaste en la oración: qué es, de qué partes se forma y si ya está en tu lista. */
+/**
+ * Una palabra que tocaste en la oración. Primero el diccionario (sin IA); si no la tiene, la IA,
+ * marcada «según la IA» (decidido con Jorge el 2026-11-22).
+ */
 data class WordLookup(
     val word: String,
+    /** Lo que dice el 한국어기초사전; null mientras busca o si no la tiene. */
+    val dict: WordLookupResult? = null,
+    /** Lo que dijo la IA cuando el diccionario no la tiene. */
     val gloss: WordGloss? = null,
+    /** La forma que dio la IA sí está en el diccionario (solo así se puede agregar). */
+    val glossKnown: Boolean = false,
     val loading: Boolean = true,
     val note: String? = null,
-    /** null mientras no se sabe (o si es gramática); true si ya está en tu lista. */
-    val inList: Boolean? = null,
-    /** La acabas de agregar desde aquí. */
-    val added: Boolean = false,
-)
+    /** Formas de diccionario que ya están en tu lista. */
+    val inList: Set<String> = emptySet(),
+    /** Las que acabas de agregar desde aquí. */
+    val added: Set<String> = emptySet(),
+    /** De qué partes se forma una palabra nativa (el diccionario no lo dice), según la IA. */
+    val aiParts: String? = null,
+    val aiPartsLoading: Boolean = false,
+) {
+    /** Se pueden pedir las partes a la IA: nativa (sin origen en el diccionario) y de más de una sílaba. */
+    val canAskParts: Boolean
+        get() = dict?.entries?.firstOrNull()?.let { e -> e.origin == null && !e.entry.grammar && e.entry.form.removeSuffix("다").length > 1 } == true
+}
 
 data class QuickReviewState(
     val loading: Boolean = true,
@@ -287,8 +306,9 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     private val glosses = mutableMapOf<String, WordGloss>()
 
     /**
-     * Tocar una palabra de la oración: qué significa ahí, de qué partes se forma y si está en tu
-     * lista (con IA, una llamada por palabra). Tocarla otra vez la cierra. No toca el repaso.
+     * Tocar una palabra de la oración: lo que dice el diccionario (forma de diccionario, sentidos,
+     * origen) y si está en tu lista, sin IA. Si el diccionario no la tiene, la IA, marcada. Tocarla
+     * otra vez la cierra. No toca el repaso.
      */
     fun lookup(word: String) {
         val st = _state.value
@@ -301,6 +321,17 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         val key = "$word|${card.sentence}"
         _state.update { it.copy(lookup = WordLookup(word)) }
         viewModelScope.launch {
+            val dict = withContext(Dispatchers.Default) {
+                DictionaryLookup.lookup(c.dictionary, word, previous = previousWord(card.sentence, word))
+            }
+            if (dict != null) {
+                val inList = dict.entries.filter { !it.entry.grammar }.map { it.entry.form }.distinct().filter { c.study.hasWord(it) }.toSet()
+                _state.update { s ->
+                    val open = s.lookup
+                    if (s.index == index && open != null && open.word == word) s.copy(lookup = open.copy(dict = dict, loading = false, inList = inList)) else s
+                }
+                return@launch
+            }
             var note: String? = null
             val gloss = glosses[key] ?: run {
                 val settings = c.settings.state.value
@@ -323,29 +354,92 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                     }
                 }
             }
-            val inList = gloss?.takeIf { !it.isGrammar }?.let { c.study.hasWord(it.form) }
+            val inList = gloss?.takeIf { !it.isGrammar && c.study.hasWord(it.form) }?.let { setOf(it.form) }.orEmpty()
+            val known = gloss != null && withContext(Dispatchers.Default) { c.dictionary.isWord(gloss.form) }
             _state.update { s ->
                 val open = s.lookup
-                if (s.index == index && open != null && open.word == word) s.copy(lookup = open.copy(gloss = gloss, loading = false, note = note, inList = inList)) else s
+                if (s.index == index && open != null && open.word == word) {
+                    s.copy(lookup = open.copy(gloss = gloss, glossKnown = known, loading = false, note = note, inList = inList))
+                } else s
             }
         }
     }
 
+    /** La palabra que va antes de [word] en la oración (para poner primero los contadores: 세 장). */
+    private fun previousWord(sentence: String, word: String): String? {
+        val tokens = sentence.split(Regex("\\s+")).map { Cloze.tapTarget(it) ?: it }
+        val i = tokens.indexOf(word)
+        return if (i > 0) tokens[i - 1] else null
+    }
+
     fun closeLookup() = _state.update { it.copy(lookup = null) }
 
-    /** «Agregar a mi lista»: la palabra tocada entra como nueva (la app te la va a sugerir). */
-    fun addLookup() {
+    /**
+     * «Agregar a mi lista»: [form] entra como nueva (la app te la va a sugerir), con el tipo y el
+     * significado del diccionario. Lo que dio la IA solo si el diccionario conoce la forma: si no,
+     * puede estar mal escrita.
+     */
+    fun addLookup(form: String) {
         val st = _state.value
         val open = st.lookup ?: return
-        val gloss = open.gloss ?: return
-        if (open.inList != false || gloss.isGrammar) return
+        if (form in open.inList) return
+        val entry = open.dict?.entries?.firstOrNull { it.entry.form == form && !it.entry.grammar }
+        val gloss = open.gloss?.takeIf { it.form == form && !it.isGrammar }
+        if (entry == null && (gloss == null || !open.glossKnown)) return
+        val type = entry?.entry?.wordType ?: gloss?.type
+        val meaning = entry?.senses?.firstOrNull()?.let { it.lemma ?: it.definition } ?: gloss?.meaning
         val index = st.index
         // En el alcance de la app: queda agregada aunque cierres la pantalla enseguida.
         c.appScope.launch {
-            c.study.addLookedUpWord(gloss.form, gloss.type, gloss.meaning)
+            c.study.addLookedUpWord(form, type, meaning)
             _state.update { s ->
                 val latest = s.lookup
-                if (s.index == index && latest != null && latest.word == open.word) s.copy(lookup = latest.copy(inList = true, added = true)) else s
+                if (s.index == index && latest != null && latest.word == open.word) {
+                    s.copy(lookup = latest.copy(inList = latest.inList + form, added = latest.added + form))
+                } else s
+            }
+        }
+    }
+
+    /**
+     * «¿De qué partes se forma?» para una palabra nativa: el diccionario no lo dice, así que se le
+     * pregunta a la IA (con el modelo de las explicaciones) y se muestra marcado y revisado.
+     */
+    fun askParts() {
+        val st = _state.value
+        val card = st.card ?: return
+        val open = st.lookup ?: return
+        if (!open.canAskParts || open.aiPartsLoading) return
+        val index = st.index
+        val key = "${open.word}|${card.sentence}"
+        _state.update { it.copy(lookup = open.copy(aiPartsLoading = true, note = null)) }
+        viewModelScope.launch {
+            var note: String? = null
+            val gloss = glosses[key] ?: run {
+                val settings = c.settings.state.value
+                val provider = c.explainProvider()
+                when {
+                    provider == null -> null.also { note = "Para pedir las partes, configura Gemini o Azure en Ajustes › IA." }
+                    c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also { note = "Llegaste al límite diario de la IA." }
+                    else -> try {
+                        val raw = provider.second.complete(CorrectionRequest(ConversationPrompts.word(open.word, card.sentence)))
+                        c.settings.registerUse(provider.first)
+                        ConversationParser.word(raw, open.word).also { glosses[key] = it }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: ProviderException) {
+                        null.also { note = c.explainError(e, provider.first) }
+                    } catch (e: Exception) {
+                        null.also { note = e.message ?: e.javaClass.simpleName }
+                    }
+                }
+            }
+            val parts = gloss?.let { it.parts ?: "Es una palabra simple: no se forma de otras partes." }
+            _state.update { s ->
+                val latest = s.lookup
+                if (s.index == index && latest != null && latest.word == open.word) {
+                    s.copy(lookup = latest.copy(aiParts = parts, aiPartsLoading = false, note = note))
+                } else s
             }
         }
     }
@@ -539,7 +633,7 @@ private fun CardView(
                 style = MaterialTheme.typography.labelMedium,
                 color = scheme.onSurfaceVariant,
             )
-            state.lookup?.let { WordPanel(it, onAdd = vm::addLookup, onClose = vm::closeLookup) }
+            state.lookup?.let { WordPanel(it, onAdd = vm::addLookup, onAskParts = vm::askParts, onClose = vm::closeLookup) }
             if (state.hints > 0) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Cloze.hints(card).take(state.hints).forEachIndexed { i, h ->
@@ -676,42 +770,73 @@ private fun CardView(
     }
 }
 
-/** La palabra tocada: lo que es en esta oración, de qué partes se forma y, si no está en tu lista, «Agregar a mi lista». */
+/**
+ * La palabra tocada: lo que dice el diccionario (o, si no la tiene, la IA, marcada) y, por cada
+ * forma que no está en tu lista, «Agregar a mi lista».
+ */
 @Composable
-private fun WordPanel(lookup: WordLookup, onAdd: () -> Unit, onClose: () -> Unit) {
+private fun WordPanel(lookup: WordLookup, onAdd: (String) -> Unit, onAskParts: () -> Unit, onClose: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val dict = lookup.dict
     val gloss = lookup.gloss
+    val base = dict?.forms?.firstOrNull() ?: gloss?.form
     Column(
         Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(start = 12.dp, end = 4.dp, bottom = 12.dp).testTag("repaso_palabra"),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (gloss != null && gloss.form != lookup.word) "${lookup.word} → ${gloss.form}" else lookup.word,
+                if (base != null && base != lookup.word) "${lookup.word} → $base" else lookup.word,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
             AppTextButton(onClick = onClose) { Text("✕") }
         }
-        Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (lookup.loading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text("Buscando…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
             }
+            if (dict != null) {
+                DictionaryEntries(dict)
+                if (lookup.canAskParts) {
+                    when {
+                        lookup.aiParts != null -> Column {
+                            Text("Según la IA", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                            PartsLine(dict.entries.first().entry.form, lookup.aiParts)
+                        }
+                        lookup.aiPartsLoading -> Text("Preguntando a la IA…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                        else -> AppTextButton(onClick = onAskParts, modifier = Modifier.testTag("repaso_palabra_partes")) { Text("¿De qué partes se forma? (IA)") }
+                    }
+                }
+                dict.entries.filter { !it.entry.grammar }.map { it.entry.form }.distinct().forEachIndexed { i, form ->
+                    AddRow(form, lookup, onAdd, Modifier.testTag(if (i == 0) "repaso_palabra_agregar" else "repaso_palabra_agregar_$i"))
+                }
+            }
             gloss?.let { g ->
+                Text("No está en el diccionario. Según la IA:", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
                 Text(g.meaning, style = MaterialTheme.typography.bodyLarge)
                 g.parts?.let { PartsLine(g.form, it) }
                 g.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                when {
-                    g.isGrammar -> {}
-                    lookup.added -> Text("Agregada a tu lista: la app te la va a sugerir.", style = MaterialTheme.typography.bodySmall, color = scheme.tertiary)
-                    lookup.inList == true -> Text("Ya está en tu lista.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    lookup.inList == false -> AppOutlinedButton(onClick = onAdd, modifier = Modifier.testTag("repaso_palabra_agregar")) { Text("Agregar a mi lista") }
-                }
+                if (!g.isGrammar) AddRow(g.form, lookup, onAdd, Modifier.testTag("repaso_palabra_agregar"))
             }
             lookup.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
         }
+    }
+}
+
+/** «Agregar «X» a mi lista», o que ya está, o que se acaba de agregar. Lo que dio la IA sin estar en el diccionario no se agrega. */
+@Composable
+private fun AddRow(form: String, lookup: WordLookup, onAdd: (String) -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val fromDict = lookup.dict?.entries?.any { it.entry.form == form } == true
+    when {
+        form in lookup.added -> Text("«$form» quedó en tu lista: la app te la va a sugerir.", style = MaterialTheme.typography.bodySmall, color = scheme.tertiary)
+        form in lookup.inList -> Text("«$form» ya está en tu lista.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        fromDict || (lookup.gloss?.form == form && lookup.glossKnown) ->
+            AppOutlinedButton(onClick = { onAdd(form) }, modifier = modifier) { Text("Agregar «$form» a mi lista") }
+        else -> Text("No la agrego a tu lista: no está en el diccionario y puede estar mal escrita.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
     }
 }
 

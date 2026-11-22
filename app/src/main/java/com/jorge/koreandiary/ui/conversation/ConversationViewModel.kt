@@ -1,5 +1,9 @@
 package com.jorge.koreandiary.ui.conversation
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import com.jorge.koreandiary.dictionary.WordLookupResult
+import com.jorge.koreandiary.dictionary.DictionaryLookup
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jorge.koreandiary.AppContainer
@@ -73,7 +77,10 @@ sealed interface CoachPanel {
     data class Loading(val what: String) : CoachPanel
     /** [level]: 1 = palabra o patrón, 2 = media oración, 3 = oración completa. */
     data class HintShown(val hint: Hint, val level: Int, val auto: Boolean = false) : CoachPanel
+    /** Lo que dijo la IA de una palabra que el diccionario no tiene. */
     data class WordShown(val gloss: WordGloss) : CoachPanel
+    /** Lo que dice el 한국어기초사전 de una palabra tocada (sin IA). */
+    data class DictShown(val result: WordLookupResult) : CoachPanel
     data class SentenceShown(val gloss: SentenceGloss) : CoachPanel
     /** Un objetivo de repaso: lo que dice tu lista y, si la pides, la explicación de la IA. */
     data class TargetShown(val item: PromptItem, val detail: String?, val explanation: ItemExplanation? = null) : CoachPanel
@@ -678,20 +685,42 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * Tocar una palabra: primero el 한국어기초사전, sin IA (decidido con Jorge el 2026-11-22); si no
+     * la tiene, la IA con el modelo de las explicaciones, marcada.
+     */
     fun lookup(word: String, sentence: String) {
         val clean = word.trim { !it.isLetterOrDigit() }
         if (clean.isEmpty()) return
-        // Con el modelo de las explicaciones: el desglose de la palabra tiene que ser confiable.
-        coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence), explains = true) { raw ->
-            val gloss = ConversationParser.word(raw, clean)
-            if (c.listen.state.value.phase.active) {
-                c.listen.noteLookup(clean, "${gloss.form}: ${gloss.meaning}")
-            } else {
-                lookups += "${gloss.form}: ${gloss.meaning}"
-                // El modelo de voz se entera en silencio y baja el nivel.
-                session?.send(LiveProtocol.context(ConversationPrompts.unknownWord(clean), respond = false))
+        coachJob?.cancel()
+        _state.update { it.copy(panel = CoachPanel.Loading("Buscando «$clean»…")) }
+        coachJob = viewModelScope.launch {
+            val previous = sentence.split(Regex("\\s+")).map { it.trim { ch -> !ch.isLetterOrDigit() } }.let { t ->
+                t.indexOf(clean).takeIf { it > 0 }?.let { t[it - 1] }
             }
-            CoachPanel.WordShown(gloss)
+            val dict = withContext(Dispatchers.Default) { DictionaryLookup.lookup(c.dictionary, clean, previous) }
+            if (!isActive) return@launch
+            if (dict != null) {
+                val first = dict.entries.first()
+                noteLookup(clean, "${first.entry.form}: ${first.senses.firstOrNull()?.lemma ?: first.senses.firstOrNull()?.definition.orEmpty()}")
+                _state.update { it.copy(panel = CoachPanel.DictShown(dict)) }
+                return@launch
+            }
+            coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence), explains = true) { raw ->
+                val gloss = ConversationParser.word(raw, clean)
+                noteLookup(clean, "${gloss.form}: ${gloss.meaning}")
+                CoachPanel.WordShown(gloss)
+            }
+        }
+    }
+
+    /** Lo que buscaste: queda para la revisión y el modelo de voz se entera en silencio (y baja el nivel). */
+    private fun noteLookup(word: String, line: String) {
+        if (c.listen.state.value.phase.active) {
+            c.listen.noteLookup(word, line)
+        } else {
+            lookups += line
+            session?.send(LiveProtocol.context(ConversationPrompts.unknownWord(word), respond = false))
         }
     }
 
