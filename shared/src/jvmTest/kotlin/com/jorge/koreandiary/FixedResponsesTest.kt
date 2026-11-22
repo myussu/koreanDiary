@@ -86,6 +86,12 @@ class FixedResponsesTest {
     }
 
     @Test
+    fun quickReviewTranslatesOnDemand() {
+        val t = Cloze.parseTranslation(FixedResponses.answer(Cloze.translatePrompt("날씨가 무척 덥군요.", "덥군요")))
+        assertTrue(t.contains('['))
+    }
+
+    @Test
     fun workbookPhotos() {
         val hints = WorkbookParser.parseHints(FixedResponses.answer(Prompts.workbookHints("3A", 3, "-느라고", listOf("-는데"))))
         assertEquals(2, hints.exercises.size)

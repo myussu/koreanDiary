@@ -62,6 +62,7 @@ import kotlinx.coroutines.Dispatchers
 import com.jorge.koreandiary.dictionary.WordLookupResult
 import com.jorge.koreandiary.dictionary.DictionaryLookup
 import com.jorge.koreandiary.review.ClozeCard
+import com.jorge.koreandiary.review.DictionaryCloze
 import com.jorge.koreandiary.review.ClozeKind
 import com.jorge.koreandiary.srs.Fsrs
 import kotlinx.coroutines.CancellationException
@@ -135,15 +136,20 @@ data class QuickReviewState(
     /** La palabra de la oración que tocaste, si hay una abierta. */
     val lookup: WordLookup? = null,
     val tally: Map<Fsrs.Rating, Int> = emptyMap(),
+    /** «Traducir» en tus oraciones y las del diccionario: lo que tradujo la IA, por tarjeta. */
+    val translations: Map<String, String> = emptyMap(),
+    /** La tarjeta que se está traduciendo. */
+    val translating: String? = null,
+    val translateNote: String? = null,
 ) {
     val card: ClozeCard? get() = cards.getOrNull(index)
     val done: Boolean get() = !loading && cards.isNotEmpty() && index >= cards.size
 }
 
 /**
- * Repaso rápido: arma la sesión (tus oraciones y, con IA, una sola llamada para traducirlas y escribir
- * las que faltan), lee lo que escribes a mano y califica cada tarjeta al cerrarla: si sales a la mitad,
- * lo hecho ya contó.
+ * Repaso rápido: arma la sesión (tus oraciones, oraciones del diccionario para lo demás y, con IA, una
+ * sola llamada para escribir las que faltan), lee lo que escribes a mano y califica cada tarjeta al
+ * cerrarla: si sales a la mitad, lo hecho ya contó.
  */
 class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(QuickReviewState())
@@ -164,19 +170,26 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                 _state.update { it.copy(loading = false, empty = empty) }
                 return@launch
             }
+            // Primero tus oraciones; para lo demás, una del diccionario; la IA solo escribe las que faltan.
+            val own = Cloze.localCards(targets)
+            val fromDictionary = withContext(Dispatchers.Default) {
+                targets.filter { !it.own }.mapNotNull { t -> runCatching { DictionaryCloze.card(c.dictionary, t) }.getOrNull() }
+            }
+            val missing = targets.filter { t -> !t.own && fromDictionary.none { it.code == t.code } }
             val provider = c.coachProvider()
             var note: String? = null
-            val cards = if (provider == null) {
-                note = "Sin IA van solo tus oraciones, sin traducción. Con Gemini (Ajustes › IA) también salen oraciones para lo que nunca usaste."
-                Cloze.localCards(targets)
-            } else if (c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first)) {
-                note = "Llegaste al límite diario de la IA: van solo tus oraciones, sin traducción."
-                Cloze.localCards(targets)
-            } else {
-                try {
-                    val raw = provider.second.complete(CorrectionRequest(Cloze.prompt(settings.profile, settings.level, settings.standardLevel, targets)))
+            val fromAi: List<ClozeCard> = when {
+                missing.isEmpty() -> emptyList()
+                provider == null -> emptyList<ClozeCard>().also {
+                    note = "${missing.size} sin oración tuya ni del diccionario quedaron fuera: con Gemini (Ajustes › IA), la IA las escribe."
+                }
+                c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> emptyList<ClozeCard>().also {
+                    note = "Llegaste al límite diario de la IA: ${missing.size} sin oración tuya ni del diccionario quedaron fuera."
+                }
+                else -> try {
+                    val raw = provider.second.complete(CorrectionRequest(Cloze.prompt(settings.profile, settings.level, settings.standardLevel, missing)))
                     c.settings.registerUse(provider.first)
-                    Cloze.parse(raw, targets)
+                    Cloze.parse(raw, missing)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -184,14 +197,15 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                         is ProviderException -> if (e.offline) "Sin conexión" else e.message ?: "Error de la IA"
                         is ParseException -> "No se pudo leer la respuesta de la IA"
                         else -> e.message ?: e.javaClass.simpleName
-                    } + ": van solo tus oraciones, sin traducción."
-                    Cloze.localCards(targets)
+                    } + ": ${missing.size} sin oración tuya ni del diccionario quedaron fuera."
+                    emptyList()
                 }
             }
+            val cards = own + fromDictionary + fromAi
             _state.update {
                 it.copy(
                     loading = false, cards = cards, note = note,
-                    empty = if (cards.isEmpty()) "No encontré oraciones tuyas con lo que te toca repasar. Con la IA configurada, ella las escribe." else null,
+                    empty = if (cards.isEmpty()) "No encontré oraciones con lo que te toca repasar. Con la IA configurada, ella las escribe." else null,
                 )
             }
         }
@@ -302,6 +316,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         it.copy(
             index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, copied = null, strokes = emptyList(), note = null,
             checking = false, explain = null, explaining = false, explainNote = null, explainParts = null, explainPartsLoading = false, lookup = null,
+            translateNote = null,
         )
     }
 
@@ -492,6 +507,49 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * «Traducir»: tus oraciones y las del diccionario no traen traducción (la pista es «Falta: …»);
+     * si la quieres, la IA la traduce con lo del hueco resaltado. Queda para esta sesión.
+     */
+    fun translate() {
+        val st = _state.value
+        val card = st.card ?: return
+        if (card.translation != null || card.code in st.translations || st.translating != null) return
+        val provider = c.coachProvider()
+        if (provider == null) {
+            _state.update { it.copy(translateNote = "Para traducir, configura Gemini (es gratis) en Ajustes › IA.") }
+            return
+        }
+        if (c.settings.usageToday(provider.first) >= c.settings.state.value.dailyLimit(provider.first)) {
+            _state.update { it.copy(translateNote = "Llegaste al límite diario de la IA.") }
+            return
+        }
+        _state.update { it.copy(translating = card.code, translateNote = null) }
+        viewModelScope.launch {
+            var note: String? = null
+            val text = try {
+                val raw = provider.second.complete(CorrectionRequest(Cloze.translatePrompt(card.sentence, card.answer)))
+                c.settings.registerUse(provider.first)
+                Cloze.parseTranslation(raw)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ProviderException) {
+                null.also { note = if (e.offline) "Sin conexión." else e.message ?: "Error de la IA." }
+            } catch (e: ParseException) {
+                null.also { note = "No se pudo leer la respuesta de la IA." }
+            } catch (e: Exception) {
+                null.also { note = e.message ?: e.javaClass.simpleName }
+            }
+            _state.update { s ->
+                s.copy(
+                    translating = null,
+                    translations = if (text != null) s.translations + (card.code to text) else s.translations,
+                    translateNote = if (s.card?.code == card.code) note else s.translateNote,
+                )
+            }
+        }
+    }
+
     /** «¿De qué partes se forma?» en «Más sobre esto»: el diccionario no desglosa las palabras nativas. */
     fun askExplainParts() {
         val st = _state.value
@@ -590,8 +648,10 @@ private fun CardView(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // La traducción, desde el inicio, con lo que falta resaltado.
-            val translation = card.translation
+            // Las oraciones de la IA traen su traducción con lo que falta resaltado. Las tuyas y las del
+            // diccionario, «Falta: …» con el significado y «Traducir» si la quieres (decidido con Jorge
+            // el 2026-11-22).
+            val translation = card.translation ?: state.translations[card.code]
             if (translation != null) {
                 Text(
                     buildAnnotatedString {
@@ -600,13 +660,36 @@ private fun CardView(
                         }
                     },
                     style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.testTag("repaso_traduccion"),
                 )
+                if (card.translation == null) {
+                    Text("Traducción según la IA", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                }
             } else {
-                Text(
-                    card.meaning?.let { "Significa: $it" } ?: "Sin traducción",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildAnnotatedString {
+                            append("Falta: ")
+                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = scheme.primary)) {
+                                append(
+                                    card.meaning ?: when (card.kind) {
+                                        ClozeKind.WORD -> "una palabra"
+                                        ClozeKind.VERB -> "un verbo o adjetivo"
+                                        ClozeKind.GRAMMAR -> "una gramática"
+                                    },
+                                )
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f).testTag("repaso_falta"),
+                    )
+                    if (state.translating == card.code) {
+                        Text("Traduciendo…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    } else {
+                        AppTextButton(onClick = vm::translate, modifier = Modifier.testTag("repaso_traducir")) { Text("Traducir") }
+                    }
+                }
+                state.translateNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
             }
             // La oración con el hueco; al cerrar la tarjeta, con la respuesta. Cada palabra se toca
             // para ver qué es (la del hueco, solo al cerrar la tarjeta).
@@ -643,7 +726,7 @@ private fun CardView(
                 modifier = Modifier.testTag("repaso_oracion"),
             )
             Text(
-                (if (card.own) "Tu oración" else "Oración de la IA") + " · " + when (card.kind) {
+                (if (card.own) "Tu oración" else if (card.fromDictionary) "Oración del diccionario" else "Oración de la IA") + " · " + when (card.kind) {
                     ClozeKind.WORD -> "palabra"
                     ClozeKind.VERB -> "verbo o adjetivo"
                     ClozeKind.GRAMMAR -> "gramática"

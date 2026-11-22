@@ -54,6 +54,8 @@ data class ClozeCard(
     val ending: String? = null,
     /** La oración es tuya (de una página), no de la IA. */
     val own: Boolean = false,
+    /** La oración es del 한국어기초사전 ([DictionaryCloze]): sin traducción, con «Falta: …» y «Traducir». */
+    val fromDictionary: Boolean = false,
 ) {
     val before: String get() = sentence.substring(0, start)
     val after: String get() = sentence.substring(start + answer.length)
@@ -67,9 +69,11 @@ data class ClozeWord(val pieces: List<ClozePiece>, val tap: String?)
 
 /**
  * Repaso rápido (decidido con Jorge el 2026-11-15): en vez de tarjetas como Anki, oraciones con un
- * espacio en blanco. Primero tus oraciones (ya corregidas); para lo que nunca usaste, oraciones de
- * la IA (una sola llamada por sesión). La traducción se ve desde el inicio con lo que falta
- * resaltado; respondes a mano. Tres pistas según el tipo; la calificación sale de cuántas usaste.
+ * espacio en blanco. Primero tus oraciones (ya corregidas); para lo que nunca usaste, una del
+ * 한국어기초사전 ([DictionaryCloze], desde el 2026-11-22) y solo si no hay, de la IA (una sola
+ * llamada por sesión). Las de la IA traen su traducción con lo que falta resaltado; las tuyas y las
+ * del diccionario, «Falta: …» con el significado y «Traducir» si la quieres. Respondes a mano. Tres
+ * pistas según el tipo; la calificación sale de cuántas usaste.
  */
 object Cloze {
 
@@ -429,6 +433,28 @@ object Cloze {
         appendLine()
         appendLine("FORMATO:")
         appendLine("{\"items\": [{\"id\": \"w12\", \"oracion\": \"시험이 있으니까 도서관에서 공부했어요.\", \"hueco\": \"공부했어요\", \"traduccion\": \"Como hay examen, [estudié] en la biblioteca.\", \"base\": \"공부하다\", \"terminacion\": \"-았/었어요\"}]}")
+    }
+
+    /**
+     * «Traducir» en una oración tuya o del diccionario: la traducción con lo que corresponde al hueco
+     * entre corchetes, como las de las oraciones de la IA.
+     */
+    fun translatePrompt(sentence: String, answer: String): String = buildString {
+        appendLine("Traduce al español esta oración coreana del repaso de un estudiante: «${sentence.trim()}».")
+        appendLine(Prompts.SPANISH)
+        appendLine("Traducción natural y fiel al sentido de la oración, con lo que corresponde a «${answer.trim()}» entre corchetes, por ejemplo: «Como hay examen, [estudié] en la biblioteca».")
+        appendLine("Responde SOLO con un objeto JSON válido, sin texto extra ni bloques de código:")
+        appendLine("{\"traduccion\": \"...\"}")
+    }
+
+    fun parseTranslation(raw: String): String {
+        val json = try {
+            JSONObject(extractJsonObject(raw))
+        } catch (e: org.json.JSONException) {
+            throw ParseException("JSON inválido: ${e.message}")
+        }
+        return json.optString("traduccion").trim().takeIf { it.isNotEmpty() && it != "null" }
+            ?: throw ParseException("La respuesta no trae la traducción.")
     }
 
     /**

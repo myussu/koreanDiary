@@ -90,7 +90,7 @@ adb shell input tap X Y
 | `aviso_cierre` | aviso de cierre por error |
 | `hoja` | el lienzo de la página |
 | `confirmar_texto`, `texto_de_prueba` | el texto a confirmar en Revisar y su botón de prueba |
-| `repaso_recuadro`, `repaso_prueba_bien`, `repaso_prueba_mal`, `repaso_copia_comprobar`, `repaso_copia_bien`, `repaso_copia_mal`, `repaso_oracion`, `repaso_palabra`, `repaso_palabra_agregar`, `repaso_palabra_partes`, `diccionario`, `diccionario_todo` | el repaso rápido |
+| `repaso_recuadro`, `repaso_prueba_bien`, `repaso_prueba_mal`, `repaso_copia_comprobar`, `repaso_copia_bien`, `repaso_copia_mal`, `repaso_oracion`, `repaso_palabra`, `repaso_palabra_agregar`, `repaso_palabra_partes`, `diccionario`, `diccionario_todo`, `repaso_falta`, `repaso_traducir`, `repaso_traduccion`, `explicacion_partes` | el repaso rápido |
 
 ### Escribir en la hoja
 
@@ -172,7 +172,8 @@ agrega el detalle del aviso o el logcat.
   - En Vocabulario, salen las palabras que no conociste en la prueba.
   - «Ya lo sé» la agrega con repaso lejano.
 - [ ] «Repaso rápido»:
-  - Hay tarjetas con traducción y lo que falta resaltado.
+  - Primero tus oraciones («Tu oración»), luego las del diccionario («Oración del diccionario») y solo para lo que no tiene ninguna, las de la IA («Oración de la IA», con traducción y lo que falta resaltado).
+  - Las tuyas y las del diccionario llevan «Falta: …» con el significado (`repaso_falta`) y «Traducir» (`repaso_traducir`): con respuestas fijas trae «Traducción de prueba con [lo que falta].» (`repaso_traduccion`) y «Traducción según la IA». Al volver a esa tarjeta en la misma ronda ya está traducida.
   - «Pista» abre hasta tres.
   - «Prueba: bien» cierra la tarjeta.
   - «Prueba: mal», luego «La mía también vale» y «Otra vez».

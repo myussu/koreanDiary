@@ -35,6 +35,7 @@ object FixedResponses {
         "CANDIDATOS (código: forma, tipo):" in prompt -> suggestions(prompt)
         "Explica cada una y muestra cómo la usaría" in prompt -> explain(prompt)
         "repasa con oraciones en las que falta una parte" in prompt -> cloze(prompt)
+        "oración coreana del repaso de un estudiante" in prompt -> JSONObject().put("traduccion", "Traducción de prueba con [lo que falta].").toString()
         "es una página de un libro de coreano" in prompt -> workbookHints(prompt)
         "escribió a mano en una página de su libro" in prompt -> workbookReview(prompt)
         "\"f\": la forma de diccionario de la palabra de contenido" in prompt -> word(prompt)

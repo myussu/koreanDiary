@@ -33,6 +33,7 @@ class SpanishPromptsTest {
         "libro: revisión" to Prompts.workbookReview("2급", 2, listOf(WorkbookExercise("1", "completa", emptyList(), "..."))),
         "importar" to Prompts.importList("꿈꾸다 - soñar"),
         "repaso rápido" to Cloze.prompt("", "2급", 2, listOf(ClozeTarget("w1", "선선하다", ClozeKind.VERB))),
+        "repaso rápido: traducir" to Cloze.translatePrompt("날씨가 선선해요.", "선선해요"),
         "conversación: pista" to ConversationPrompts.hint("2급", 2, lines, items),
         "conversación: ¿cómo digo?" to ConversationPrompts.howToSay("quiero dormir", "2급", 2, lines),
         "conversación: palabra" to ConversationPrompts.word("만났어요", "친구를 만났어요."),

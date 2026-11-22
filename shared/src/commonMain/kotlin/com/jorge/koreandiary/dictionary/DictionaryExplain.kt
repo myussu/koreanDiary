@@ -24,18 +24,39 @@ object DictionaryExplain {
 
     // ---------------------------------------------------------------- palabras
 
-    private fun explainWord(dictionary: KoreanDictionary, label: String, meaning: String?): ItemExplanation? {
+    /**
+     * La palabra que estudias en el diccionario: el homónimo y el sentido que más se parecen a lo que
+     * dice tu lista ([meaning]); si empatan (o no hay lista), el homónimo más común y su primer
+     * sentido. [others]: los demás homónimos, para mencionarlos.
+     */
+    class WordChoice(val entry: DictEntry, val detail: DictDetail, val senses: List<DictSense>, val main: Int, val others: List<Pair<DictEntry, List<DictSense>>>) {
+        /** Los sentidos con el elegido primero. */
+        val ordered: List<DictSense> get() = listOf(senses[main]) + senses.filterIndexed { i, _ -> i != main }
+    }
+
+    fun wordChoice(dictionary: KoreanDictionary, label: String, meaning: String?): WordChoice? {
         val entries = dictionary.entries(label).filter { !it.grammar }
         if (entries.isEmpty()) return null
         val details = entries.take(MAX_HOMONYMS).mapNotNull { e -> dictionary.detail(e)?.let { e to it } }
             .map { (e, d) -> Triple(e, d, d.senses.filter { it.lemma != null || it.definition != null }) }
             .filter { it.third.isNotEmpty() }
         if (details.isEmpty()) return null
-        // El homónimo y el sentido que más se parecen a lo que dice tu lista; si empatan (o no hay
-        // lista), el primero: el homónimo más común y su primer sentido.
-        val (entry, detail, senses, main) = details.flatMap { (e, d, ss) -> ss.indices.map { Pick(e, d, ss, it) } }
+        val pick = details.flatMap { (e, d, ss) -> ss.indices.map { Pick(e, d, ss, it) } }
             .maxWithOrNull(compareBy { score(meaning, it.senses[it.main]) })
             ?: return null
+        return WordChoice(pick.entry, pick.detail, pick.senses, pick.main, details.filter { it.first != pick.entry }.map { it.first to it.third })
+    }
+
+    /** Lo que se muestra como significado de un sentido: su traducción o, si no tiene, su definición. */
+    fun senseMeaning(s: DictSense): String =
+        s.lemma?.let(::lemmaText) ?: s.definition?.let(::cleanDefinition)?.let { shorten(it, 90) }.orEmpty()
+
+    private fun explainWord(dictionary: KoreanDictionary, label: String, meaning: String?): ItemExplanation? {
+        val choice = wordChoice(dictionary, label, meaning) ?: return null
+        val entry = choice.entry
+        val detail = choice.detail
+        val senses = choice.senses
+        val main = choice.main
         val first = senses[main]
         val lemma = first.lemma?.let(::lemmaText)
         val definition = first.definition?.let(::cleanDefinition)
@@ -47,8 +68,8 @@ object DictionaryExplain {
             }
             val phrases = (listOf(first) + others.map { senses[it] }).flatMap { it.phrases }.distinct().take(3)
             if (phrases.isNotEmpty()) add("Va con: " + phrases.joinToString(" · ") { it.trim().trimEnd('.') })
-            val homonyms = details.filter { it.first != entry }.take(3)
-            if (homonyms.isNotEmpty()) add("También «${entry.form}»: " + homonyms.joinToString(" · ") { senseShort(it.third.first(), avoid = lemma) })
+            val homonyms = choice.others.take(3)
+            if (homonyms.isNotEmpty()) add("También «${entry.form}»: " + homonyms.joinToString(" · ") { senseShort(it.second.first(), avoid = lemma) })
         }.joinToString("\n").ifBlank { null }
         val examples = (listOf(first) + others.map { senses[it] }).flatMap { it.examples }
             .map { it.trim() }.distinct()
@@ -108,7 +129,7 @@ object DictionaryExplain {
      * ¿El ejemplo usa la palabra? Las oraciones del diccionario sí; algunas son la otra línea de un
      * diálogo y no la tienen. Un verbo puede ir conjugado (먹다 → 먹었어요, 듣다 → 들어요).
      */
-    private fun usesWord(dictionary: KoreanDictionary, entry: DictEntry, sentence: String): Boolean {
+    fun usesWord(dictionary: KoreanDictionary, entry: DictEntry, sentence: String): Boolean {
         // De dos sílabas o más basta con encontrarla; una sola (장, 가다) también está dentro de otras
         // palabras (시장, 가방): ahí se mira palabra por palabra.
         val key = if (entry.isVerb) entry.form.dropLast(1) else entry.form
@@ -118,13 +139,20 @@ object DictionaryExplain {
 
     // ---------------------------------------------------------------- gramática
 
-    private fun explainGrammar(dictionary: KoreanDictionary, label: String): ItemExplanation? {
+    /**
+     * La gramática y sus otras formas, aunque tu lista diga una sola: -습니다 y -ㅂ니다, -어요 y -아요,
+     * 이랑 y 랑. La principal primero; vacío si el diccionario no la tiene.
+     */
+    fun grammarFamily(dictionary: KoreanDictionary, label: String): List<DictEntry> {
         val found = grammarEntries(dictionary, label)
-        val main = found.firstOrNull() ?: return null
-        // Sus otras formas aunque tu lista diga una sola: -습니다 y -ㅂ니다, -어요 y -아요, 이랑 y 랑.
-        val entries = (found + found.flatMap { e ->
+        return (found + found.flatMap { e ->
             counterparts(e.form).flatMap { c -> dictionary.entries(c).filter { it.grammar == e.grammar && it.pos == e.pos } }
         }).distinctBy { it.id }
+    }
+
+    private fun explainGrammar(dictionary: KoreanDictionary, label: String): ItemExplanation? {
+        val entries = grammarFamily(dictionary, label)
+        val main = entries.firstOrNull() ?: return null
         val details = entries.mapNotNull { e -> dictionary.detail(e)?.let { e to it } }
         val mainSenses = details.firstOrNull { it.first == main }?.second?.senses.orEmpty().filter { it.definition != null || it.lemma != null }
         val first = mainSenses.firstOrNull() ?: return null

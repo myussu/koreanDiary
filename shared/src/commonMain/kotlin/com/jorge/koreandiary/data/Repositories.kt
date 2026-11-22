@@ -33,6 +33,7 @@ import com.jorge.koreandiary.dictionary.PeruSpanish
 import com.jorge.koreandiary.progress.LevelCoverage
 import com.jorge.koreandiary.progress.LevelEstimate
 import com.jorge.koreandiary.review.Cloze
+import com.jorge.koreandiary.review.DictionaryCloze
 import com.jorge.koreandiary.review.ClozeBlank
 import com.jorge.koreandiary.review.ClozeKind
 import com.jorge.koreandiary.review.ClozeTarget
@@ -670,7 +671,11 @@ class StudyRepository(
             val fixes = diary.corrections(page).filter { it.status == CorrectionStatus.PENDING || it.status == CorrectionStatus.REWRITTEN }
             for (s in sentences[page].orEmpty()) {
                 val text = Cloze.applyCorrections(s.text.trim(), fixes.filter { it.sentence == s.number }.map { it.original to it.suggestion })
-                val blank = Cloze.blankIn(text, label, kind) ?: continue
+                // Con el diccionario también los irregulares (고팠다, 덥군요) y la gramática escrita de
+                // otra forma (-ㄹ 수 있다), que antes no se encontraban.
+                val blank = Cloze.blankIn(text, label, kind)
+                    ?: dictionary?.let { d -> runCatching { DictionaryCloze.blank(d, text, label, kind) }.getOrNull() }
+                    ?: continue
                 return text to blank
             }
         }
