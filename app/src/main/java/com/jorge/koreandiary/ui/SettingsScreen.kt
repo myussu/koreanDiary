@@ -61,6 +61,8 @@ import com.jorge.koreandiary.settings.ThemeMode
 import com.jorge.koreandiary.settings.SecretStore
 import com.jorge.koreandiary.conversation.CorrectionStyle
 import com.jorge.koreandiary.listen.Narrator
+import com.jorge.koreandiary.voice.LiveModels
+import com.jorge.koreandiary.voice.ThinkingLevel
 import com.jorge.koreandiary.voice.TurnMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -445,8 +447,33 @@ fun SettingsScreen(
                         }
                         Switch(checked = s.voiceBlurText, onCheckedChange = { v -> container.settings.update { it.copy(voiceBlurText = v) } })
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Razonamiento extendido")
+                            Text(
+                                "La IA razona de fondo mientras habla, para explicar con más cuidado. La respuesta completa puede tardar un poco más. Mismo precio y misma capa gratis. Vale para Conversar y para las pausas de Escuchar.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(
+                            checked = LiveModels.extendedThinking(voiceModel),
+                            onCheckedChange = { on ->
+                                voiceModel = if (on) LiveModels.EXTENDED_THINKING else LiveModels.STANDARD
+                                save()
+                            },
+                        )
+                    }
+                    if (LiveModels.extendedThinking(voiceModel)) {
+                        Text("Cuánto razona", style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(ThinkingLevel.LOW to "Bajo", ThinkingLevel.MEDIUM to "Medio", ThinkingLevel.HIGH to "Alto").forEach { (level, label) ->
+                                AppToggle(label, s.voiceThinkingLevel == level) { container.settings.update { it.copy(voiceThinkingLevel = level) } }
+                            }
+                        }
+                        Text("Más alto: piensa más cada explicación, pero tarda más en llegar a la respuesta completa.", style = MaterialTheme.typography.bodySmall)
+                    }
                     OutlinedTextField(value = voiceModel, onValueChange = { voiceModel = it }, label = { Text("Modelo de voz") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("gemini-3.8-live (rápido y barato) o gemini-3.8-live-extended-thinking (razona más, ~4 veces más caro).", style = MaterialTheme.typography.bodySmall)
+                    Text("Lo cambia el interruptor de arriba. Escríbelo solo para probar otro modelo de la Live API.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = voiceName, onValueChange = { voiceName = it }, label = { Text("Voz (Kore, Puck, Charon, Aoede…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(
                         value = voiceDaily, onValueChange = { voiceDaily = it.filter(Char::isDigit) },

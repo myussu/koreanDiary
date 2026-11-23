@@ -61,11 +61,16 @@ class LiveSession(
     @Volatile private var setupAt = 0L
     /** goAway recibido: se reconecta al terminar el turno de la IA (o antes del corte). */
     @Volatile private var swapPending = false
+    /** Modelo de la conexión actual: define cómo se responde a las funciones. */
+    @Volatile private var model = ""
+    /** Fin de turno real (con razonamiento de fondo, `turnComplete` no lo es). Solo desde el listener actual. */
+    private val turns = TurnTracker()
 
     fun start() = connect()
 
     private fun connect() {
         val config = configFor(handle, fallback)
+        model = config.model
         val url = LiveProtocol.ENDPOINT + "?key=" + URLEncoder.encode(apiKey, "UTF-8")
         val request = Request.Builder().url(url).build()
         synchronized(lock) {
@@ -79,6 +84,10 @@ class LiveSession(
         val ws = current ?: return false
         return ready && ws.send(message)
     }
+
+    /** Responde a una llamada de función en el formato que acepta el modelo de esta conexión. */
+    fun answerTool(id: String, name: String): Boolean =
+        send(LiveProtocol.toolResponse(id, name, silent = !LiveModels.extendedThinking(model)))
 
     fun close() {
         closedByUser = true
@@ -153,9 +162,10 @@ class LiveSession(
 
         private fun handle(webSocket: WebSocket, raw: String) {
             if (!isCurrent(webSocket)) return
-            for (event in LiveProtocol.parse(raw)) {
+            for (event in LiveProtocol.parse(raw).flatMap(turns::filter)) {
                 when (event) {
                     LiveEvent.SetupComplete -> {
+                        turns.reset().forEach { signals.trySend(SessionSignal.Event(it)) }
                         val resumed = everConnected
                         ready = true
                         everConnected = true
@@ -176,6 +186,7 @@ class LiveSession(
                             }
                         }
                     }
+                    // Fin real del turno (ver TurnTracker): con razonamiento de fondo no se reconecta a media idea.
                     LiveEvent.TurnComplete -> {
                         signals.trySend(SessionSignal.Event(event))
                         if (swapPending) swap(webSocket)

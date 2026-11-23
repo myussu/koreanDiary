@@ -351,6 +351,7 @@ class ListenEngine(private val c: AppContainer) {
                 model = s.voiceModel, voice = s.voiceName, systemInstruction = system,
                 turnMode = s.voiceTurnMode, silenceMs = s.voiceSilenceMs,
                 vocabulary = vocabulary, resumeHandle = handle, fallback = fallback,
+                thinkingLevel = s.voiceThinkingLevel,
                 highlightTool = targets.isNotEmpty(), listenTools = true,
             )
         }
@@ -727,7 +728,7 @@ class ListenEngine(private val c: AppContainer) {
                 }
             }
             is LiveEvent.ToolCall -> {
-                session?.send(LiveProtocol.toolResponse(e.id, e.name))
+                session?.answerTool(e.id, e.name)
                 onTool(e.name, e.args)
             }
             is LiveEvent.Usage -> {

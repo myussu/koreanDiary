@@ -389,6 +389,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 model = s.voiceModel, voice = s.voiceName, systemInstruction = system,
                 turnMode = s.voiceTurnMode, silenceMs = s.voiceSilenceMs,
                 vocabulary = vocabulary, resumeHandle = handle, fallback = fallback,
+                thinkingLevel = s.voiceThinkingLevel,
                 highlightTool = targets.isNotEmpty(),
             )
         }
@@ -455,7 +456,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 }
             }
             is LiveEvent.ToolCall -> {
-                session?.send(LiveProtocol.toolResponse(e.id, e.name))
+                session?.answerTool(e.id, e.name)
                 val ref = e.args["ref"]?.trim()
                 if (e.name == LiveProtocol.TOOL_HIGHLIGHT && ref != null && _state.value.targets.any { it.ref == ref }) {
                     highlighted += ref

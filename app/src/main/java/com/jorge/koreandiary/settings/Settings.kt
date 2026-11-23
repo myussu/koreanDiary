@@ -101,6 +101,8 @@ data class AppSettings(
     val lessonGrammar: String = "",
     /** Conversación: modelo de la Live API de Gemini (usa la misma clave que Gemini). */
     val voiceModel: String = "gemini-3.8-live",
+    /** Nivel de razonamiento (LOW, MEDIUM, HIGH) cuando el modelo de voz es el de razonamiento extendido. */
+    val voiceThinkingLevel: String = "MEDIUM",
     /** Voz prediseñada de Gemini (Kore, Puck, Charon...). */
     val voiceName: String = "Kore",
     /** "ptt" (pulsas para hablar) o "auto" (la IA detecta cuándo terminaste). */
@@ -199,6 +201,7 @@ class SettingsStore(context: Context) {
         reminderMinute = prefs.getInt("reminderMinute", 0),
         lessonGrammar = prefs.getString("lessonGrammar", "") ?: "",
         voiceModel = prefs.getString("voiceModel", "gemini-3.8-live") ?: "gemini-3.8-live",
+        voiceThinkingLevel = prefs.getString("voiceThinkingLevel", "MEDIUM") ?: "MEDIUM",
         voiceName = prefs.getString("voiceName", "Kore") ?: "Kore",
         voiceTurnMode = prefs.getString("voiceTurnMode", "ptt") ?: "ptt",
         voiceSilenceMs = prefs.getInt("voiceSilenceMs", 2000),
@@ -256,6 +259,7 @@ class SettingsStore(context: Context) {
             .putInt("reminderMinute", s.reminderMinute)
             .putString("lessonGrammar", s.lessonGrammar)
             .putString("voiceModel", s.voiceModel)
+            .putString("voiceThinkingLevel", s.voiceThinkingLevel)
             .putString("voiceName", s.voiceName)
             .putString("voiceTurnMode", s.voiceTurnMode)
             .putInt("voiceSilenceMs", s.voiceSilenceMs)
