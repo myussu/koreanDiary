@@ -2,8 +2,11 @@ package com.jorge.koreandiary
 
 import com.jorge.koreandiary.voice.LiveConfig
 import com.jorge.koreandiary.voice.LiveEvent
+import com.jorge.koreandiary.voice.LiveModels
 import com.jorge.koreandiary.voice.LiveProtocol
+import com.jorge.koreandiary.voice.ThinkingLevel
 import com.jorge.koreandiary.voice.TurnMode
+import com.jorge.koreandiary.voice.TurnTracker
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -114,5 +117,78 @@ class LiveProtocolTest {
             .getJSONArray("functionResponses").getJSONObject(0)
         assertEquals("c1", r.getString("id"))
         assertEquals("SILENT", r.getJSONObject("response").getString("scheduling"))
+    }
+
+    @Test
+    fun extendedThinkingResponseHasNoScheduling() {
+        val r = JSONObject(LiveProtocol.toolResponse("c2", "highlight_target", silent = false)).getJSONObject("toolResponse")
+            .getJSONArray("functionResponses").getJSONObject(0)
+        assertEquals("c2", r.getString("id"))
+        assertEquals("ok", r.getJSONObject("response").getString("result"))
+        assertFalse(r.getJSONObject("response").has("scheduling"))
+    }
+
+    @Test
+    fun thinkingLevelOnlyForExtendedThinking() {
+        val standard = JSONObject(LiveProtocol.setup(config(TurnMode.AUTO))).getJSONObject("setup")
+        assertFalse(standard.getJSONObject("generationConfig").has("thinkingConfig"))
+
+        val et = config(TurnMode.AUTO).copy(model = LiveModels.EXTENDED_THINKING, thinkingLevel = ThinkingLevel.HIGH)
+        val setup = JSONObject(LiveProtocol.setup(et)).getJSONObject("setup")
+        assertEquals("models/gemini-3.8-live-extended-thinking", setup.getString("model"))
+        assertEquals("HIGH", setup.getJSONObject("generationConfig").getJSONObject("thinkingConfig").getString("thinkingLevel"))
+
+        // Valor raro (o MINIMAL, que este modelo no admite) → MEDIUM; minúsculas se normalizan.
+        val odd = JSONObject(LiveProtocol.setup(et.copy(thinkingLevel = "minimal"))).getJSONObject("setup")
+        assertEquals("MEDIUM", odd.getJSONObject("generationConfig").getJSONObject("thinkingConfig").getString("thinkingLevel"))
+        val lower = JSONObject(LiveProtocol.setup(et.copy(thinkingLevel = "low"))).getJSONObject("setup")
+        assertEquals("LOW", lower.getJSONObject("generationConfig").getJSONObject("thinkingConfig").getString("thinkingLevel"))
+
+        // Plan B: si el servidor rechazó la configuración, el modelo usa su nivel por defecto.
+        val fallback = JSONObject(LiveProtocol.setup(et.copy(fallback = 1))).getJSONObject("setup")
+        assertFalse(fallback.getJSONObject("generationConfig").has("thinkingConfig"))
+        assertTrue(LiveModels.extendedThinking("models/gemini-3.8-live-extended-thinking"))
+        assertFalse(LiveModels.extendedThinking(LiveModels.STANDARD))
+    }
+
+    @Test
+    fun parsesInteractionStatusBeforeTurnComplete() {
+        val filler = LiveProtocol.parse("""{"serverContent": {"turnComplete": true, "interactionStatus": "IN_PROGRESS"}}""")
+        assertEquals(listOf(LiveEvent.Status(idle = false), LiveEvent.TurnComplete), filler)
+        // Junto a toolCall llega arriba; también se acepta el nombre con guion bajo.
+        val tool = LiveProtocol.parse("""{"interactionStatus": "IN_PROGRESS", "toolCall": {"functionCalls": [{"id": "c3", "name": "pause_narration"}]}}""")
+        assertEquals(listOf(LiveEvent.Status(idle = false), LiveEvent.ToolCall("c3", "pause_narration", emptyMap())), tool)
+        assertEquals(listOf(LiveEvent.Status(idle = true)), LiveProtocol.parse("""{"serverContent": {"interaction_status": "IDLE"}}"""))
+        // Los modelos estándar no mandan estado.
+        assertEquals(listOf(LiveEvent.TurnComplete), LiveProtocol.parse("""{"serverContent": {"turnComplete": true}}"""))
+        assertEquals(listOf(LiveEvent.TurnComplete), LiveProtocol.parse("""{"serverContent": {"turnComplete": true, "interactionStatus": "OTRO"}}"""))
+    }
+
+    @Test
+    fun turnEndsOnlyWhenIdle() {
+        val t = TurnTracker()
+        fun feed(raw: String) = LiveProtocol.parse(raw).flatMap(t::filter)
+        // Estándar: pasa tal cual.
+        assertEquals(listOf(LiveEvent.TurnComplete), feed("""{"serverContent": {"turnComplete": true}}"""))
+        // Razonamiento de fondo: la frase de relleno no cierra el turno…
+        assertEquals(emptyList<LiveEvent>(), feed("""{"serverContent": {"turnComplete": true, "interactionStatus": "IN_PROGRESS"}}"""))
+        assertEquals(listOf(LiveEvent.OutputText("그러니까")), feed("""{"serverContent": {"outputTranscription": {"text": "그러니까"}, "interactionStatus": "IN_PROGRESS"}}"""))
+        assertEquals(emptyList<LiveEvent>(), feed("""{"serverContent": {"turnComplete": true, "interactionStatus": "IN_PROGRESS"}}"""))
+        // …lo cierra IDLE, una sola vez.
+        assertEquals(listOf(LiveEvent.TurnComplete), feed("""{"serverContent": {"interactionStatus": "IDLE"}}"""))
+        assertEquals(emptyList<LiveEvent>(), feed("""{"serverContent": {"interactionStatus": "IDLE"}}"""))
+        // turnComplete y IDLE en el mismo mensaje: fin inmediato.
+        assertEquals(listOf(LiveEvent.TurnComplete), feed("""{"serverContent": {"turnComplete": true, "interactionStatus": "IDLE"}}"""))
+    }
+
+    @Test
+    fun newConnectionClosesAnOpenTurn() {
+        val t = TurnTracker()
+        t.filter(LiveEvent.Status(idle = false))
+        assertEquals(emptyList<LiveEvent>(), t.filter(LiveEvent.TurnComplete))
+        assertEquals(listOf(LiveEvent.TurnComplete), t.reset())
+        assertEquals(emptyList<LiveEvent>(), t.reset())
+        // Después de reconectar, sin estado, vuelve a pasar tal cual.
+        assertEquals(listOf(LiveEvent.TurnComplete), t.filter(LiveEvent.TurnComplete))
     }
 }

@@ -12,6 +12,28 @@ object TurnMode {
     const val AUTO = "auto"
 }
 
+/** Modelos de voz de la Live API que la app conoce. */
+object LiveModels {
+    /** Rápido; responde apenas terminas. */
+    const val STANDARD = "gemini-3.8-live"
+    /** Razona de fondo mientras habla, para explicar con más cuidado. Mismo precio y misma capa gratuita. */
+    const val EXTENDED_THINKING = "gemini-3.8-live-extended-thinking"
+
+    /**
+     * Modelos con razonamiento de fondo: aceptan `thinkingConfig`, no aceptan `scheduling` en las respuestas
+     * a funciones y su `turnComplete` no es el fin del turno (ver [TurnTracker]).
+     */
+    fun extendedThinking(model: String) = model.contains("extended-thinking")
+}
+
+/** Cuánto razona de fondo [LiveModels.EXTENDED_THINKING]. No admite MINIMAL. */
+object ThinkingLevel {
+    const val LOW = "LOW"
+    const val MEDIUM = "MEDIUM"
+    const val HIGH = "HIGH"
+    val all = listOf(LOW, MEDIUM, HIGH)
+}
+
 /** Todo lo que necesita el mensaje "setup" de la Live API. */
 data class LiveConfig(
     val model: String,
@@ -27,9 +49,11 @@ data class LiveConfig(
     val resumeHandle: String? = null,
     /**
      * Planes B si el servidor rechaza la configuración al conectar: 0 = completa; 1 = sin idiomas ni
-     * vocabulario en la transcripción; 2 = además sin herramientas. Se baja de a un nivel.
+     * vocabulario en la transcripción ni nivel de razonamiento; 2 = además sin herramientas. Se baja de a un nivel.
      */
     val fallback: Int = 0,
+    /** Nivel de [ThinkingLevel]; solo se manda a los modelos con razonamiento de fondo. */
+    val thinkingLevel: String = ThinkingLevel.MEDIUM,
     /** Declarar la herramienta [LiveProtocol.TOOL_HIGHLIGHT] (hay objetivos de repaso). */
     val highlightTool: Boolean = false,
     /** Modo Escuchar: funciones para seguir, repetir o pausar la narración y anotar la comprensión. */
@@ -48,6 +72,11 @@ sealed interface LiveEvent {
     /** Empezaste a hablar mientras la IA hablaba: hay que cortar su audio. */
     data object Interrupted : LiveEvent
     data object TurnComplete : LiveEvent
+    /**
+     * `interactionStatus` de los modelos con razonamiento de fondo: [idle] = false mientras piensa o espera
+     * funciones (IN_PROGRESS), true cuando terminó todo (IDLE). Lo consume [TurnTracker].
+     */
+    data class Status(val idle: Boolean) : LiveEvent
     data class Usage(val prompt: Int, val response: Int, val total: Int) : LiveEvent
     data class ResumeHandle(val handle: String) : LiveEvent
     /** El servidor va a cerrar la conexión pronto (unos 10 minutos por conexión). */
@@ -130,10 +159,14 @@ object LiveProtocol {
         declaration(TOOL_FINISH, "End the listening session (after your goodbye, or when he asks to stop)."),
     )
 
-    /** Respuesta a una llamada de función: "SILENT" = el modelo no reacciona, solo lo sabe. */
-    fun toolResponse(id: String, name: String): String {
-        val response = JSONObject().put("id", id).put("name", name)
-            .put("response", JSONObject().put("result", "ok").put("scheduling", "SILENT"))
+    /**
+     * Respuesta a una llamada de función. Con [silent], "SILENT" = el modelo no reacciona, solo lo sabe.
+     * Los modelos con razonamiento de fondo no aceptan `scheduling`: ahí va sin él ([silent] = false).
+     */
+    fun toolResponse(id: String, name: String, silent: Boolean = true): String {
+        val result = JSONObject().put("result", "ok")
+        if (silent) result.put("scheduling", "SILENT")
+        val response = JSONObject().put("id", id).put("name", name).put("response", result)
         return JSONObject().put("toolResponse", JSONObject().put("functionResponses", JSONArray().put(response))).toString()
     }
 
@@ -158,21 +191,24 @@ object LiveProtocol {
             val vocab = c.vocabulary.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_VOCABULARY)
             if (vocab.isNotEmpty()) inputTranscription.put("customVocabulary", JSONArray(vocab))
         }
+        val generation = JSONObject()
+            // Los modelos de audio nativo solo devuelven audio; el texto llega por la transcripción.
+            .put("responseModalities", JSONArray().put("AUDIO"))
+            .put(
+                "speechConfig",
+                JSONObject().put(
+                    "voiceConfig",
+                    JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", c.voice)),
+                ),
+            )
+        // Solo los modelos con razonamiento de fondo aceptan nivel; al estándar no se le manda (lo rechaza).
+        if (LiveModels.extendedThinking(c.model) && c.fallback < 1) {
+            val level = c.thinkingLevel.uppercase().takeIf { it in ThinkingLevel.all } ?: ThinkingLevel.MEDIUM
+            generation.put("thinkingConfig", JSONObject().put("thinkingLevel", level))
+        }
         val setup = JSONObject()
             .put("model", if (c.model.startsWith("models/")) c.model else "models/${c.model}")
-            .put(
-                "generationConfig",
-                JSONObject()
-                    // Los modelos de audio nativo solo devuelven audio; el texto llega por la transcripción.
-                    .put("responseModalities", JSONArray().put("AUDIO"))
-                    .put(
-                        "speechConfig",
-                        JSONObject().put(
-                            "voiceConfig",
-                            JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", c.voice)),
-                        ),
-                    ),
-            )
+            .put("generationConfig", generation)
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", c.systemInstruction))))
             .put("realtimeInputConfig", JSONObject().put("automaticActivityDetection", vad))
             .put("inputAudioTranscription", inputTranscription)
@@ -231,6 +267,9 @@ object LiveProtocol {
         }
         val events = mutableListOf<LiveEvent>()
         if (o.has("setupComplete")) events += LiveEvent.SetupComplete
+        // El estado va antes que el turnComplete del mismo mensaje, para que TurnTracker sepa si es el final.
+        // La documentación lo pone a veces en serverContent y a veces arriba, junto a toolCall.
+        (interactionStatus(o.optJSONObject("serverContent")) ?: interactionStatus(o))?.let { events += it }
         o.optJSONObject("serverContent")?.let { sc ->
             sc.optJSONObject("inputTranscription")?.optString("text")?.takeIf { it.isNotEmpty() }?.let {
                 events += LiveEvent.InputText(it)
@@ -269,6 +308,15 @@ object LiveProtocol {
             events += LiveEvent.Usage(u.optInt("promptTokenCount"), u.optInt("responseTokenCount"), u.optInt("totalTokenCount"))
         }
         return events
+    }
+
+    private fun interactionStatus(o: JSONObject?): LiveEvent.Status? {
+        val v = o?.optString("interactionStatus")?.ifEmpty { null } ?: o?.optString("interaction_status")?.ifEmpty { null }
+        return when (v?.uppercase()) {
+            "IDLE" -> LiveEvent.Status(idle = true)
+            "IN_PROGRESS" -> LiveEvent.Status(idle = false)
+            else -> null
+        }
     }
 
     /** Duration de protobuf en JSON: "12s", "1.5s", o {"seconds": 12, "nanos": 0}. */
