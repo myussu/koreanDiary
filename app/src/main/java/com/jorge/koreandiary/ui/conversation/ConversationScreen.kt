@@ -67,6 +67,7 @@ import com.jorge.koreandiary.ai.ReviewLevels
 import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
+import com.jorge.koreandiary.ui.ExplainRetryRow
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.ui.DictionaryEntries
@@ -527,7 +528,10 @@ internal fun CoachPanelView(
         ) {
             when (panel) {
                 is CoachPanel.Loading -> Text(panel.what, style = MaterialTheme.typography.bodyMedium)
-                is CoachPanel.Error -> Text(panel.message, color = scheme.error, style = MaterialTheme.typography.bodyMedium)
+                is CoachPanel.Error -> {
+                    Text(panel.message, color = scheme.error, style = MaterialTheme.typography.bodyMedium)
+                    panel.retry?.let { ExplainRetryRow(onRetry = it) }
+                }
                 is CoachPanel.HintShown -> {
                     val h = panel.hint
                     Text("${if (panel.auto) "Pista automática" else "Pista"} ${panel.level}/3", style = MaterialTheme.typography.labelMedium)

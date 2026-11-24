@@ -30,6 +30,8 @@ import com.jorge.koreandiary.listen.ListenEngine
 import com.jorge.koreandiary.mascot.MascotPack
 import com.jorge.koreandiary.reminder.ReminderScheduler
 import com.jorge.koreandiary.workbook.WorkbookStore
+import com.jorge.koreandiary.settings.ExplainChoice
+import com.jorge.koreandiary.settings.ExplainOption
 import com.jorge.koreandiary.settings.ProviderId
 import com.jorge.koreandiary.settings.SecretStore
 import com.jorge.koreandiary.settings.SettingsStore
@@ -38,6 +40,10 @@ import com.jorge.koreandiary.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -99,6 +105,12 @@ class AppContainer(val app: Application) {
         }
     }
 
+    /**
+     * Otro modelo para explicar porque el elegido falló y pulsaste «Probar con …». Dura hasta cerrar
+     * la app o cambiar las explicaciones en Ajustes.
+     */
+    val explainOverride = MutableStateFlow<ExplainOption?>(null)
+
     init {
         // Antes de instalar cada actualización: primero se guarda lo que estés escribiendo y después
         // va una copia de todo (carpeta elegida o dentro de la app).
@@ -110,6 +122,10 @@ class AppContainer(val app: Application) {
         updater.beforeCommit = { saveOpenPages() }
         // La lista del diccionario (~51.000 entradas) se carga ya, para que la primera búsqueda no espere.
         appScope.launch { runCatching { dictionary.warmUp() } }
+        // Si cambias en Ajustes quién explica, vale lo que elegiste, no el modelo de reemplazo.
+        appScope.launch {
+            settings.state.map { it.explainProvider to it.explainModel }.distinctUntilChanged().drop(1).collect { explainOverride.value = null }
+        }
     }
 
     /** Proveedor por API listo para usar, o null si le falta configuración. */
@@ -146,14 +162,49 @@ class AppContainer(val app: Application) {
      * con el modelo de explicaciones; si Gemini tampoco está, Azure. Sin ninguno, null.
      */
     fun explainProvider(): Pair<String, CorrectionProvider>? {
-        val s = settings.state.value
-        val azure = if (isConfigured(ProviderId.AZURE)) apiProvider(ProviderId.AZURE) else null
-        if (s.explainProvider == ProviderId.AZURE && azure != null) return ProviderId.AZURE to azure
-        if (isConfigured(ProviderId.GEMINI)) {
-            if (fixedAi(ProviderId.GEMINI)) return ProviderId.GEMINI to FixedProvider()
-            secrets.get(SecretStore.GEMINI_KEY)?.let { return ProviderId.GEMINI to GeminiProvider(it, s.explainModel) }
+        val o = currentExplainOption() ?: return null
+        val provider = when (o.providerId) {
+            ProviderId.AZURE -> apiProvider(ProviderId.AZURE)
+            ProviderId.GEMINI -> if (fixedAi(ProviderId.GEMINI)) FixedProvider() else secrets.get(SecretStore.GEMINI_KEY)?.let { GeminiProvider(it, o.model) }
+            else -> null
         }
-        return azure?.let { ProviderId.AZURE to it }
+        return provider?.let { o.providerId to it }
+    }
+
+    /** Lo elegido en Ajustes › IA › Explicaciones, o lo que haya configurado. */
+    private fun preferredExplainOption(): ExplainOption? {
+        val s = settings.state.value
+        val azureReady = isConfigured(ProviderId.AZURE)
+        return when {
+            s.explainProvider == ProviderId.AZURE && azureReady -> ExplainOption(ProviderId.AZURE, s.azureDeployment)
+            isConfigured(ProviderId.GEMINI) -> ExplainOption(ProviderId.GEMINI, s.explainModel)
+            azureReady -> ExplainOption(ProviderId.AZURE, s.azureDeployment)
+            else -> null
+        }
+    }
+
+    /** Los modelos registrados con los que se puede explicar, el elegido primero. */
+    fun explainOptions(): List<ExplainOption> {
+        val s = settings.state.value
+        return ExplainChoice.options(
+            preferred = preferredExplainOption(),
+            azureDeployment = s.azureDeployment.takeIf { isConfigured(ProviderId.AZURE) },
+            geminiModels = if (isConfigured(ProviderId.GEMINI)) listOf(s.explainModel, s.geminiModel, s.listenScriptModel) else emptyList(),
+        )
+    }
+
+    /** Con qué se explica ahora: el reemplazo si lo pediste (y sigue registrado), si no el elegido. */
+    fun currentExplainOption(): ExplainOption? =
+        explainOverride.value?.takeIf { it in explainOptions() } ?: preferredExplainOption()
+
+    /** El siguiente modelo registrado, para el botón «Probar con …». Null si no hay otro. */
+    fun explainAlternative(): ExplainOption? = ExplainChoice.next(explainOptions(), currentExplainOption())
+
+    /** Pasa al siguiente modelo registrado hasta cerrar la app; si da la vuelta, vuelve al elegido. */
+    fun useExplainAlternative(): ExplainOption? {
+        val alt = explainAlternative() ?: return null
+        explainOverride.value = alt.takeIf { it != preferredExplainOption() }
+        return alt
     }
 
     /**
@@ -196,12 +247,14 @@ class AppContainer(val app: Application) {
     fun explainError(e: ProviderException, providerId: String): String {
         if (e.offline) return "Sin conexión."
         val code = (e as? HttpProviderException)?.code
-        val model = settings.state.value.explainModel
+        val name = currentExplainOption()?.label ?: settings.state.value.explainModel
         return when {
             providerId == ProviderId.GEMINI && code == 429 ->
-                "Se acabó por hoy la cuota gratis de $model, el modelo de las explicaciones. Puedes usar Azure en Ajustes › IA › Explicaciones."
+                "Se acabó por ahora la cuota gratis de $name. Reintenta más tarde o prueba con otro modelo."
+            code == 429 -> "$name llegó a su límite por ahora. Reintenta más tarde o prueba con otro modelo."
             providerId == ProviderId.GEMINI && (code == 403 || code == 404) ->
-                "Tu clave de Gemini no puede usar $model: cámbialo en Ajustes › IA › Explicaciones."
+                "Tu clave de Gemini no puede usar $name: prueba con otro modelo o cámbialo en Ajustes › IA › Explicaciones."
+            code != null && code >= 500 -> "$name está saturado o falló (error $code). Suele pasar en un rato: reintenta o prueba con otro modelo."
             else -> e.message ?: "Error de la IA."
         }
     }

@@ -298,6 +298,15 @@ fun SettingsScreen(
                     )
                     val azureReady = container.isConfigured(ProviderId.AZURE)
                     val geminiReady = container.isConfigured(ProviderId.GEMINI)
+                    // Si pulsaste «Probar con …» porque el elegido falló, se dice y se puede volver.
+                    val override by container.explainOverride.collectAsStateWithLifecycle()
+                    override?.let { o ->
+                        Text(
+                            "Por ahora explica ${o.label}: lo elegiste con «Probar con …» porque el modelo de aquí falló. Dura hasta cerrar la app.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        AppTextButton(onClick = { container.explainOverride.value = null }) { Text("Volver al elegido") }
+                    }
                     Text(
                         when {
                             s.explainProvider == ProviderId.AZURE && azureReady -> "Ahora explica Azure (despliegue «${s.azureDeployment}»). Cada consulta cuenta en su límite diario."

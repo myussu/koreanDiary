@@ -96,6 +96,8 @@ data class WordLookup(
     /** De qué partes se forma una palabra nativa (el diccionario no lo dice), según la IA. */
     val aiParts: String? = null,
     val aiPartsLoading: Boolean = false,
+    /** Falló la IA (saturada, sin cuota…): sale «Reintentar» o «Probar con …». */
+    val failed: Boolean = false,
 ) {
     /** Se pueden pedir las partes a la IA: nativa (sin origen en el diccionario) y de más de una sílaba. */
     val canAskParts: Boolean
@@ -126,12 +128,19 @@ data class QuickReviewState(
     val strokes: List<InkStroke> = emptyList(),
     /** Una nota arriba (sin IA, error); no frena el repaso. */
     val note: String? = null,
+    /** Falló la llamada de la ronda (traducciones, «Usa:», oraciones que faltan): se puede reintentar. */
+    val roundFailed: Boolean = false,
+    val retrying: Boolean = false,
+    /** Lo que expresa cada gramática según la IA, si llegó al reintentar la ronda. */
+    val senses: Map<String, String> = emptyMap(),
     /** Mensaje cuando no hay tarjetas. */
     val empty: String? = null,
     /** «Más sobre esto»: la explicación del ítem de la tarjeta cerrada, mientras llega y si falla. */
     val explain: ItemExplanation? = null,
     val explaining: Boolean = false,
     val explainNote: String? = null,
+    /** Falló la IA en «Más sobre esto» o en sus partes. */
+    val explainFailed: Boolean = false,
     /** «¿De qué partes se forma?» en «Más sobre esto» (palabra nativa): lo que dijo la IA. */
     val explainParts: String? = null,
     val explainPartsLoading: Boolean = false,
@@ -143,6 +152,7 @@ data class QuickReviewState(
     /** La tarjeta que se está traduciendo. */
     val translating: String? = null,
     val translateNote: String? = null,
+    val translateFailed: Boolean = false,
 ) {
     val card: ClozeCard? get() = cards.getOrNull(index)
     val done: Boolean get() = !loading && cards.isNotEmpty() && index >= cards.size
@@ -156,6 +166,9 @@ data class QuickReviewState(
 class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(QuickReviewState())
     val state = _state.asStateFlow()
+
+    /** Lo que no tiene oración tuya ni del diccionario y espera a que la IA la escriba. */
+    private var pendingMissing: List<ClozeTarget> = emptyList()
 
     init { start() }
 
@@ -175,42 +188,47 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             // Primero tus oraciones; para lo demás, una del diccionario; la IA solo escribe las que faltan.
             val (own, fromDictionary) = withContext(Dispatchers.Default) {
                 // En tus oraciones de gramática, el verbo al que va unida (먹는 → 먹다), para «Usa:».
+                // Y lo que dice el diccionario, para «Usa:» si la IA no contesta.
                 val mine = Cloze.localCards(targets).map { card ->
-                    if (card.base != null) card else card.copy(base = runCatching { DictionaryCloze.base(c.dictionary, card) }.getOrNull())
+                    card.copy(
+                        base = card.base ?: runCatching { DictionaryCloze.base(c.dictionary, card) }.getOrNull(),
+                        dictionaryMeaning = runCatching { DictionaryCloze.dictionaryMeaning(c.dictionary, card.label, card.kind, card.meaning) }.getOrNull(),
+                    )
                 }
                 mine to targets.filter { !it.own }.mapNotNull { t -> runCatching { DictionaryCloze.card(c.dictionary, t) }.getOrNull() }
             }
             val missing = targets.filter { t -> !t.own && fromDictionary.none { it.code == t.code } }
+            pendingMissing = missing
             val given = own + fromDictionary
             // Una sola llamada traduce todas (con lo del hueco resaltado), dice qué expresa cada gramática
             // y escribe las que faltan. Con el modelo de las explicaciones: una traducción mal resaltada
             // confunde más de lo que ayuda (pedido por Jorge el 2026-11-22).
             val provider = c.explainProvider()
             var note: String? = null
+            var failed = false
             val lost = if (missing.isEmpty()) "" else ", y ${missing.size} sin oración tuya ni del diccionario quedaron fuera"
             val cards: List<ClozeCard> = when {
                 provider == null -> given.also { note = "Sin IA las oraciones van sin traducción$lost. Con Gemini (Ajustes › IA) se traducen." }
                 c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> given.also {
-                    note = "Llegaste al límite diario de la IA: las oraciones van sin traducción$lost."
+                    note = "Llegaste al límite diario de ${c.currentExplainOption()?.label ?: "la IA"}: las oraciones van sin traducción$lost."
+                    failed = true
                 }
                 else -> try {
                     val raw = provider.second.complete(CorrectionRequest(Cloze.prompt(settings.profile, settings.level, settings.standardLevel, given, missing)))
                     c.settings.registerUse(provider.first)
+                    pendingMissing = emptyList()
                     Cloze.parse(raw, given, missing)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    note = when (e) {
-                        is ProviderException -> c.explainError(e, provider.first)
-                        is ParseException -> "No se pudo leer la respuesta de la IA"
-                        else -> e.message ?: e.javaClass.simpleName
-                    }.trimEnd('.') + ": las oraciones van sin traducción$lost."
+                    note = "Las oraciones van sin traducción$lost. " + roundError(e, provider.first)
+                    failed = true
                     given
                 }
             }
             _state.update {
                 it.copy(
-                    loading = false, cards = cards, note = note,
+                    loading = false, cards = cards, note = note, roundFailed = failed,
                     empty = if (cards.isEmpty()) "No encontré oraciones con lo que te toca repasar. Con la IA configurada, ella las escribe." else null,
                 )
             }
@@ -328,7 +346,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         it.copy(
             index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, nearMiss = null, copied = null, strokes = emptyList(), note = null,
             checking = false, explain = null, explaining = false, explainNote = null, explainParts = null, explainPartsLoading = false, lookup = null,
-            translateNote = null,
+            translateNote = null, translateFailed = false, explainFailed = false,
         )
     }
 
@@ -341,12 +359,21 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
      * otra vez la cierra. No toca el repaso.
      */
     fun lookup(word: String) {
-        val st = _state.value
-        val card = st.card ?: return
-        if (st.lookup?.word == word) {
+        if (_state.value.lookup?.word == word) {
             closeLookup()
             return
         }
+        runLookup(word)
+    }
+
+    /** «Reintentar» o «Probar con …» cuando falló la IA al buscar la palabra abierta. */
+    fun retryLookup() {
+        _state.value.lookup?.word?.let(::runLookup)
+    }
+
+    private fun runLookup(word: String) {
+        val st = _state.value
+        val card = st.card ?: return
         val index = st.index
         val key = "$word|${card.sentence}"
         _state.update { it.copy(lookup = WordLookup(word)) }
@@ -363,24 +390,27 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                 return@launch
             }
             var note: String? = null
+            var failed = false
             val gloss = glosses[key] ?: run {
                 val settings = c.settings.state.value
                 val provider = c.explainProvider()
                 when {
                     provider == null -> null.also { note = "Para ver qué significa, configura Gemini (es gratis) en Ajustes › IA." }
-                    c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also { note = "Llegaste al límite diario de la IA." }
+                    c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also {
+                        note = "Llegaste al límite diario de ${c.currentExplainOption()?.label ?: "la IA"}."
+                        failed = true
+                    }
                     else -> try {
                         val raw = provider.second.complete(CorrectionRequest(ConversationPrompts.word(word, card.sentence)))
                         c.settings.registerUse(provider.first)
                         ConversationParser.word(raw, word).also { glosses[key] = it }
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (e: ProviderException) {
-                        null.also { note = c.explainError(e, provider.first) }
-                    } catch (e: ParseException) {
-                        null.also { note = "No se pudo leer la respuesta de la IA." }
                     } catch (e: Exception) {
-                        null.also { note = e.message ?: e.javaClass.simpleName }
+                        null.also {
+                            note = roundError(e, provider.first)
+                            failed = true
+                        }
                     }
                 }
             }
@@ -389,7 +419,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             _state.update { s ->
                 val open = s.lookup
                 if (s.index == index && open != null && open.word == word) {
-                    s.copy(lookup = open.copy(gloss = gloss, glossKnown = known, loading = false, note = note, inList = inList))
+                    s.copy(lookup = open.copy(gloss = gloss, glossKnown = known, loading = false, note = note, inList = inList, failed = failed))
                 } else s
             }
         }
@@ -442,25 +472,30 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         if (!open.canAskParts || open.aiPartsLoading) return
         val index = st.index
         val key = "${open.word}|${card.sentence}"
-        _state.update { it.copy(lookup = open.copy(aiPartsLoading = true, note = null)) }
+        _state.update { it.copy(lookup = open.copy(aiPartsLoading = true, note = null, failed = false)) }
         viewModelScope.launch {
             var note: String? = null
+            var failed = false
             val gloss = glosses[key] ?: run {
                 val settings = c.settings.state.value
                 val provider = c.explainProvider()
                 when {
                     provider == null -> null.also { note = "Para pedir las partes, configura Gemini o Azure en Ajustes › IA." }
-                    c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also { note = "Llegaste al límite diario de la IA." }
+                    c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> null.also {
+                        note = "Llegaste al límite diario de ${c.currentExplainOption()?.label ?: "la IA"}."
+                        failed = true
+                    }
                     else -> try {
                         val raw = provider.second.complete(CorrectionRequest(ConversationPrompts.word(open.word, card.sentence)))
                         c.settings.registerUse(provider.first)
                         ConversationParser.word(raw, open.word).also { glosses[key] = it }
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (e: ProviderException) {
-                        null.also { note = c.explainError(e, provider.first) }
                     } catch (e: Exception) {
-                        null.also { note = e.message ?: e.javaClass.simpleName }
+                        null.also {
+                            note = roundError(e, provider.first)
+                            failed = true
+                        }
                     }
                 }
             }
@@ -468,7 +503,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             _state.update { s ->
                 val latest = s.lookup
                 if (s.index == index && latest != null && latest.word == open.word) {
-                    s.copy(lookup = latest.copy(aiParts = parts, aiPartsLoading = false, note = note))
+                    s.copy(lookup = latest.copy(aiParts = parts, aiPartsLoading = false, note = note, failed = failed))
                 } else s
             }
         }
@@ -487,7 +522,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         // La explicación es de esta tarjeta: si llega cuando ya pasaste a otra, queda guardada pero no
         // se muestra (antes salía bajo el título de la tarjeta siguiente).
         val index = _state.value.index
-        _state.update { it.copy(explaining = true, explainNote = null) }
+        _state.update { it.copy(explaining = true, explainNote = null, explainFailed = false) }
         viewModelScope.launch {
             c.knownExplanation(card.label, isGrammar, card.meaning)?.let { found ->
                 _state.update { if (it.index == index) it.copy(explain = found, explaining = false) else it }
@@ -495,9 +530,10 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             }
             val settings = c.settings.state.value
             val provider = c.explainProvider()
+            var failed = false
             val note = when {
                 provider == null -> "Para ver más, configura Gemini (es gratis) en Ajustes › IA."
-                c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> "Llegaste al límite diario de la IA."
+                c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> "Llegaste al límite diario de ${c.currentExplainOption()?.label ?: "la IA"}.".also { failed = true }
                 else -> try {
                     val asked = listOf(card.label to (card.kind == ClozeKind.GRAMMAR))
                     val raw = provider.second.complete(CorrectionRequest(Prompts.explainItems(settings.profile, settings.level, settings.standardLevel, asked)))
@@ -506,16 +542,69 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                     if (c.explanations.get(key) == null) "La IA no devolvió esta explicación." else null
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: ProviderException) {
-                    c.explainError(e, provider.first)
-                } catch (e: ParseException) {
-                    "No se pudo leer la respuesta de la IA."
                 } catch (e: Exception) {
-                    e.message ?: e.javaClass.simpleName
+                    failed = true
+                    roundError(e, provider.first)
                 }
             }
             val found = c.explanations.get(key)
-            _state.update { if (it.index == index) it.copy(explain = found, explaining = false, explainNote = note) else it }
+            _state.update { if (it.index == index) it.copy(explain = found, explaining = false, explainNote = note, explainFailed = failed && found == null) else it }
+        }
+    }
+
+    private fun roundError(e: Exception, providerId: String): String = when (e) {
+        is ProviderException -> c.explainError(e, providerId)
+        is ParseException -> "No se pudo leer la respuesta de la IA."
+        else -> e.message ?: e.javaClass.simpleName
+    }
+
+    /**
+     * «Reintentar» o «Probar con …» cuando falló la llamada de la ronda: pide de nuevo las
+     * traducciones y lo que expresa cada gramática de las tarjetas que no las tienen, y las oraciones
+     * que faltaban (van al final). No reinicia la ronda: lo hecho queda.
+     */
+    fun retryRound() {
+        val st = _state.value
+        if (st.loading || st.retrying) return
+        val given = st.cards.filter { it.translation == null && it.code !in st.translations }
+        val missing = pendingMissing
+        if (given.isEmpty() && missing.isEmpty()) {
+            _state.update { it.copy(roundFailed = false, note = null) }
+            return
+        }
+        _state.update { it.copy(retrying = true) }
+        viewModelScope.launch {
+            val settings = c.settings.state.value
+            val provider = c.explainProvider()
+            var note: String? = null
+            var result: List<ClozeCard> = emptyList()
+            when {
+                provider == null -> note = "Para traducir, configura Gemini (es gratis) en Ajustes › IA."
+                c.settings.usageToday(provider.first) >= settings.dailyLimit(provider.first) -> note = "Llegaste al límite diario de ${c.currentExplainOption()?.label ?: "la IA"}."
+                else -> try {
+                    val raw = provider.second.complete(CorrectionRequest(Cloze.prompt(settings.profile, settings.level, settings.standardLevel, given, missing)))
+                    c.settings.registerUse(provider.first)
+                    result = Cloze.parse(raw, given, missing)
+                    pendingMissing = emptyList()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    note = "Las oraciones siguen sin traducción. " + roundError(e, provider.first)
+                }
+            }
+            val byCode = result.associateBy { it.code }
+            val translated = given.mapNotNull { g -> byCode[g.code]?.translation?.let { g.code to it } }.toMap()
+            val senses = given.mapNotNull { g -> byCode[g.code]?.aiSense?.let { g.code to it } }.toMap()
+            val written = result.filter { r -> missing.any { it.code == r.code } }
+            _state.update { s ->
+                val cards = s.cards + written
+                s.copy(
+                    retrying = false, cards = cards,
+                    translations = s.translations + translated, senses = s.senses + senses,
+                    roundFailed = note != null, note = note,
+                    empty = if (cards.isEmpty()) s.empty else null,
+                )
+            }
         }
     }
 
@@ -533,10 +622,10 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         if (c.settings.usageToday(provider.first) >= c.settings.state.value.dailyLimit(provider.first)) {
-            _state.update { it.copy(translateNote = "Llegaste al límite diario de la IA.") }
+            _state.update { it.copy(translateNote = "Llegaste al límite diario de ${c.currentExplainOption()?.label ?: "la IA"}.", translateFailed = true) }
             return
         }
-        _state.update { it.copy(translating = card.code, translateNote = null) }
+        _state.update { it.copy(translating = card.code, translateNote = null, translateFailed = false) }
         viewModelScope.launch {
             var note: String? = null
             val text = try {
@@ -557,6 +646,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                     translating = null,
                     translations = if (text != null) s.translations + (card.code to text) else s.translations,
                     translateNote = if (s.card?.code == card.code) note else s.translateNote,
+                    translateFailed = if (s.card?.code == card.code) note != null else s.translateFailed,
                 )
             }
         }
@@ -569,10 +659,12 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         val e = st.explain ?: return
         if (st.explainPartsLoading || st.explainParts != null) return
         val index = st.index
-        _state.update { it.copy(explainPartsLoading = true, explainNote = null) }
+        _state.update { it.copy(explainPartsLoading = true, explainNote = null, explainFailed = false) }
         viewModelScope.launch {
             val (parts, note) = c.askParts(e.form, card.sentence)
-            _state.update { if (it.index == index) it.copy(explainParts = parts, explainPartsLoading = false, explainNote = note) else it }
+            _state.update {
+                if (it.index == index) it.copy(explainParts = parts, explainPartsLoading = false, explainNote = note, explainFailed = parts == null && note != null) else it
+            }
         }
     }
 }
@@ -598,6 +690,7 @@ fun QuickReviewScreen(container: AppContainer, onBack: () -> Unit) {
             state.empty != null -> Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(state.empty!!, style = MaterialTheme.typography.bodyMedium)
                 state.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+                RoundRetry(state, vm)
                 AppOutlinedButton(onClick = onBack) { Text("Volver") }
             }
             state.done -> Summary(state, onAgain = vm::start, onBack = onBack)
@@ -607,6 +700,15 @@ fun QuickReviewScreen(container: AppContainer, onBack: () -> Unit) {
 }
 
 /** Lo que la app leyó, en grande: así se ve enseguida si leyó bien tu letra. */
+/** «Reintentar» o «Probar con …» cuando falló la llamada de la ronda (las traducciones y «Usa:»). */
+@Composable
+private fun RoundRetry(state: QuickReviewState, vm: QuickReviewViewModel) {
+    when {
+        state.retrying -> Text("Pidiendo de nuevo a la IA…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        state.roundFailed -> ExplainRetryRow(onRetry = vm::retryRound)
+    }
+}
+
 /**
  * «Usa:»: qué va en el hueco sin decir la forma coreana. En una gramática siempre: qué expresa y con
  * qué verbo va («la gramática de «durante el tiempo que», con 먹다»), porque la traducción sola no
@@ -724,11 +826,13 @@ private fun CardView(
                     modifier = Modifier.testTag("repaso_traduccion"),
                 )
             }
-            UseLine(card, hasTranslation = translation != null)
+            // Lo que expresa la gramática puede haber llegado después, al reintentar la ronda.
+            val cue = state.senses[card.code]?.let { card.copy(aiSense = it) } ?: card
+            UseLine(cue, hasTranslation = translation != null)
             val aiLabel = when {
-                translation != null && card.senseByAi && card.kind == ClozeKind.GRAMMAR -> "Traducción y pista según la IA"
+                translation != null && cue.senseByAi && card.kind == ClozeKind.GRAMMAR -> "Traducción y pista según la IA"
                 translation != null -> "Traducción según la IA"
-                card.senseByAi && card.kind == ClozeKind.GRAMMAR -> "Pista según la IA"
+                cue.senseByAi && card.kind == ClozeKind.GRAMMAR -> "Pista según la IA"
                 else -> null
             }
             aiLabel?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
@@ -739,6 +843,7 @@ private fun CardView(
                     AppTextButton(onClick = vm::translate, modifier = Modifier.testTag("repaso_traducir")) { Text("Traducir") }
                 }
                 state.translateNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
+                if (state.translateFailed && state.translating == null) ExplainRetryRow(onRetry = vm::translate)
             }
             // La oración con el hueco; al cerrar la tarjeta, con la respuesta. Cada palabra se toca
             // para ver qué es (la del hueco, solo al cerrar la tarjeta).
@@ -783,7 +888,7 @@ private fun CardView(
                 style = MaterialTheme.typography.labelMedium,
                 color = scheme.onSurfaceVariant,
             )
-            state.lookup?.let { WordPanel(it, onAdd = vm::addLookup, onAskParts = vm::askParts, onClose = vm::closeLookup) }
+            state.lookup?.let { WordPanel(it, onAdd = vm::addLookup, onAskParts = vm::askParts, onRetryLookup = vm::retryLookup, onClose = vm::closeLookup) }
             if (state.hints > 0) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Cloze.hints(card).take(state.hints).forEachIndexed { i, h ->
@@ -792,6 +897,7 @@ private fun CardView(
                 }
             }
             state.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+            RoundRetry(state, vm)
             when (state.outcome) {
                 ClozeOutcome.RIGHT -> {
                     ReadBack(state.read, scheme.tertiary)
@@ -852,6 +958,9 @@ private fun CardView(
                         Text("Buscando la explicación…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
                     }
                     state.explainNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
+                    if (state.explainFailed && !state.explaining && !state.explainPartsLoading) {
+                        ExplainRetryRow(onRetry = if (state.explain == null) vm::explain else vm::askExplainParts)
+                    }
                 }
             }
         }
@@ -935,7 +1044,7 @@ private fun CardView(
  * forma que no está en tu lista, «Agregar a mi lista».
  */
 @Composable
-private fun WordPanel(lookup: WordLookup, onAdd: (String) -> Unit, onAskParts: () -> Unit, onClose: () -> Unit) {
+private fun WordPanel(lookup: WordLookup, onAdd: (String) -> Unit, onAskParts: () -> Unit, onRetryLookup: () -> Unit, onClose: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val dict = lookup.dict
     val gloss = lookup.gloss
@@ -982,6 +1091,10 @@ private fun WordPanel(lookup: WordLookup, onAdd: (String) -> Unit, onAskParts: (
                 if (!g.isGrammar) AddRow(g.form, lookup, onAdd, Modifier.testTag("repaso_palabra_agregar"))
             }
             lookup.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
+            // Falló la búsqueda con IA o las partes: se reintenta lo que falló.
+            if (lookup.failed && !lookup.loading && !lookup.aiPartsLoading) {
+                ExplainRetryRow(onRetry = if (lookup.dict == null && lookup.gloss == null) onRetryLookup else onAskParts)
+            }
         }
     }
 }

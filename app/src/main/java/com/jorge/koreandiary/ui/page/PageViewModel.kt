@@ -123,6 +123,8 @@ data class ExplainCard(
     /** «¿De qué partes se forma?» (palabra nativa del diccionario): lo que dijo la IA. */
     val parts: String? = null,
     val partsLoading: Boolean = false,
+    /** Falló la IA al pedir las partes: sale «Reintentar» o «Probar con …». */
+    val partsFailed: Boolean = false,
 )
 
 data class PageUiState(
@@ -570,10 +572,12 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         val card = _explain.value ?: return
         val e = card.explanation ?: return
         if (card.partsLoading || card.parts != null) return
-        updateExplain { it.copy(partsLoading = true, note = null) }
+        updateExplain { it.copy(partsLoading = true, note = null, partsFailed = false) }
         viewModelScope.launch {
             val (parts, note) = c.askParts(e.form, "")
-            _explain.update { open -> if (open?.chip == card.chip) open.copy(parts = parts, partsLoading = false, note = note) else open }
+            _explain.update { open ->
+                if (open?.chip == card.chip) open.copy(parts = parts, partsLoading = false, note = note, partsFailed = parts == null && note != null) else open
+            }
         }
     }
 
@@ -606,7 +610,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 return@launch
             }
             if (c.settings.usageToday(providerId) >= settings.dailyLimit(providerId)) {
-                updateExplain { it.copy(note = "Llegaste al límite diario de ${providerName(providerId)}.") }
+                // Con «Probar con …» se puede seguir con otro modelo registrado.
+                updateExplain { it.copy(loading = false, note = "Llegaste al límite diario de ${providerName(providerId)}.", canRetry = true) }
                 return@launch
             }
             val open = _explain.value?.chip

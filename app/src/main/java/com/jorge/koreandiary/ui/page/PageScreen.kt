@@ -99,6 +99,7 @@ import com.jorge.koreandiary.ui.AppButton
 import com.jorge.koreandiary.ui.AppMascot
 import com.jorge.koreandiary.ui.AppOutlinedButton
 import com.jorge.koreandiary.ui.AppTag
+import com.jorge.koreandiary.ui.ExplainRetryRow
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
 import com.jorge.koreandiary.ui.LocalPaperStyle
@@ -621,7 +622,9 @@ private fun SuggestionCard(card: ExplainCard, onClose: () -> Unit, onRetry: () -
             Text("Buscando el significado y ejemplos naturales…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
         }
         card.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.error) }
-        if (card.canRetry) AppTextButton(onClick = onRetry) { Text("Reintentar") }
+        // Falló la IA (saturada, sin cuota…): reintentar o probar con otro modelo registrado.
+        if (card.canRetry && !card.loading) ExplainRetryRow(onRetry = onRetry)
+        if (card.partsFailed && !card.partsLoading) ExplainRetryRow(onRetry = onAskParts)
     }
 }
 

@@ -88,7 +88,8 @@ sealed interface CoachPanel {
     data class HowToInput(val text: String = "", val listening: Boolean = false, val error: String? = null) : CoachPanel
     /** La ayuda por partes, como en el diario: [shown] 1 = palabras, 2 = cómo unirlas, 3 = la frase. */
     data class HowToShown(val idea: String, val answer: HowToSayResponse, val shown: Int = 1) : CoachPanel
-    data class Error(val message: String) : CoachPanel
+    /** [retry]: falló la IA de las explicaciones; se puede reintentar o probar con otro modelo. */
+    data class Error(val message: String, val retry: (() -> Unit)? = null) : CoachPanel
 }
 
 /** Práctica en voz alta de las correcciones, una por una. */
@@ -841,8 +842,10 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             return
         }
         val s = c.settings.state.value
+        // Explicando, si falla se puede reintentar o pasar a otro modelo registrado (Azure…).
+        val retry: (() -> Unit)? = if (explains) ({ coach(loading, prompt, explains, onResult) }) else null
         if (c.settings.usageToday(providerId) >= s.dailyLimit(providerId)) {
-            _state.update { it.copy(panel = CoachPanel.Error("Llegaste al límite diario de consultas de ${providerName(providerId)}.")) }
+            _state.update { it.copy(panel = CoachPanel.Error("Llegaste al límite diario de consultas de ${providerName(providerId)}.", retry)) }
             return
         }
         _state.update { it.copy(panel = CoachPanel.Loading(loading)) }
@@ -856,13 +859,13 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 if (!isActive) return@launch
                 onResult(raw)
             } catch (e: ProviderException) {
-                CoachPanel.Error(if (explains) c.explainError(e, providerId) else if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.")
+                CoachPanel.Error(if (explains) c.explainError(e, providerId) else if (e.offline) "Sin conexión." else e.message ?: "Error del proveedor.", retry)
             } catch (e: ParseException) {
-                CoachPanel.Error("No se pudo leer la respuesta: ${e.message}")
+                CoachPanel.Error("No se pudo leer la respuesta: ${e.message}", retry)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                CoachPanel.Error(e.message ?: e.javaClass.simpleName)
+                CoachPanel.Error(e.message ?: e.javaClass.simpleName, retry)
             }
             if (isActive) _state.update { it.copy(panel = panel) }
         }

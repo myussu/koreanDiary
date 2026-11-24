@@ -100,6 +100,14 @@ class DictionaryClozeTest {
     }
 
     @Test
+    fun loDelDiccionarioTambienEnTusOraciones() {
+        // Sin IA y sin significado en tu lista, «Usa:» no queda en «una palabra».
+        assertEquals("ladrón", DictionaryCloze.dictionaryMeaning(dictionary, "도둑", ClozeKind.WORD, "ladrón"))
+        assertEquals("el tiempo que dura un acto o estado", DictionaryCloze.dictionaryMeaning(dictionary, "-는 동안에", ClozeKind.GRAMMAR))
+        assertNull(DictionaryCloze.dictionaryMeaning(dictionary, "이난", ClozeKind.WORD))
+    }
+
+    @Test
     fun laMismaPalabraConOtraTerminacion() {
         val card = ClozeCard("g1", "-는 동안에", ClozeKind.GRAMMAR, null, "먹는 동안 다른 음식도 먹어 봤어요.", 0, "먹는 동안", base = "먹다")
         assertEquals("El verbo está bien (먹다), pero aquí va otra gramática: la de «Usa:».", DictionaryCloze.nearMiss(dictionary, card, "먹으면서"))

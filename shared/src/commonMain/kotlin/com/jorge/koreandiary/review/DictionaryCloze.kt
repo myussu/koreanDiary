@@ -52,6 +52,20 @@ object DictionaryCloze {
     }
 
     /**
+     * Lo que dice el diccionario del ítem, para «Usa:» cuando la IA no contesta (también en tus
+     * oraciones): el significado de una palabra (el sentido de tu lista si lo tiene) o qué expresa una
+     * gramática, corto. Null si no está.
+     */
+    fun dictionaryMeaning(dictionary: KoreanDictionary, label: String, kind: ClozeKind, meaning: String? = null): String? =
+        if (kind == ClozeKind.GRAMMAR) {
+            DictionaryExplain.grammarFamily(dictionary, label).firstOrNull()
+                ?.let { dictionary.detail(it) }?.senses?.firstOrNull()?.definition
+                ?.let(DictionaryExplain::grammarGloss)
+        } else {
+            DictionaryExplain.wordChoice(dictionary, label, meaning)?.let { DictionaryExplain.senseMeaning(it.senses[it.main]) }
+        }?.takeIf { it.isNotBlank() }
+
+    /**
      * Lo que acompaña al hueco en «Usa:» y en las pistas: un verbo, su forma de diccionario; una
      * gramática, el verbo o adjetivo al que va unida (읽을 수 있어요 → 읽다). Null si no se sabe.
      */
