@@ -12,6 +12,9 @@ on:
       - ".github/workflows/escritorio.yml"
       # Herramientas fuera de la app (kit de dibujos para agentes).
       - "tools/**"
+      # App aparte para probar Kiwi: tiene su propio workflow y release.
+      - "kiwiPrueba/**"
+      - ".github/workflows/kiwi-prueba.yml"
   pull_request:
   workflow_dispatch:
 

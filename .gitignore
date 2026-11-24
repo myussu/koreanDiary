@@ -20,3 +20,9 @@
 # Pruebas en el emulador (docs/PRUEBAS.md): resultados y capturas locales, no van al repo
 /pruebas-resultados.md
 /capturas-pruebas/
+
+# App de prueba de Kiwi: la librería, el modelo y el índice del diccionario los baja preparar.sh
+/kiwiPrueba/build/
+/kiwiPrueba/libs/
+/kiwiPrueba/src/main/assets/kiwi/
+/kiwiPrueba/src/main/assets/formas.txt
