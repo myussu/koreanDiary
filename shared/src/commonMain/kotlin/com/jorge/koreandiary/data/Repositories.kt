@@ -681,8 +681,9 @@ class StudyRepository(
                 // Con el diccionario también los irregulares (고팠다, 덥군요) y la gramática escrita de
                 // otra forma (-ㄹ 수 있다), que antes no se encontraban.
                 // Con el analizador (Kiwi) decide la oración: en «사과를 사는 사람» no está 살다.
-                val blank = if (analyzer != null && dictionary != null && kind != ClozeKind.GRAMMAR) {
-                    runCatching { DictionaryCloze.wordBlank(dictionary, text, label, kind, analyzer) }.getOrNull() ?: continue
+                val dict = dictionary
+                val blank = if (analyzer != null && dict != null && kind != ClozeKind.GRAMMAR) {
+                    runCatching { DictionaryCloze.wordBlank(dict, text, label, kind, analyzer) }.getOrNull() ?: continue
                 } else {
                     Cloze.blankIn(text, label, kind)
                         ?: dictionary?.let { d -> runCatching { DictionaryCloze.blank(d, text, label, kind) }.getOrNull() }
