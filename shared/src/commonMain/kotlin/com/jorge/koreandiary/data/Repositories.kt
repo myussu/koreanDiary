@@ -29,6 +29,7 @@ import com.jorge.koreandiary.data.standard.StdGrammar
 import com.jorge.koreandiary.data.standard.StdWord
 import com.jorge.koreandiary.dictionary.DictEntry
 import com.jorge.koreandiary.dictionary.KoreanDictionary
+import com.jorge.koreandiary.dictionary.SentenceAnalyzer
 import com.jorge.koreandiary.dictionary.PeruSpanish
 import com.jorge.koreandiary.progress.LevelCoverage
 import com.jorge.koreandiary.progress.LevelEstimate
@@ -620,7 +621,13 @@ class StudyRepository(
      * palabras). Cada uno trae, si la hay, una oración tuya ya corregida donde aparece; si no, la IA
      * escribe una. No entra lo que repasaste en las últimas 12 horas.
      */
-    suspend fun quickReviewTargets(now: Long, grammarLevels: List<String>, limit: Int = 10, random: Random = Random.Default): List<ClozeTarget> {
+    suspend fun quickReviewTargets(
+        now: Long,
+        grammarLevels: List<String>,
+        limit: Int = 10,
+        random: Random = Random.Default,
+        analyzer: SentenceAnalyzer? = null,
+    ): List<ClozeTarget> {
         val wordStates = memory.allOfType(ItemType.WORD)
         val grammarStates = memory.allOfType(ItemType.GRAMMAR)
         val recent = now - 12 * 60 * 60 * 1000L
@@ -653,7 +660,7 @@ class StudyRepository(
                 }
                 else -> grammar[ref.id]?.let { g -> ClozeTarget(ref.code, g.pattern, ClozeKind.GRAMMAR, g.meaning) }
             } ?: return@mapNotNull null
-            val own = ownSentence(ref, target.label, target.kind)
+            val own = ownSentence(ref, target.label, target.kind, analyzer)
             if (own == null) target else target.copy(sentence = own.first, blank = own.second)
         }
     }
@@ -662,7 +669,7 @@ class StudyRepository(
      * Una oración tuya donde está el ítem, con sus correcciones aplicadas (la versión buena), de la
      * página más reciente donde lo usaste. Null si no hay o si el celular no encuentra dónde está.
      */
-    private suspend fun ownSentence(ref: ItemRef, label: String, kind: ClozeKind): Pair<String, ClozeBlank>? {
+    private suspend fun ownSentence(ref: ItemRef, label: String, kind: ClozeKind, analyzer: SentenceAnalyzer? = null): Pair<String, ClozeBlank>? {
         val pages = memory.pagesUsing(ref.type, ref.id, 6)
         if (pages.isEmpty()) return null
         val diary = db.diaryDao()
@@ -673,9 +680,14 @@ class StudyRepository(
                 val text = Cloze.applyCorrections(s.text.trim(), fixes.filter { it.sentence == s.number }.map { it.original to it.suggestion })
                 // Con el diccionario también los irregulares (고팠다, 덥군요) y la gramática escrita de
                 // otra forma (-ㄹ 수 있다), que antes no se encontraban.
-                val blank = Cloze.blankIn(text, label, kind)
-                    ?: dictionary?.let { d -> runCatching { DictionaryCloze.blank(d, text, label, kind) }.getOrNull() }
-                    ?: continue
+                // Con el analizador (Kiwi) decide la oración: en «사과를 사는 사람» no está 살다.
+                val blank = if (analyzer != null && dictionary != null && kind != ClozeKind.GRAMMAR) {
+                    runCatching { DictionaryCloze.wordBlank(dictionary, text, label, kind, analyzer) }.getOrNull() ?: continue
+                } else {
+                    Cloze.blankIn(text, label, kind)
+                        ?: dictionary?.let { d -> runCatching { DictionaryCloze.blank(d, text, label, kind) }.getOrNull() }
+                        ?: continue
+                }
                 return text to blank
             }
         }

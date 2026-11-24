@@ -15,8 +15,11 @@ data class LookupEntry(
     val extras: DictionaryExtras? = null,
 )
 
-/** Lo que dice el diccionario de una palabra tocada, con las entradas posibles, primero las comunes. */
-data class WordLookupResult(val written: String, val entries: List<LookupEntry>) {
+/**
+ * Lo que dice el diccionario de una palabra tocada, con las entradas posibles, primero las comunes.
+ * [byContext]: la primera la eligió el analizador mirando la oración (들어요 en «음악을 들어요» → 듣다).
+ */
+data class WordLookupResult(val written: String, val entries: List<LookupEntry>, val byContext: Boolean = false) {
     /** Las formas de diccionario distintas (사는 → 사다 y 살다). */
     val forms: List<String> get() = entries.map { it.entry.form }.distinct()
 }
@@ -28,8 +31,9 @@ data class WordLookupResult(val written: String, val entries: List<LookupEntry>)
  */
 object DictionaryLookup {
 
-    fun lookup(dictionary: KoreanDictionary, written: String, previous: String? = null, maxEntries: Int = 8): WordLookupResult? {
-        val entries = rank(dictionary.baseForms(written), previous)
+    fun lookup(dictionary: KoreanDictionary, written: String, previous: String? = null, maxEntries: Int = 8, preferred: String? = null): WordLookupResult? {
+        val ranked = rank(dictionary.baseForms(written), previous)
+        val entries = preferFirst(dictionary, ranked, preferred)
         if (entries.isEmpty()) return null
         return WordLookupResult(
             written.trim(),
@@ -45,7 +49,19 @@ object DictionaryLookup {
                     extras = detail?.let { DictionaryExtrasOf.of(dictionary, e, it) }?.takeIf { !it.isEmpty },
                 )
             },
+            byContext = preferred != null && entries.firstOrNull()?.form == preferred && ranked.firstOrNull()?.form != preferred,
         )
+    }
+
+    /**
+     * La forma de diccionario que el analizador vio en la oración ([preferred]) va primero; las demás
+     * siguen, para que si se equivocó la correcta esté a mano. Si el lematizador no la tenía y es una
+     * palabra del diccionario, se suma.
+     */
+    fun preferFirst(dictionary: KoreanDictionary, entries: List<DictEntry>, preferred: String?): List<DictEntry> {
+        if (preferred.isNullOrBlank()) return entries
+        val top = entries.filter { it.form == preferred }.ifEmpty { dictionary.entries(preferred).filter { !it.grammar } }
+        return top + entries.filter { e -> top.none { it.id == e.id } }
     }
 
     /** Después de un número (세 장, 두 개), primero los contadores y unidades (의존 명사). */

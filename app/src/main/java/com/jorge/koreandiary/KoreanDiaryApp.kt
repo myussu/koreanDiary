@@ -24,6 +24,8 @@ import com.jorge.koreandiary.data.db.androidKoreanDictionary
 import com.jorge.koreandiary.data.db.androidStandardCatalog
 import com.jorge.koreandiary.data.db.create
 import com.jorge.koreandiary.dictionary.DictionaryExplain
+import com.jorge.koreandiary.dictionary.SentenceLemmas
+import com.jorge.koreandiary.kiwi.KiwiService
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.listen.ListenAudioStore
 import com.jorge.koreandiary.listen.ListenEngine
@@ -76,6 +78,12 @@ class AppContainer(val app: Application) {
 
     /** Para trabajos que deben terminar aunque se cierre la pantalla (p. ej. el guardado final). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Kiwi, el analizador de oraciones: se baja desde Ajustes › Escritura y se carga solo cuando una
+     * pantalla lo pide. Sin él todo sigue con el lematizador.
+     */
+    val kiwi = KiwiService(app, appScope)
 
     /** La imagen de cada escena: la pinta tu servidor de ComfyUI o la eliges tú. */
     val sceneImages = SceneImages(app, appScope) { settings.state.value }
@@ -219,9 +227,21 @@ class AppContainer(val app: Application) {
     suspend fun dictionaryCovers(label: String, isGrammar: Boolean): Boolean =
         withContext(Dispatchers.Default) { runCatching { DictionaryExplain.covers(dictionary, label, isGrammar) }.getOrDefault(false) }
 
-    /** Lo que da el diccionario, o null si no tiene la palabra o la gramática. */
+    /**
+     * Lo que da el diccionario, o null si no tiene la palabra o la gramática. Si Kiwi ya está cargado
+     * (el repaso lo carga), los ejemplos son solo los que de verdad la usan; aquí no se carga a propósito.
+     */
     suspend fun dictionaryExplanation(label: String, isGrammar: Boolean, meaning: String? = null): ItemExplanation? =
-        withContext(Dispatchers.Default) { runCatching { DictionaryExplain.explain(dictionary, label, isGrammar, meaning) }.getOrNull() }
+        withContext(Dispatchers.Default) { runCatching { DictionaryExplain.explain(dictionary, label, isGrammar, meaning, kiwi.loadedOrNull()) }.getOrNull() }
+
+    /**
+     * La forma de diccionario de [word] mirando la oración entera (들어요 en «음악을 들어요» → 듣다), con
+     * Kiwi si está bajado (lo carga, ~1 s la primera vez). null sin Kiwi o si no lo sabe.
+     */
+    suspend fun contextLemma(word: String, sentence: String): String? {
+        val analyzer = kiwi.analyzer() ?: return null
+        return withContext(Dispatchers.Default) { runCatching { SentenceLemmas.lemmaOfWord(analyzer, dictionary, sentence, word) }.getOrNull() }
+    }
 
     /**
      * «¿De qué partes se forma?» de una palabra nativa (꿈꾸다, 일으키다), que el diccionario no

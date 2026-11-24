@@ -699,7 +699,9 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             val previous = sentence.split(Regex("\\s+")).map { it.trim { ch -> !ch.isLetterOrDigit() } }.let { t ->
                 t.indexOf(clean).takeIf { it > 0 }?.let { t[it - 1] }
             }
-            val dict = withContext(Dispatchers.Default) { DictionaryLookup.lookup(c.dictionary, clean, previous) }
+            // Con Kiwi, primero la que corresponde a esta oración (들어요 → 듣다 o 들다).
+            val preferred = c.contextLemma(clean, sentence)
+            val dict = withContext(Dispatchers.Default) { DictionaryLookup.lookup(c.dictionary, clean, previous, preferred = preferred) }
             if (!isActive) return@launch
             if (dict != null) {
                 val first = dict.entries.first()

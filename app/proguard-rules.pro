@@ -15,6 +15,10 @@
 # al leer la letra («Attempt to invoke virtual method … on a null object reference»).
 -keep class * implements com.google.firebase.components.ComponentRegistrar { <init>(); }
 
+# Kiwi: su código nativo busca sus clases Java y sus campos por nombre (Kiwi$Token, KiwiBuilder…);
+# R8 los renombraba y el análisis se caía. Se conservan enteras.
+-keep class kr.pe.bab2min.** { *; }
+
 # Archivo y línea en los errores: con el mapping.txt de la compilación (artefacto de Actions) se
 # puede leer dónde falló.
 -keepattributes SourceFile,LineNumberTable

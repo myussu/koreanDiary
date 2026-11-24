@@ -4,6 +4,8 @@ import com.jorge.koreandiary.dictionary.DictEntry
 import com.jorge.koreandiary.dictionary.DictionaryExplain
 import com.jorge.koreandiary.dictionary.GrammarMatch
 import com.jorge.koreandiary.dictionary.KoreanDictionary
+import com.jorge.koreandiary.dictionary.SentenceAnalyzer
+import com.jorge.koreandiary.dictionary.SentenceLemmas
 import kotlin.random.Random
 
 /**
@@ -17,7 +19,7 @@ object DictionaryCloze {
      * Una tarjeta para [target] con una oración del diccionario: corta, cortés (-요) si hay, y donde
      * se encuentra el ítem. [random] cambia la oración entre sesiones. Null si no hay ninguna.
      */
-    fun card(dictionary: KoreanDictionary, target: ClozeTarget, random: Random = Random.Default): ClozeCard? {
+    fun card(dictionary: KoreanDictionary, target: ClozeTarget, random: Random = Random.Default, analyzer: SentenceAnalyzer? = null): ClozeCard? {
         val grammar = target.kind == ClozeKind.GRAMMAR
         val family = if (grammar) DictionaryExplain.grammarFamily(dictionary, target.label) else emptyList()
         val sentences: List<String>
@@ -34,7 +36,7 @@ object DictionaryCloze {
         val options = sentences.map { it.trim().replace(SPACES, " ") }.distinct()
             .filter { it.length in MIN_LENGTH..MAX_LENGTH }
             .mapNotNull { s ->
-                val b = if (grammar) grammarBlank(s, family) else wordBlank(dictionary, s, target.label, target.kind)
+                val b = if (grammar) grammarBlank(s, family) else wordBlank(dictionary, s, target.label, target.kind, analyzer)
                 b?.let { s to it }
             }
         if (options.isEmpty()) return null
@@ -81,15 +83,29 @@ object DictionaryCloze {
      * de 먹는 동안), lo dice: la palabra está bien y lo que cambia es la gramática o la conjugación.
      * Null si no es el caso.
      */
-    fun nearMiss(dictionary: KoreanDictionary, card: ClozeCard, written: String): String? {
+    fun nearMiss(dictionary: KoreanDictionary, card: ClozeCard, written: String, analyzer: SentenceAnalyzer? = null): String? {
         if (card.kind != ClozeKind.GRAMMAR) relatedMiss(dictionary, card, written)?.let { return it }
         if (card.kind == ClozeKind.WORD) return null
-        val mine = verbOf(dictionary, written) ?: return null
+        // Con el analizador, lo que escribiste se mira dentro de la oración (들어요 es 듣다 o 들다 según ella).
+        val start = card.start
+        val end = card.start + written.length
+        val morphs = analyzer?.let { a -> runCatching { a.analyze(card.before + written + card.after) }.getOrNull() }
+        val mine = if (analyzer != null && morphs != null) {
+            SentenceLemmas.lemma(analyzer, dictionary, morphs, start, end)?.let { lemma -> dictionary.entries(lemma).firstOrNull { it.isVerb } }
+        } else null
+        val verb = mine ?: verbOf(dictionary, written) ?: return null
         val expected = card.base?.let { b -> dictionary.entries(b).firstOrNull { it.isVerb } } ?: verbOf(dictionary, card.answer) ?: return null
-        if (mine.form != expected.form) return null
+        if (verb.form != expected.form) return null
         val what = if (expected.pos.contains("형용사")) "El adjetivo" else "El verbo"
-        return if (card.kind == ClozeKind.GRAMMAR) "$what está bien (${expected.form}), pero aquí va otra gramática: la de «Usa:»."
-        else "$what está bien (${expected.form}), pero va conjugado de otra forma: mira la traducción."
+        if (card.kind != ClozeKind.GRAMMAR) return "$what está bien (${expected.form}), pero va conjugado de otra forma: mira la traducción."
+        // Qué gramática usaste en vez de la del hueco (먹으면서 → «-으면서»), si el analizador la ve.
+        val used = morphs?.let { SentenceLemmas.endingAfterVerb(dictionary, it, start, end) }
+            ?.takeIf { u -> DictionaryExplain.grammarFamily(dictionary, card.label).none { it.form == u } }
+        if (used != null) {
+            val gloss = dictionaryMeaning(dictionary, used, ClozeKind.GRAMMAR)?.let { " ($it)" }.orEmpty()
+            return "$what está bien (${expected.form}), pero usaste «$used»$gloss: aquí va otra gramática, la de «Usa:»."
+        }
+        return "$what está bien (${expected.form}), pero aquí va otra gramática: la de «Usa:»."
     }
 
     private fun verbOf(dictionary: KoreanDictionary, text: String): DictEntry? =
@@ -145,25 +161,39 @@ object DictionaryCloze {
      * El ítem en una oración (también tuya, cuando [Cloze.blankIn] no lo encuentra): un verbo
      * irregular (고팠다, 덥군요, 늦어, 더워요) o una gramática escrita de otra forma (-ㄹ 수 있다).
      */
-    fun blank(dictionary: KoreanDictionary, sentence: String, label: String, kind: ClozeKind): ClozeBlank? =
+    fun blank(dictionary: KoreanDictionary, sentence: String, label: String, kind: ClozeKind, analyzer: SentenceAnalyzer? = null): ClozeBlank? =
         if (kind == ClozeKind.GRAMMAR) grammarBlank(sentence, DictionaryExplain.grammarFamily(dictionary, label))
-        else wordBlank(dictionary, sentence, label, kind)
+        else wordBlank(dictionary, sentence, label, kind, analyzer)
 
     /**
      * Un sustantivo, al comienzo de una palabra y solo él (장으로 → 장, no el 장 de 시장); un verbo o
      * adjetivo, la palabra conjugada entera.
+     *
+     * Con el analizador ([analyzer], Kiwi) primero la palabra que en esta oración de verdad es esa: en
+     * «사과를 사는 사람» 사는 es 사다, así que para 살다 esa oración no sirve, aunque el lematizador diga
+     * que 사는 puede ser 살다. Si el analizador no la encuentra, el lematizador, salvo que el analizador
+     * diga que esa palabra es otra.
      */
-    fun wordBlank(dictionary: KoreanDictionary, sentence: String, label: String, kind: ClozeKind): ClozeBlank? {
+    fun wordBlank(dictionary: KoreanDictionary, sentence: String, label: String, kind: ClozeKind, analyzer: SentenceAnalyzer? = null): ClozeBlank? {
         val form = label.trim()
         if (form.isEmpty()) return null
+        val analyzed = analyzer?.let { a -> runCatching { SentenceLemmas.words(a, dictionary, sentence) }.getOrNull() }
+        if (analyzed != null) {
+            val found = if (kind == ClozeKind.VERB) analyzed.lastOrNull { it.lemma == form }?.let { ClozeBlank(it.start, it.text) }
+            else analyzed.firstOrNull { it.lemma == form && it.text.startsWith(form) }?.let { ClozeBlank(it.start, form) }
+            if (found != null) return found
+        }
         val words = tokens(sentence)
-        return if (kind == ClozeKind.VERB) {
+        val old = if (kind == ClozeKind.VERB) {
             words.lastOrNull { w -> dictionary.baseForms(w.text).any { it.form == form } }
                 ?: words.lastOrNull { w -> Cloze.conjugated(Cloze.stem(form), w.text) }
         } else {
             words.firstOrNull { w -> w.text.startsWith(form) && (w.text == form || dictionary.baseForms(w.text).any { it.form == form }) }
                 ?.let { ClozeBlank(it.start, form) }
-        }
+        } ?: return null
+        // El analizador dice que esa palabra es otra (사는 = 사다): esta oración no sirve.
+        val other = analyzed?.firstOrNull { it.start <= old.start && old.start < it.end }?.lemma
+        return if (other != null && other != form && !(kind != ClozeKind.VERB && other.startsWith(form))) null else old
     }
 
     /** La gramática con cualquiera de sus formas: las palabras que la llevan; una partícula, solo ella. */
