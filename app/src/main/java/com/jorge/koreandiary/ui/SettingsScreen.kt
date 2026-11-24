@@ -23,9 +23,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.core.content.ContextCompat
 import com.jorge.koreandiary.reminder.ReminderScheduler
 import com.jorge.koreandiary.settings.AppSettings
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -51,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jorge.koreandiary.AppContainer
 import com.jorge.koreandiary.BuildConfig
 import com.jorge.koreandiary.ink.HandwritingRecognizer
+import com.jorge.koreandiary.kiwi.KiwiService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.jorge.koreandiary.ai.CorrectionRequest
@@ -250,6 +253,9 @@ fun SettingsScreen(
                         }
                     }) { Text("Descargar modelo de escritura coreana") }
                     modelStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+                Section("Analizador de oraciones") {
+                    KiwiSettings(container)
                 }
             }
 
@@ -744,6 +750,64 @@ private fun Section(title: String, content: @Composable () -> Unit) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
+        }
+    }
+}
+
+/**
+ * Kiwi en Ajustes › Escritura (decidido con Jorge el 2026-11-24): bajar el modelo una vez (84 MB,
+ * avisa si estás con datos móviles), ver cuánto ocupa y quitarlo.
+ */
+@Composable
+private fun KiwiSettings(container: AppContainer) {
+    val context = LocalContext.current
+    val install by container.kiwi.install.collectAsStateWithLifecycle()
+    var askMobile by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    fun mb(bytes: Long) = (bytes + 512 * 1024) / (1024 * 1024)
+    Text(
+        "Kiwi mira la oración entera para saber qué palabra es (들어요 en «음악을 들어요» es 듣다; en «가방을 들어요», 들다). " +
+            "Lo usan tocar una palabra, el hueco y las respuestas del repaso rápido. Funciona sin internet una vez bajado.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    when (val st = install) {
+        KiwiService.Install.Missing -> {
+            Text(
+                "Pesa ${mb(com.jorge.koreandiary.kiwi.KiwiModel.SIZE)} MB, mejor con Wi-Fi. Mientras lo usas ocupa unos 230 MB de memoria; se suelta solo a los 3 minutos sin usarlo.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+            if (askMobile) {
+                Text("Estás con datos móviles: son ${mb(com.jorge.koreandiary.kiwi.KiwiModel.SIZE)} MB.", style = MaterialTheme.typography.bodySmall, color = scheme.error)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppOutlinedButton(onClick = { askMobile = false; container.kiwi.download() }, modifier = Modifier.testTag("kiwi_descargar_igual")) { Text("Descargar igual") }
+                    AppTextButton(onClick = { askMobile = false }) { Text("Esperar al Wi-Fi") }
+                }
+            } else {
+                AppOutlinedButton(
+                    onClick = { if (HandwritingRecognizer.onUnmeteredNetwork(context)) container.kiwi.download() else askMobile = true },
+                    modifier = Modifier.testTag("kiwi_descargar"),
+                ) { Text("Descargar analizador (${mb(com.jorge.koreandiary.kiwi.KiwiModel.SIZE)} MB)") }
+            }
+        }
+        is KiwiService.Install.Downloading -> {
+            LinearProgressIndicator(progress = { if (st.total > 0) (st.done.toFloat() / st.total).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth())
+            Text("Bajando… ${mb(st.done)} de ${mb(st.total)} MB", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("kiwi_estado"))
+        }
+        KiwiService.Install.Unpacking -> {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("Preparando el analizador…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("kiwi_estado"))
+        }
+        is KiwiService.Install.Ready -> {
+            Text("Listo: Kiwi ${KiwiService.VERSION}, ${mb(st.bytes)} MB en el celular.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("kiwi_estado"))
+            AppTextButton(onClick = { container.kiwi.remove() }, modifier = Modifier.testTag("kiwi_quitar")) { Text("Quitar") }
+        }
+        is KiwiService.Install.Failed -> {
+            Text(st.message, style = MaterialTheme.typography.bodySmall, color = scheme.error, modifier = Modifier.testTag("kiwi_estado"))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppOutlinedButton(onClick = { container.kiwi.download() }) { Text("Reintentar") }
+                if (container.kiwi.isInstalled()) AppTextButton(onClick = { container.kiwi.remove() }) { Text("Quitar") }
+            }
         }
     }
 }

@@ -42,6 +42,9 @@ fun DictionaryEntries(result: WordLookupResult, modifier: Modifier = Modifier) {
                         color = if (i == 0) scheme.onSurface else scheme.onSurfaceVariant,
                     )
                 }
+                if (i == 0 && result.byContext) {
+                    Text("Elegida por la oración", style = MaterialTheme.typography.labelSmall, color = scheme.secondary, modifier = Modifier.testTag("diccionario_por_oracion"))
+                }
                 val senses = if (all) e.senses else e.senses.take(if (i == 0) FIRST_SENSES else OTHER_SENSES)
                 senses.forEachIndexed { n, s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

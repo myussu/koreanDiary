@@ -182,7 +182,9 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val settings = c.settings.state.value
             val now = System.currentTimeMillis()
-            val targets = c.study.quickReviewTargets(now, settings.grammarLevelList)
+            // Con Kiwi bajado, el hueco va solo donde de verdad está la palabra (사는 de 사다 no sirve para 살다).
+            val analyzer = c.kiwi.analyzer()
+            val targets = c.study.quickReviewTargets(now, settings.grammarLevelList, analyzer = analyzer)
             if (targets.isEmpty()) {
                 // Sin lista no hay qué repasar; con lista, es que ya repasaste todo lo de hoy (F8 de las pruebas).
                 val empty = if (c.study.hasItems.first()) "Ya repasaste todo lo que tocaba hoy. Vuelve mañana, o úsalo escribiendo en el diario."
@@ -200,7 +202,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
                         dictionaryMeaning = runCatching { DictionaryCloze.dictionaryMeaning(c.dictionary, card.label, card.kind, card.meaning) }.getOrNull(),
                     )
                 }
-                mine to targets.filter { !it.own }.mapNotNull { t -> runCatching { DictionaryCloze.card(c.dictionary, t) }.getOrNull() }
+                mine to targets.filter { !it.own }.mapNotNull { t -> runCatching { DictionaryCloze.card(c.dictionary, t, analyzer = analyzer) }.getOrNull() }
             }
             val missing = targets.filter { t -> !t.own && fromDictionary.none { it.code == t.code } }
             pendingMissing = missing
@@ -319,7 +321,8 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             // ¿La misma palabra con otra terminación? Entonces se dice qué cambia, no solo «no es».
             val written = candidates.firstOrNull() ?: return
             viewModelScope.launch {
-                val miss = withContext(Dispatchers.Default) { runCatching { DictionaryCloze.nearMiss(c.dictionary, card, written) }.getOrNull() }
+                val analyzer = c.kiwi.analyzer()
+                val miss = withContext(Dispatchers.Default) { runCatching { DictionaryCloze.nearMiss(c.dictionary, card, written, analyzer) }.getOrNull() }
                 _state.update { if (it.card === card && it.outcome == ClozeOutcome.WRONG && it.read == written) it.copy(nearMiss = miss) else it }
             }
         }
@@ -386,8 +389,10 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         val key = "$word|${card.sentence}"
         _state.update { it.copy(lookup = WordLookup(word)) }
         viewModelScope.launch {
+            // Con Kiwi, primero la que corresponde a esta oración (들어요 → 듣다 o 들다).
+            val preferred = c.contextLemma(word, card.sentence)
             val dict = withContext(Dispatchers.Default) {
-                DictionaryLookup.lookup(c.dictionary, word, previous = previousWord(card.sentence, word))
+                DictionaryLookup.lookup(c.dictionary, word, previous = previousWord(card.sentence, word), preferred = preferred)
             }
             if (dict != null) {
                 val inList = dict.entries.filter { !it.entry.grammar }.map { it.entry.form }.distinct().filter { c.study.hasWord(it) }.toSet()

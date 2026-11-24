@@ -19,6 +19,11 @@ android {
         targetSdk = 37
         versionCode = buildNumber
         versionName = "0.1.$buildNumber"
+        // Kiwi (analizador de oraciones): la versión de su librería y del modelo que se baja.
+        buildConfigField("String", "KIWI_VERSION", "\"${libs.versions.kiwi.get()}\"")
+        // Solo el celular (ARM64) y el emulador (x86_64): Kiwi no trae las de 32 bits, y las de
+        // armeabi-v7a y x86 de las otras librerías sumaban ~17 MB que ningún equipo usaba.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     signingConfigs {
@@ -62,9 +67,19 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Las librerías nativas comprimidas dentro del APK: la de Kiwi pesa 18 MB por arquitectura y
+    // comprimida ~5 MB. Android las descomprime al instalar.
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+    }
 }
 
 dependencies {
+    // Kiwi, el analizador de oraciones coreano (github.com/bab2min/Kiwi, Apache-2.0): el AAR oficial
+    // del release, en el repo porque no está en Maven. El modelo no va: se baja desde Ajustes.
+    implementation(files("libs/kiwi-android-v${libs.versions.kiwi.get()}.aar"))
+
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
     implementation(libs.androidx.compose.ui)

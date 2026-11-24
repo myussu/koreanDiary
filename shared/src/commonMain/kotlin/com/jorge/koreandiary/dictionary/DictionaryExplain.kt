@@ -15,8 +15,8 @@ object DictionaryExplain {
      * [meaning]: lo que dice tu lista, para elegir el homónimo y el sentido que estudias (장 «hoja»
      * y no 장 «mercado»). Llamar fuera del hilo principal: lee el diccionario.
      */
-    fun explain(dictionary: KoreanDictionary, label: String, isGrammar: Boolean, meaning: String? = null): ItemExplanation? =
-        if (isGrammar) explainGrammar(dictionary, label) else explainWord(dictionary, label, meaning)
+    fun explain(dictionary: KoreanDictionary, label: String, isGrammar: Boolean, meaning: String? = null, analyzer: SentenceAnalyzer? = null): ItemExplanation? =
+        if (isGrammar) explainGrammar(dictionary, label) else explainWord(dictionary, label, meaning, analyzer)
 
     /** ¿Lo tiene el diccionario? Barato: no lee el detalle. */
     fun covers(dictionary: KoreanDictionary, label: String, isGrammar: Boolean): Boolean =
@@ -51,7 +51,7 @@ object DictionaryExplain {
     fun senseMeaning(s: DictSense): String =
         s.lemma?.let(::lemmaText) ?: s.definition?.let(::cleanDefinition)?.let { shorten(it, 90) }.orEmpty()
 
-    private fun explainWord(dictionary: KoreanDictionary, label: String, meaning: String?): ItemExplanation? {
+    private fun explainWord(dictionary: KoreanDictionary, label: String, meaning: String?, analyzer: SentenceAnalyzer? = null): ItemExplanation? {
         val choice = wordChoice(dictionary, label, meaning) ?: return null
         val entry = choice.entry
         val detail = choice.detail
@@ -73,7 +73,7 @@ object DictionaryExplain {
         }.joinToString("\n").ifBlank { null }
         val examples = (listOf(first) + others.map { senses[it] }).flatMap { it.examples }
             .map { it.trim() }.distinct()
-            .filter { usesWord(dictionary, entry, it) }
+            .filter { usesWord(dictionary, entry, it, analyzer) }
             .take(MAX_EXAMPLES)
             .map { ExampleSentence(it, null) }
         return ItemExplanation(
@@ -130,11 +130,14 @@ object DictionaryExplain {
      * ¿El ejemplo usa la palabra? Las oraciones del diccionario sí; algunas son la otra línea de un
      * diálogo y no la tienen. Un verbo puede ir conjugado (먹다 → 먹었어요, 듣다 → 들어요).
      */
-    fun usesWord(dictionary: KoreanDictionary, entry: DictEntry, sentence: String): Boolean {
+    fun usesWord(dictionary: KoreanDictionary, entry: DictEntry, sentence: String, analyzer: SentenceAnalyzer? = null): Boolean {
         // De dos sílabas o más basta con encontrarla; una sola (장, 가다) también está dentro de otras
         // palabras (시장, 가방): ahí se mira palabra por palabra.
         val key = if (entry.isVerb) entry.form.dropLast(1) else entry.form
         if (key.length >= 2 && sentence.contains(key)) return true
+        // Con el analizador decide la oración: en «음악을 들어요» está 듣다 y no 들다.
+        analyzer?.let { a -> runCatching { SentenceLemmas.words(a, dictionary, sentence) }.getOrNull() }
+            ?.let { words -> return words.any { it.lemma == entry.form } }
         return sentence.split(Regex("\\s+")).any { token -> dictionary.baseForms(token).any { it.id == entry.id } }
     }
 

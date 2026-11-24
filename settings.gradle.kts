@@ -25,7 +25,3 @@ include(":app")
 include(":shared")
 // Versión de escritorio (Windows).
 include(":desktopApp")
-// App aparte para probar Kiwi (analizador morfológico) en el celular. Solo entra si ya se bajó la
-// librería de Kiwi (kiwiPrueba/preparar.sh, lo corre el workflow kiwi-prueba.yml): así la compilación
-// del APK y la de escritorio no la necesitan. Se borra cuando se decida si Kiwi entra en la app.
-if (File(rootDir, "kiwiPrueba/libs/kiwi-android.aar").exists()) include(":kiwiPrueba")
