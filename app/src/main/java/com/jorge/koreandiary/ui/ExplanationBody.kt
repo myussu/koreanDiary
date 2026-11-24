@@ -2,10 +2,12 @@ package com.jorge.koreandiary.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -14,8 +16,8 @@ import com.jorge.koreandiary.ai.ItemExplanation
 import com.jorge.koreandiary.ai.WordParts
 
 /**
- * Lo que se sabe de una palabra o una gramática: significado, origen o partes, cómo se usa, sus
- * formas y ejemplos. La usan la tarjeta de una sugerencia y «Más sobre esto» del repaso rápido, así
+ * Lo que se sabe de una palabra o una gramática: significado con «Escuchar», origen o partes, cómo
+ * se pronuncia, sinónimos, mismo hanja y modismos, cómo se usa, sus formas y ejemplos. La usan la tarjeta de una sugerencia y «Más sobre esto» del repaso rápido, así
  * se ve igual en los dos lados. Viene del 한국어기초사전 y, si no lo tiene, de la IA, marcada
  * «Según la IA» (decidido con Jorge el 2026-11-22).
  *
@@ -31,15 +33,20 @@ fun ExplanationBody(
     onAskParts: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val voice = rememberKoreanVoice()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (!e.fromDictionary) {
             Text("Según la IA", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
         }
-        Text(e.meaning, style = MaterialTheme.typography.bodyLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(e.meaning, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false))
+            SpeakButton(e.form, voice)
+        }
         e.structure?.let {
             if (e.fromDictionary) Text("Origen: $it", style = MaterialTheme.typography.bodySmall, color = scheme.secondary)
             else PartsLine(e.form, it)
         }
+        e.extras?.let { DictionaryExtrasView(it) }
         if (e.fromDictionary && e.structure == null && onAskParts != null) {
             when {
                 parts != null -> Column {

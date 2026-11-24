@@ -6,7 +6,37 @@ Datos: respaldo XML del 2019-08-02, https://github.com/spellcheck-ko/korean-dict
 
 Licencia: Creative Commons Atribución-CompartirIgual 2.0 Corea (CC BY-SA 2.0 KR),
 https://creativecommons.org/licenses/by-sa/2.0/kr/
-Cambios: se guardan solo palabras y gramática, con la traducción al español y algunos ejemplos;
-la app cambia algunas palabras de España por las de Perú al mostrarlas. Estos archivos se
-comparten con la misma licencia.
+Cambios: se guardan palabras, gramática, modismos y refranes, con la traducción al español,
+algunos ejemplos, la pronunciación y los sinónimos y contrarios; la app cambia algunas palabras
+de España por las de Perú al mostrarlas. Estos archivos se comparten con la misma licencia.
 Formato: tools/build_dictionary.py
+
+Significado de cada hanja (훈음, hanja.jsonl): data/hanja/hanja.txt de libhangul,
+https://github.com/libhangul/libhangul
+
+Copyright (c) 2005,2006 Choe Hwanjin
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the author nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.

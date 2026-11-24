@@ -44,7 +44,16 @@ data class DictSense(
     /** Frases cortas de uso (가를 꾸미다). */
     val phrases: List<String>,
     val patterns: List<String>,
+    /** Sinónimos, contrarios, forma corta… de este sentido. */
+    val relations: List<DictRelation> = emptyList(),
 )
+
+/**
+ * Otra palabra relacionada con un sentido: [type] tal como lo da el diccionario (유의어 sinónimo,
+ * 반대말 contrario, 준말 forma corta, 본말 forma completa, 높임말, 낮춤말, 참고어 ver también) y
+ * [gloss], su traducción corta.
+ */
+data class DictRelation(val type: String, val form: String, val gloss: String?)
 
 /** El detalle de una entrada: se lee de su archivo cuando hace falta. */
 data class DictDetail(
@@ -54,7 +63,22 @@ data class DictDetail(
     val senses: List<DictSense>,
     /** Palabras relacionadas: [tipo, forma], p. ej. ["파생어", "불편하다"]. */
     val related: List<Pair<String, String>>,
+    /** Cómo se pronuncia, solo si no suena como se escribe: 같이 → «가치»; dos formas, «교외/교웨». */
+    val pronunciation: String? = null,
 )
+
+/** Un modismo (관용구, 발이 넓다) o un refrán (속담), con su traducción corta y su palabra principal. */
+data class DictIdiom(val id: Int, val form: String, val proverb: Boolean, val gloss: String, val headId: Int)
+
+/**
+ * Un hanja de los orígenes: [readings], su 훈음 de libhangul con el 훈 en español (學: «배울 학»,
+ * «aprender»), y [words], las palabras del diccionario que lo llevan, las comunes primero.
+ */
+data class HanjaInfo(val hanja: String, val readings: List<HanjaReading>, val words: List<HanjaWord>)
+
+data class HanjaReading(val meaning: String, val sound: String, val gloss: String?)
+
+data class HanjaWord(val id: Int, val form: String, val level: Int, val gloss: String)
 
 /**
  * El 한국어기초사전 dentro de la app (assets/dictionary, armado con tools/build_dictionary.py): verifica
@@ -67,9 +91,14 @@ data class DictDetail(
  */
 class KoreanDictionary(private val open: (String) -> List<String>) {
 
-    private class Index(val byForm: Map<String, List<DictEntry>>, val lemmatizer: Lemmatizer)
+    private class Index(val byForm: Map<String, List<DictEntry>>, val byId: Map<Int, DictEntry>, val lemmatizer: Lemmatizer)
 
     private val index: Index by lazy { load() }
+
+    /** Modismos y refranes por su palabra principal (발 → 발이 넓다, 발이 닳다…). */
+    private val idiomsByHead: Map<Int, List<DictIdiom>> by lazy { loadIdioms().groupBy { it.headId } }
+
+    private val hanjaIndex: Map<String, HanjaInfo> by lazy { loadHanja() }
     /** Las últimas partes leídas del detalle (como mucho [MAX_SHARDS]). */
     private val shards: MutableMap<Int, Map<Int, DictDetail>> = java.util.Collections.synchronizedMap(
         object : java.util.LinkedHashMap<Int, Map<Int, DictDetail>>(8, 0.75f, true) {
@@ -84,6 +113,7 @@ class KoreanDictionary(private val open: (String) -> List<String>) {
 
     private fun load(): Index {
         val byForm = HashMap<String, MutableList<DictEntry>>(80_000)
+        val byId = HashMap<Int, DictEntry>(80_000)
         val all = ArrayList<DictEntry>(55_000)
         for (line in open("index.tsv")) {
             if (line.isBlank()) continue
@@ -101,9 +131,50 @@ class KoreanDictionary(private val open: (String) -> List<String>) {
                 conjugations = p.getOrNull(7).orEmpty().split('|').filter { it.isNotBlank() },
             )
             all += entry
+            byId[entry.id] = entry
             (listOf(entry.form) + entry.variants).forEach { byForm.getOrPut(it) { mutableListOf() } += entry }
         }
-        return Index(byForm, Lemmatizer(all))
+        return Index(byForm, byId, Lemmatizer(all))
+    }
+
+    /** Un archivo opcional de la carpeta: vacío si no está (un diccionario armado antes de tenerlo). */
+    private fun optional(name: String): List<String> = try {
+        open(name)
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun loadIdioms(): List<DictIdiom> = optional("idioms.tsv").mapNotNull { line ->
+        val p = line.split('\t')
+        if (p.size < 5) return@mapNotNull null
+        DictIdiom(
+            id = p[0].toIntOrNull() ?: return@mapNotNull null,
+            form = p[1],
+            proverb = p[2] == "속담",
+            gloss = p[3],
+            headId = p[4].toIntOrNull() ?: return@mapNotNull null,
+        )
+    }
+
+    private fun loadHanja(): Map<String, HanjaInfo> {
+        val out = HashMap<String, HanjaInfo>(4_000)
+        for (line in optional("hanja.jsonl")) {
+            if (line.isBlank()) continue
+            val o = JSONObject(line)
+            val hanja = o.optString("h").ifBlank { null } ?: continue
+            val readings = o.optJSONArray("r")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    arr.optJSONArray(i)?.let { r -> HanjaReading(r.optString(0), r.optString(1), r.optString(2).ifBlank { null }) }
+                }
+            }.orEmpty()
+            val words = o.optJSONArray("w")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    arr.optJSONArray(i)?.let { w -> HanjaWord(w.optInt(0), w.optString(1), w.optInt(2), w.optString(3)) }
+                }
+            }.orEmpty()
+            out[hanja] = HanjaInfo(hanja, readings, words)
+        }
+        return out
     }
 
     /** Las entradas con esta forma exacta (homónimos incluidos), primero las más comunes. */
@@ -136,6 +207,16 @@ class KoreanDictionary(private val open: (String) -> List<String>) {
         return exact + out.values.filter { it.form != word }.sortedWith(COMMON_FIRST)
     }
 
+    /** La entrada con este id, o null (un modismo no está en la lista: ver [idiomsOf]). */
+    fun entry(id: Int): DictEntry? = index.byId[id]
+
+    /** Los modismos y refranes de una palabra (발 → 발이 넓다), primero los modismos y los cortos. */
+    fun idiomsOf(entry: DictEntry): List<DictIdiom> =
+        idiomsByHead[entry.id].orEmpty().sortedWith(compareBy<DictIdiom> { it.proverb }.thenBy { it.form.length })
+
+    /** Lo que se sabe de un hanja (學): su 훈음 y las palabras que lo llevan. null si no está. */
+    fun hanja(hanja: String): HanjaInfo? = hanjaIndex[hanja]
+
     /** Sentidos, origen y relacionadas de una entrada. null si su archivo no está. */
     fun detail(entry: DictEntry): DictDetail? = detail(entry.id)
 
@@ -165,13 +246,18 @@ class KoreanDictionary(private val open: (String) -> List<String>) {
                         examples = s.optJSONArray("x").strings(),
                         phrases = s.optJSONArray("c").strings(),
                         patterns = s.optJSONArray("p").strings(),
+                        relations = s.optJSONArray("rel")?.let { rel ->
+                            (0 until rel.length()).mapNotNull { j ->
+                                rel.optJSONArray(j)?.let { r -> DictRelation(r.optString(0), r.optString(1), r.optString(2).ifBlank { null }) }
+                            }.filter { it.form.isNotBlank() }
+                        }.orEmpty(),
                     )
                 }
             }.orEmpty()
             val related = o.optJSONArray("r")?.let { arr ->
                 (0 until arr.length()).mapNotNull { i -> arr.optJSONArray(i)?.let { r -> r.optString(0) to r.optString(1) } }
             }.orEmpty()
-            out[id] = DictDetail(id, o.optString("o").ifBlank { null }, senses, related)
+            out[id] = DictDetail(id, o.optString("o").ifBlank { null }, senses, related, o.optString("pr").ifBlank { null })
         }
         return out
     }

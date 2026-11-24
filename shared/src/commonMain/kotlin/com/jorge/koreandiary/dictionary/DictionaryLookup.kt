@@ -11,6 +11,8 @@ data class LookupEntry(
     val senses: List<LookupSense>,
     /** De qué viene, por partes: «은 銀 + medal», «공 工 · 부 夫 + 하다». null si es nativa. */
     val origin: String?,
+    /** Pronunciación, sinónimos y contrarios, palabras con el mismo hanja y modismos. */
+    val extras: DictionaryExtras? = null,
 )
 
 /** Lo que dice el diccionario de una palabra tocada, con las entradas posibles, primero las comunes. */
@@ -40,6 +42,7 @@ object DictionaryLookup {
                         LookupSense(s.lemma?.let(PeruSpanish::adaptLemma), s.definition?.let(PeruSpanish::adapt))
                     },
                     origin = detail?.origin?.let { originParts(e.form, it) },
+                    extras = detail?.let { DictionaryExtrasOf.of(dictionary, e, it) }?.takeIf { !it.isEmpty },
                 )
             },
         )

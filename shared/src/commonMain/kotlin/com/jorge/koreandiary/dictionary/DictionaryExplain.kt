@@ -84,6 +84,7 @@ object DictionaryExplain {
             examples = examples,
             structure = detail.origin?.let { DictionaryLookup.originParts(entry.form, it) },
             fromDictionary = true,
+            extras = DictionaryExtrasOf.of(dictionary, entry, detail, choice.ordered).takeIf { !it.isEmpty },
         )
     }
 

@@ -21,6 +21,7 @@ import com.jorge.koreandiary.dictionary.WordLookupResult
  * Lo que dice el 한국어기초사전 de una palabra tocada: cada entrada con su categoría, sus sentidos en
  * español y su origen, primero las comunes (decidido con Jorge el 2026-11-22). Plegado muestra lo
  * principal; «Ver todo» abre todas las entradas y sentidos. La usan el repaso rápido y la conversación.
+ * La principal trae «Escuchar», cómo se pronuncia, sinónimos y contrarios, mismo hanja y modismos.
  */
 @Composable
 fun DictionaryEntries(result: WordLookupResult, modifier: Modifier = Modifier) {
@@ -29,15 +30,18 @@ fun DictionaryEntries(result: WordLookupResult, modifier: Modifier = Modifier) {
     val entries = if (all) result.entries else result.entries.take(COLLAPSED_ENTRIES)
     val hidden = result.entries.size > entries.size ||
         entries.withIndex().any { (i, e) -> e.senses.size > if (i == 0) FIRST_SENSES else OTHER_SENSES }
+    val voice = rememberKoreanVoice()
     Column(modifier.testTag("diccionario"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         entries.forEachIndexed { i, e ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    listOfNotNull(e.entry.form, e.kind, levelLabel(e.entry.level)).joinToString(" · "),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (i == 0) scheme.onSurface else scheme.onSurfaceVariant,
-                )
+                HeaderWithVoice(voice.takeIf { i == 0 && !e.entry.grammar }, e.entry.form) {
+                    Text(
+                        listOfNotNull(e.entry.form, e.kind, levelLabel(e.entry.level)).joinToString(" · "),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (i == 0) scheme.onSurface else scheme.onSurfaceVariant,
+                    )
+                }
                 val senses = if (all) e.senses else e.senses.take(if (i == 0) FIRST_SENSES else OTHER_SENSES)
                 senses.forEachIndexed { n, s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -51,6 +55,8 @@ fun DictionaryEntries(result: WordLookupResult, modifier: Modifier = Modifier) {
                     }
                 }
                 e.origin?.let { Text("Origen: $it", style = MaterialTheme.typography.bodySmall, color = scheme.secondary) }
+                // Pronunciación, sinónimos, mismo hanja y modismos: de la principal, o de todas con «Ver todo».
+                e.extras?.takeIf { i == 0 || all }?.let { DictionaryExtrasView(it) }
             }
         }
         if (hidden) {

@@ -201,6 +201,11 @@ fun SettingsScreen(
                             "Licencia CC BY-SA 2.0 KR. Algunas palabras de España se muestran como en Perú (coche → carro).",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text(
+                        "Significado de cada hanja (훈음): libhangul, data/hanja/hanja.txt, Copyright (c) 2005, 2006 Choe Hwanjin. " +
+                            "Licencia BSD de 3 cláusulas (el texto completo va en el diccionario de la app, FUENTE.txt).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Text("Tu nivel ${s.level} se compara con el nivel ${s.standardLevel} de 6 del estándar.", style = MaterialTheme.typography.bodySmall)
                 }
             }

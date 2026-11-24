@@ -1,5 +1,6 @@
 package com.jorge.koreandiary.ai
 
+import com.jorge.koreandiary.dictionary.DictionaryExtras
 import com.jorge.koreandiary.scene.MoodReading
 import com.jorge.koreandiary.scene.art.NewSceneThing
 
@@ -114,6 +115,8 @@ data class ItemExplanation(
      * traen traducción. Las de la IA se muestran marcadas «Según la IA».
      */
     val fromDictionary: Boolean = false,
+    /** Del diccionario: pronunciación, sinónimos y contrarios, mismo hanja y modismos. */
+    val extras: DictionaryExtras? = null,
 )
 
 data class ExampleSentence(val korean: String, val english: String?)
