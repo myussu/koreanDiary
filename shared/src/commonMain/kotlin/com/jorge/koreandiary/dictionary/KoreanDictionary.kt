@@ -207,6 +207,9 @@ class KoreanDictionary(private val open: (String) -> List<String>) {
         return exact + out.values.filter { it.form != word }.sortedWith(COMMON_FIRST)
     }
 
+    /** Todas las entradas (palabras y gramática), para recorrerlas: «suena como» en [com.jorge.koreandiary.pronunciation.SoundAlike]. */
+    fun allEntries(): Collection<DictEntry> = index.byId.values
+
     /** La entrada con este id, o null (un modismo no está en la lista: ver [idiomsOf]). */
     fun entry(id: Int): DictEntry? = index.byId[id]
 

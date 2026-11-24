@@ -23,30 +23,33 @@ class AnswerDiffTest {
     @Test
     fun vocalesQueSuenanIgual() {
         val r = diff("됬어요", "됐어요")!!
-        assertEquals("Revisa «됬»: la vocal. Suena casi igual: es de ortografía.", AnswerDiff.where(r))
-        assertEquals("En «됐» la vocal es ㅙ, no ㅚ (suenan casi igual).", AnswerDiff.explain(r))
-        assertTrue(AnswerDiff.explain(diff("가게에서", "가개에서")!!).contains("(suenan casi igual)"))
+        // Con «Cómo suena»: 됬어요 y 됐어요 suenan igual del todo.
+        assertEquals("Revisa «됬»: la vocal. Suena igual: es de ortografía.", AnswerDiff.where(r))
+        assertEquals("En «됐» la vocal es ㅙ, no ㅚ (suenan igual). Las dos se pronuncian [돼써요].", AnswerDiff.explain(r))
+        assertTrue(AnswerDiff.explain(diff("가게에서", "가개에서")!!).contains("(suenan igual)"))
+        // 갔어요 y 갓어요: la sílaba suena casi igual, pero antes de una vocal no ([가써요] y [가서요]).
+        assertEquals("Revisa «갓»: la consonante de abajo.", AnswerDiff.where(diff("갓어요", "갔어요")!!))
     }
 
     @Test
     fun escritoComoSuena() {
-        assertEquals("Lo escribiste como suena: «머거» se escribe «먹어».", AnswerDiff.explain(diff("머거요", "먹어요")!!))
-        assertEquals("Lo escribiste como suena: «업서» se escribe «없어».", AnswerDiff.explain(diff("업서서", "없어서")!!))
+        assertEquals("Lo escribiste como suena: «머거» se escribe «먹어». Las dos se pronuncian [머거요].", AnswerDiff.explain(diff("머거요", "먹어요")!!))
+        assertEquals("Lo escribiste como suena: «업서» se escribe «없어». Las dos se pronuncian [업써서].", AnswerDiff.explain(diff("업서서", "없어서")!!))
         // ㅌ antes de 이 suena ㅊ: 같이 [가치].
-        assertEquals("Lo escribiste como suena: «가치» se escribe «같이».", AnswerDiff.explain(diff("가치", "같이")!!))
+        assertEquals("Lo escribiste como suena: «가치» se escribe «같이». Las dos se pronuncian [가치].", AnswerDiff.explain(diff("가치", "같이")!!))
         assertEquals("«머거» está escrito como suena.", AnswerDiff.where(diff("머거요", "먹어요")!!))
-        assertEquals("Lo escribiste como suena: «일거» se escribe «읽어».", AnswerDiff.explain(diff("일거요", "읽어요")!!))
+        assertEquals("Lo escribiste como suena: «일거» se escribe «읽어». Las dos se pronuncian [일거요].", AnswerDiff.explain(diff("일거요", "읽어요")!!))
         // La ㅎ de abajo no suena antes de una vocal.
-        assertEquals("En «좋» lleva ㅎ abajo (suenan casi igual).", AnswerDiff.explain(diff("조아요", "좋아요")!!))
+        assertEquals("En «좋» lleva ㅎ abajo (suenan igual). Las dos se pronuncian [조아요].", AnswerDiff.explain(diff("조아요", "좋아요")!!))
     }
 
     @Test
     fun consonantesQueSuenanIgualAlFinal() {
         // 낫/낮 al final suenan [낟]; 학꾜/학교: la ㄱ tras consonante suena tensa.
-        assertTrue(AnswerDiff.explain(diff("낫", "낮")!!).endsWith("(suenan casi igual)."))
-        assertTrue(AnswerDiff.explain(diff("학꾜", "학교")!!).endsWith("(suenan casi igual)."))
+        assertTrue(AnswerDiff.explain(diff("낫", "낮")!!).contains("(suenan igual)."))
+        assertTrue(AnswerDiff.explain(diff("학꾜", "학교")!!).endsWith("(suenan igual). Las dos se pronuncian [학꾜]."))
         // 멍는 por 먹는: antes de ㄴ, la ㄱ suena ㅇ.
-        assertTrue(AnswerDiff.explain(diff("멍는", "먹는")!!).endsWith("(suenan casi igual)."))
+        assertTrue(AnswerDiff.explain(diff("멍는", "먹는")!!).contains("(suenan igual)."))
         // Antes de una vocal no suenan igual: 엇어 [어서] y 었어 [어써].
         assertTrue(!AnswerDiff.explain(diff("먹엇어요", "먹었어요")!!).contains("suenan"))
     }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,6 +63,7 @@ import com.jorge.koreandiary.review.Cloze
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.jorge.koreandiary.dictionary.WordLookupResult
+import com.jorge.koreandiary.dictionary.SentenceBreakdown
 import com.jorge.koreandiary.dictionary.DictionaryLookup
 import com.jorge.koreandiary.review.ClozeCard
 import com.jorge.koreandiary.review.DictionaryCloze
@@ -151,6 +153,9 @@ data class QuickReviewState(
     val explainPartsLoading: Boolean = false,
     /** La palabra de la oración que tocaste, si hay una abierta. */
     val lookup: WordLookup? = null,
+    /** «Desglosar» la oración de la tarjeta cerrada (sin IA): cómo suena y cada palabra por partes. */
+    val breakdown: SentenceBreakdown.Result? = null,
+    val breakingDown: Boolean = false,
     val tally: Map<Fsrs.Rating, Int> = emptyMap(),
     /** «Traducir» en una tarjeta que quedó sin traducción: lo que tradujo la IA, por tarjeta. */
     val translations: Map<String, String> = emptyMap(),
@@ -357,8 +362,24 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
         it.copy(
             index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, nearMiss = null, lastWrong = null, copied = null, strokes = emptyList(), note = null,
             checking = false, explain = null, explaining = false, explainNote = null, explainParts = null, explainPartsLoading = false, lookup = null,
-            translateNote = null, translateFailed = false, explainFailed = false,
+            translateNote = null, translateFailed = false, explainFailed = false, breakdown = null, breakingDown = false,
         )
+    }
+
+    /** «Desglosar» la oración de la tarjeta cerrada: cómo suena y cada palabra por partes, sin IA. */
+    fun breakdown() {
+        val st = _state.value
+        val card = st.card ?: return
+        if (st.breakingDown || st.breakdown != null) return
+        val index = st.index
+        _state.update { it.copy(breakingDown = true) }
+        viewModelScope.launch {
+            val result = c.breakdown(card.sentence)
+            _state.update {
+                if (it.index != index) it
+                else it.copy(breakdown = result, breakingDown = false, note = if (result == null) "No se pudo desglosar la oración." else it.note)
+            }
+        }
     }
 
     /** Lo ya buscado en esta ronda, por palabra y oración: tocarla otra vez no gasta otra llamada. */
@@ -942,6 +963,7 @@ private fun CardView(
                         )
                         // La oración completa, con la voz del celular.
                         SpeakButton(card.sentence, voice)
+                        BreakdownButton(state, vm)
                     }
                 }
                 ClozeOutcome.WRONG -> {
@@ -969,6 +991,7 @@ private fun CardView(
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         SpeakButton(card.sentence, voice)
+                        BreakdownButton(state, vm)
                     }
                     // Lo que escribiste antes de verla: qué letra cambiaba.
                     val before = remember(state.lastWrong, card.answer) { state.lastWrong?.let { AnswerDiff.compare(it, card.answer) } }
@@ -1001,6 +1024,19 @@ private fun CardView(
                     }
                 }
                 null -> {}
+            }
+            // «Desglosar»: la oración entera, sin IA.
+            if (shown && (state.breakdown != null || state.breakingDown)) {
+                Column(
+                    Modifier.fillMaxWidth().border(1.dp, scheme.outlineVariant).padding(12.dp).testTag("repaso_desglose"),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    state.breakdown?.let { BreakdownView(it) }
+                    if (state.breakingDown) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("Desglosando la oración…", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    }
+                }
             }
             // «Más sobre esto»: la palabra o la gramática de la tarjeta, por partes y con ejemplos.
             if (shown && (state.explain != null || state.explaining || state.explainNote != null)) {
@@ -1101,6 +1137,17 @@ private fun CardView(
             }
         }
     }
+}
+
+/** «Desglosar» junto a «Escuchar», con la tarjeta cerrada: se va cuando el desglose ya está abierto. */
+@Composable
+private fun BreakdownButton(state: QuickReviewState, vm: QuickReviewViewModel) {
+    if (state.breakdown != null || state.breakingDown) return
+    AppTextButton(
+        onClick = vm::breakdown,
+        modifier = Modifier.testTag("repaso_desglosar"),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+    ) { Text("Desglosar", style = MaterialTheme.typography.labelMedium) }
 }
 
 /**

@@ -56,6 +56,11 @@ import com.jorge.koreandiary.progress.LevelEstimate
 import com.jorge.koreandiary.progress.VocabTest
 import com.jorge.koreandiary.srs.Fsrs
 import kotlinx.coroutines.launch
+import com.jorge.koreandiary.data.db.PendingWord
+import com.jorge.koreandiary.dictionary.SentenceBreakdown
+import com.jorge.koreandiary.pronunciation.SoundAlike
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /** Las pestañas de Estudio. */
@@ -181,22 +186,7 @@ fun StudyScreen(
                     }
                 }
             }
-            StudyTab.PENDING -> LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                if (pending.isEmpty()) {
-                    item { EmptyNote("Nada por revisar: aquí caen las palabras que la app no reconoció y las que preguntaste al escuchar.") }
-                }
-                items(pending, key = { "p${it.id}" }) { p ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(p.baseForm, style = MaterialTheme.typography.titleMedium)
-                            Text(listOfNotNull(p.type, p.meaning).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-                        }
-                        AppTextButton(onClick = { scope.launch { container.study.rejectPendingWord(p) } }) { Text("Descartar") }
-                        AppButton(onClick = { scope.launch { container.study.approvePendingWord(p, System.currentTimeMillis()) } }) { Text("Agregar") }
-                    }
-                    HorizontalDivider()
-                }
-            }
+            StudyTab.PENDING -> PendingTab(container, pending)
             StudyTab.TO_ADD -> ToAddTab(container, report, vocabTest, onTest = { testing = true })
         }
     }
@@ -209,6 +199,59 @@ fun StudyScreen(
                 if (result != null) container.settings.update { it.copy(vocabTest = result.encode()) }
             },
         )
+    }
+}
+
+/**
+ * «Por revisar»: las palabras que el diccionario no tiene. Si una suena igual o casi que una del
+ * diccionario, se sugiere esa (pedido por Jorge el 2026-11-24): quien aprende de oído escribe como
+ * suena (설겆이 → 설거지, 괜찬다 → 괜찮다).
+ */
+@Composable
+private fun PendingTab(container: AppContainer, pending: List<PendingWord>) {
+    val scope = rememberCoroutineScope()
+    val alike by produceState(emptyMap<Long, SoundAlike.Suggestion>(), pending) {
+        value = withContext(Dispatchers.Default) {
+            pending.mapNotNull { p ->
+                runCatching { container.soundAlike.suggestions(p.baseForm, max = 1).firstOrNull() }.getOrNull()?.let { p.id to it }
+            }.toMap()
+        }
+    }
+    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        if (pending.isEmpty()) {
+            item { EmptyNote("Nada por revisar: aquí caen las palabras que la app no reconoció y las que preguntaste al escuchar.") }
+        }
+        items(pending, key = { "p${it.id}" }) { p ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.baseForm, style = MaterialTheme.typography.titleMedium)
+                    Text(listOfNotNull(p.type, p.meaning).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                }
+                AppTextButton(onClick = { scope.launch { container.study.rejectPendingWord(p) } }) { Text("Descartar") }
+                AppButton(onClick = { scope.launch { container.study.approvePendingWord(p, System.currentTimeMillis()) } }) { Text("Agregar") }
+            }
+            alike[p.id]?.let { s ->
+                val form = s.entry.form
+                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        (if (s.same) "Suena igual que «$form»" else "Suena casi como «$form»") + ": ¿quisiste escribir esa?",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f).testTag("revisar_suena"),
+                    )
+                    AppOutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                val meaning = p.meaning ?: withContext(Dispatchers.Default) { SentenceBreakdown.gloss(container.dictionary, form) }
+                                container.study.approvePendingWord(p.copy(baseForm = form, type = s.entry.wordType, meaning = meaning), System.currentTimeMillis())
+                            }
+                        },
+                        modifier = Modifier.testTag("revisar_usar"),
+                    ) { Text("Usar «$form»") }
+                }
+            }
+            HorizontalDivider()
+        }
     }
 }
 

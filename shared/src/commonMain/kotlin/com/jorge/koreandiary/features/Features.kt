@@ -118,6 +118,7 @@ object Features {
                 phone("«Pista» en tres niveles con «Más ayuda», «Traducir» la última frase y «Lento»."),
                 phone("«¿Cómo digo?» con «Dictar», por partes como en el diario: palabras, «Más ayuda» (cómo unirlas) y «Ver la frase»; después, «Que la IA lo diga»."),
                 phone("Toca una palabra de la IA para ver lo que dice el diccionario: forma de diccionario (con el analizador, primero la de la oración), sentidos, origen, «Escuchar», cómo se pronuncia, sinónimos y contrarios, otras palabras con el mismo hanja y modismos. Si no está en el diccionario, la explica la IA y lo marca."),
+                phone("Desde una palabra tocada (al conversar o al escuchar), «Desglosar la oración»: cómo suena entera, cada palabra con su forma de diccionario y sus partículas y terminaciones, y los modismos que trae. Sin IA."),
                 phone("El texto de la IA sale borroso hasta que lo tocas, para practicar escuchar (se apaga en Ajustes › Hablar y escuchar)."),
                 phone("Pista automática si no respondes (se activa en Ajustes › Hablar y escuchar)."),
                 phone("Al terminar: confirmas lo que dijiste y recibes la revisión en tres niveles (bien, corregir y correcto pero más natural, cómo lo diría un coreano hablando)."),
@@ -150,7 +151,8 @@ object Features {
                 phone("«Repaso rápido»: unas diez oraciones con un espacio en blanco, con lo que te toca repasar y algo que nunca usaste. Primero tus oraciones (ya corregidas); para lo demás, una del diccionario 한국어기초사전; solo si no hay, una de la IA. Una sola llamada a la IA por ronda las traduce todas y escribe las que faltan."),
                 phone("Arriba de la oración, su traducción con lo que falta resaltado. En una gramática, «Usa:» dice qué expresa y con qué verbo va («la gramática de «durante el tiempo que», con 먹다»), para no confundirla con una parecida; lo que expresa sale de tu lista o, si no tiene, de la IA (marcado). Sin IA, «Usa:» lleva el significado de tu lista o del diccionario. «Traducir» la pide si la ronda quedó sin traducción."),
                 phone("Si fallas con la misma palabra y otra terminación (먹으면서 en vez de 먹는 동안), el repaso te dice que el verbo está bien y que lo que cambia es la gramática o la conjugación. Si escribiste un sinónimo, el contrario o la forma corta de la palabra del hueco, también lo dice, sin darte la respuesta."),
-                phone("Si casi acertaste, «LEÍ» subraya la sílaba que está mal y dice qué revisar (la vocal, la consonante de abajo, falta algo al final…), sin darte la respuesta; avisa si lo escribiste como suena (머거요 por 먹어요) o si suena igual (됬/됐). Con «Ver respuesta», qué letra cambiaba: «En «었» va ㅆ abajo, no ㅅ». Al cerrar la tarjeta, «Escuchar» lee la oración completa."),
+                phone("Si casi acertaste, «LEÍ» subraya la sílaba que está mal y dice qué revisar (la vocal, la consonante de abajo, falta algo al final…), sin darte la respuesta; avisa si lo escribiste como suena (머거요 por 먹어요) o si suena igual (됬/됐). Con «Ver respuesta», qué letra cambiaba: «En «었» va ㅆ abajo, no ㅅ» y, si las dos suenan igual, cómo se pronuncian ([머거요]). Al cerrar la tarjeta, «Escuchar» lee la oración completa."),
+                phone("Al cerrar una tarjeta, «Desglosar» (junto a «Escuchar»): cómo suena la oración ([어제 친구를 만나써요], en color lo que cambia al decirlo), cada palabra con su forma de diccionario y su significado, sus partículas y terminaciones (-었- pasado, -어요 cortés) y los modismos que aparecen (마음에 들어요 → 마음에 들다). Sin IA; sin el analizador de oraciones salen solo cómo suena y la forma de cada palabra."),
                 phone("Con el analizador de oraciones (Kiwi, Ajustes › Escritura › «Descargar analizador»): tocar una palabra pone primero la que corresponde a la oración («Elegida por la oración»: 들어요 en «음악을 들어요» es 듣다), el hueco va solo donde de verdad está la palabra (en «사과를 사는 사람», 사는 no es 살다), los ejemplos de «Más sobre esto» son solo los que la usan y, si usaste otra gramática con el mismo verbo, te dice cuál («usaste «-으면서»»)."),
                 phone("En el repaso rápido escribes la respuesta a mano en el recuadro («Teclado» si prefieres) y «Comprobar». Lo que la app leyó sale en grande («LEÍ»), para ver si leyó bien tu letra; si leyó mal, «La mía también vale». «Pista» abre hasta tres: en una palabra, cuántas sílabas, la primera y las fichas desordenadas; en un verbo, la forma de diccionario, la terminación y las fichas; en una gramática, cuántas sílabas, el patrón y las fichas."),
                 phone("Al cerrar una tarjeta del repaso rápido, «Más sobre esto»: lo que dice el diccionario 한국어기초사전, sin IA (significado con «Escuchar», cómo se pronuncia, otros sentidos, sinónimos y contrarios, origen y otras palabras con el mismo hanja, modismos, cómo se une, formas y ejemplos que de verdad la usan). En palabras nativas, «¿De qué partes se forma?» (IA, 꿈꾸다 = 꿈 + 꾸다). Si el diccionario no la tiene, la explica la IA, marcada «Según la IA», y queda guardada. Si las partes de la IA no forman la palabra letra por letra, salen como «Partes (dudoso)»."),
@@ -166,6 +168,7 @@ object Features {
                 phone("Lo que usas en el diario entra solo a tu lista, con su nivel."),
                 phone("Las palabras nuevas (del diario, el libro, la conversación o una lista importada) se verifican con el diccionario 한국어기초사전, que va dentro de la app: si no está ahí, puede estar mal escrita o mal leída y queda en «Por revisar»."),
                 phone("«Por revisar»: palabras que no están en el diccionario o que preguntaste al escuchar; las agregas o las descartas."),
+                phone("Si una palabra de «Por revisar» suena igual (o casi) que una del diccionario, la app la sugiere: «Suena igual que «설거지»» (escribiste 설겆이) y «Usar «설거지»» la agrega bien escrita."),
             ),
         ),
         FeatureGroup(
@@ -173,7 +176,7 @@ object Features {
             listOf(
                 phone("Por grupos, uno a la vez: «General», «Escritura», «IA», «Escenas», «Hablar y escuchar» y «Copia y actualizaciones»."),
                 phone("General: perfil, nivel y niveles de gramática a sugerir; tema claro u oscuro y papel en modo oscuro; mascota (mostrarla u ocultarla, o importar la tuya; en el inicio, toca su globo para traducir); recordatorio diario, que solo avisa si ese día no escribiste."),
-                phone("Escritura: grosor del lápiz, presión del S Pen, «Solo el S Pen dibuja» (el dedo desplaza) y «Descargar modelo de escritura coreana» (una sola vez). «Descargar analizador» (Kiwi, 84 MB, una sola vez; mejor con Wi-Fi): hace que tocar una palabra, el repaso rápido, la escena viva y «Revisar» miren la oración entera; «Quitar» lo borra."),
+                phone("Escritura: grosor del lápiz, presión del S Pen, «Solo el S Pen dibuja» (el dedo desplaza) y «Descargar modelo de escritura coreana» (una sola vez). «Descargar analizador» (Kiwi, 84 MB, una sola vez; mejor con Wi-Fi): hace que tocar una palabra, el repaso rápido, la escena viva, «Revisar» y «Desglosar» miren la oración entera; «Quitar» lo borra."),
                 phone("IA: proveedor por defecto, Gemini o Azure, con «Probar conexión»."),
                 phone("IA › Explicaciones: quién explica lo que el diccionario no tiene (palabras o gramática que no están, las partes de una palabra nativa) y traduce el repaso rápido. Azure o un modelo de Gemini más fuerte que el de corregir, para que los desgloses sean confiables."),
                 phone("Si ese modelo falla (saturado, sin cuota, sin acceso), sale «Reintentar» o «Probar con …» otro modelo que ya tengas en Ajustes (Azure, el de corregir de Gemini, el de Escuchar). El cambio dura hasta cerrar la app; en IA › Explicaciones se ve y «Volver al elegido» lo deshace."),
@@ -451,13 +454,13 @@ object Features {
                 ),
                 FlowStep(
                     "Revisas lo que no reconoció",
-                    "En «Por revisar» quedan las palabras que la app no conocía: las agregas o las descartas.",
-                    listOf("Por revisar", "Agregar", "Descartar"),
+                    "En «Por revisar» quedan las palabras que la app no conocía: las agregas o las descartas. Si una suena igual que una del diccionario, «Usar «…»» agrega la bien escrita.",
+                    listOf("Por revisar", "Agregar", "Descartar", "Usar «…»"),
                 ),
                 FlowStep(
                     "Repasas en unos minutos",
-                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco: tuyas, del diccionario o de la IA. Arriba, la traducción con lo que falta resaltado y, en gramática, «Usa:» con qué expresa y con qué verbo va. Escribes a mano lo que falta; si no sale, pides pistas o ves la respuesta, y el recuadro se queda para copiarla a mano. Toca cualquier palabra de la oración para ver qué es y agregarla a tu lista. Cuenta para tu repaso al momento. Al cerrar la tarjeta, «Más sobre esto» la explica con el diccionario: significado, origen y ejemplos.",
-                    listOf("Repaso rápido", "Comprobar", "Pista", "Ver respuesta", "La mía también vale", "Más sobre esto", "Escuchar", "Agregar a mi lista"),
+                    "«Repaso rápido» trae unas diez oraciones con un espacio en blanco: tuyas, del diccionario o de la IA. Arriba, la traducción con lo que falta resaltado y, en gramática, «Usa:» con qué expresa y con qué verbo va. Escribes a mano lo que falta; si no sale, pides pistas o ves la respuesta, y el recuadro se queda para copiarla a mano. Toca cualquier palabra de la oración para ver qué es y agregarla a tu lista. Cuenta para tu repaso al momento. Al cerrar la tarjeta, «Más sobre esto» la explica con el diccionario (significado, origen y ejemplos) y «Desglosar» muestra cómo suena la oración y cada palabra por partes.",
+                    listOf("Repaso rápido", "Comprobar", "Pista", "Ver respuesta", "La mía también vale", "Más sobre esto", "Escuchar", "Desglosar", "Agregar a mi lista"),
                     aside = FlowAside("Si prefieres", listOf("Teclado", "Borrar", "Traducir")),
                 ),
                 FlowStep(

@@ -24,6 +24,20 @@ SENTENCES = [
     "숙제를 해 봤어요.",
     # «Usados» del diario.
     "친구와 같이 영화를 봤어요.",
+    # «Cómo suena»: lo que depende de la gramática.
+    "신발을 신고 나가요.",
+    "경찰에 신고를 했어요.",
+    "할 수 있어요.",
+    "내일 할게요.",
+    "만날 사람이 많아요.",
+    "책을 읽고 있어요.",
+    "닭고기를 먹어요.",
+    "우리의 집",
+    # «Desglosar».
+    "이 옷이 정말 마음에 들어요.",
+    "제 친구는 귀가 얇아요.",
+    # Kiwi lo parte mal: 어제 → 어 (IC) + 저 + 의.
+    "어제 친구를 만났어요.",
 ]
 VERBAL = {"VV", "VA", "VX", "XSV", "XSA", "VCN"}
 NOMINAL = {"NNG", "NNP", "NNB", "NR", "NP", "XSN", "XR", "MAG", "MAJ", "MM", "IC"}

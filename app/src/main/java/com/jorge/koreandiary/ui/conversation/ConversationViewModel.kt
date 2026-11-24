@@ -3,6 +3,7 @@ package com.jorge.koreandiary.ui.conversation
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import com.jorge.koreandiary.dictionary.WordLookupResult
+import com.jorge.koreandiary.dictionary.SentenceBreakdown
 import com.jorge.koreandiary.dictionary.DictionaryLookup
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -79,8 +80,10 @@ sealed interface CoachPanel {
     data class HintShown(val hint: Hint, val level: Int, val auto: Boolean = false) : CoachPanel
     /** Lo que dijo la IA de una palabra que el diccionario no tiene. */
     data class WordShown(val gloss: WordGloss) : CoachPanel
-    /** Lo que dice el 한국어기초사전 de una palabra tocada (sin IA). */
-    data class DictShown(val result: WordLookupResult) : CoachPanel
+    /** Lo que dice el 한국어기초사전 de una palabra tocada (sin IA); [sentence], la oración donde estaba. */
+    data class DictShown(val result: WordLookupResult, val sentence: String? = null) : CoachPanel
+    /** «Desglosar la oración»: cómo suena y cada palabra por partes, sin IA. */
+    data class BreakdownShown(val result: SentenceBreakdown.Result) : CoachPanel
     data class SentenceShown(val gloss: SentenceGloss) : CoachPanel
     /** Un objetivo de repaso: lo que dice tu lista y, si la pides, la explicación de la IA. */
     data class TargetShown(val item: PromptItem, val detail: String?, val explanation: ItemExplanation? = null) : CoachPanel
@@ -706,7 +709,7 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
             if (dict != null) {
                 val first = dict.entries.first()
                 noteLookup(clean, "${first.entry.form}: ${first.senses.firstOrNull()?.lemma ?: first.senses.firstOrNull()?.definition.orEmpty()}")
-                _state.update { it.copy(panel = CoachPanel.DictShown(dict)) }
+                _state.update { it.copy(panel = CoachPanel.DictShown(dict, sentence)) }
                 return@launch
             }
             coach("Buscando «$clean»…", ConversationPrompts.word(clean, sentence), explains = true) { raw ->
@@ -714,6 +717,17 @@ class ConversationViewModel(private val c: AppContainer) : ViewModel() {
                 noteLookup(clean, "${gloss.form}: ${gloss.meaning}")
                 CoachPanel.WordShown(gloss)
             }
+        }
+    }
+
+    /** «Desglosar la oración» desde una palabra tocada: cómo suena y cada palabra por partes, sin IA. */
+    fun breakdown(sentence: String) {
+        coachJob?.cancel()
+        _state.update { it.copy(panel = CoachPanel.Loading("Desglosando la oración…")) }
+        coachJob = viewModelScope.launch {
+            val result = c.breakdown(sentence)
+            if (!isActive) return@launch
+            _state.update { it.copy(panel = if (result != null) CoachPanel.BreakdownShown(result) else CoachPanel.Error("No se pudo desglosar la oración.")) }
         }
     }
 

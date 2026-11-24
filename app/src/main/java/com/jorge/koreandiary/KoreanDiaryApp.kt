@@ -24,7 +24,9 @@ import com.jorge.koreandiary.data.db.androidKoreanDictionary
 import com.jorge.koreandiary.data.db.androidStandardCatalog
 import com.jorge.koreandiary.data.db.create
 import com.jorge.koreandiary.dictionary.DictionaryExplain
+import com.jorge.koreandiary.dictionary.SentenceBreakdown
 import com.jorge.koreandiary.dictionary.SentenceLemmas
+import com.jorge.koreandiary.pronunciation.SoundAlike
 import com.jorge.koreandiary.kiwi.KiwiService
 import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.listen.ListenAudioStore
@@ -242,6 +244,18 @@ class AppContainer(val app: Application) {
         val analyzer = kiwi.analyzer() ?: return null
         return withContext(Dispatchers.Default) { runCatching { SentenceLemmas.lemmaOfWord(analyzer, dictionary, sentence, word) }.getOrNull() }
     }
+
+    /**
+     * «Desglosar» una oración, sin IA: cómo suena y cada palabra por partes con Kiwi si está bajado (lo
+     * carga); sin él, cómo suena y la forma de diccionario de cada palabra. null si algo falla.
+     */
+    suspend fun breakdown(sentence: String): SentenceBreakdown.Result? {
+        val analyzer = kiwi.analyzer()
+        return withContext(Dispatchers.Default) { runCatching { SentenceBreakdown.of(dictionary, sentence, analyzer) }.getOrNull() }
+    }
+
+    /** «Suena como»: la palabra del diccionario que se escribió como suena (para «Por revisar»). */
+    val soundAlike by lazy { SoundAlike(dictionary) }
 
     /**
      * «¿De qué partes se forma?» de una palabra nativa (꿈꾸다, 일으키다), que el diccionario no

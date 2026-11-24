@@ -49,6 +49,22 @@ object Hangul {
     /** ¿Es una letra suelta (ㄴ, ㄹ, ㅂ...), como las que empiezan algunas terminaciones? */
     fun isJamo(c: Char): Boolean = c in 'ㄱ'..'ㅣ'
 
+    /**
+     * Las letras sueltas como las escribe el diccionario (ㄹ, U+3139): Kiwi da las de «juntar» (ᆯ,
+     * U+11AF) en sus piezas (-ᆯ게요, -ᆫ 다음에), que no coinciden al comparar. Para unir piezas con Kiwi
+     * hay que dejarle las suyas.
+     */
+    fun compat(s: String): String = buildString(s.length) {
+        for (c in s) append(
+            when (c) {
+                in '\u1100'..'\u1112' -> INITIALS[c - '\u1100']
+                in '\u1161'..'\u1175' -> VOWELS[c - '\u1161']
+                in '\u11A8'..'\u11C2' -> FINALS[c - '\u11A8' + 1][0]
+                else -> c
+            },
+        )
+    }
+
     /** El índice de una letra suelta como consonante final (ㄹ → 8), o 0 si no puede ir al final. */
     fun finalIndex(jamo: Char): Int = FINALS.indexOf(jamo.toString()).coerceAtLeast(0)
 

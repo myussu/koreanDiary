@@ -209,6 +209,15 @@ fun SettingsScreen(
                             "Licencia BSD de 3 cláusulas (el texto completo va en el diccionario de la app, FUENTE.txt).",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text(
+                        "Analizador de oraciones: Kiwi (github.com/bab2min/Kiwi), licencia Apache 2.0; el modelo se baja de su página oficial.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "«Cómo suena»: las normas de pronunciación estándar (표준 발음법, 국립국어원), en el orden de g2pK " +
+                            "(github.com/Kyubyong/g2pK, licencia Apache 2.0).",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Text("Tu nivel ${s.level} se compara con el nivel ${s.standardLevel} de 6 del estándar.", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -767,7 +776,7 @@ private fun KiwiSettings(container: AppContainer) {
     fun mb(bytes: Long) = (bytes + 512 * 1024) / (1024 * 1024)
     Text(
         "Kiwi mira la oración entera para saber qué palabra es (들어요 en «음악을 들어요» es 듣다; en «가방을 들어요», 들다). " +
-            "Lo usan tocar una palabra, el repaso rápido, la escena viva y «Revisar». Funciona sin internet una vez bajado.",
+            "Lo usan tocar una palabra, el repaso rápido, la escena viva, «Revisar» y «Desglosar». Funciona sin internet una vez bajado.",
         style = MaterialTheme.typography.bodySmall,
     )
     when (val st = install) {

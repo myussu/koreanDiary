@@ -1,6 +1,7 @@
 package com.jorge.koreandiary.review
 
 import com.jorge.koreandiary.dictionary.Hangul
+import com.jorge.koreandiary.pronunciation.Pronunciation
 
 /**
  * Dónde está el error de una respuesta casi correcta, sílaba por sílaba y letra por letra (pedido por
@@ -234,12 +235,29 @@ object AnswerDiff {
                 is Change.AsItSounds -> "«${c.written}» está escrito como suena"
             }
         }
-        val alike = r.changes.any { it is Change.Swap && soundsAlike(it, r.written) }
-        return parts.joinToString("; ").replaceFirstChar { it.uppercase() } + "." + if (alike) " Suena casi igual: es de ortografía." else ""
+        // Con «Cómo suena» se sabe si suenan igual del todo (됬어요 y 됐어요 [돼써요]); si no, las reglas de
+        // cada sílaba dicen si casi.
+        val same = Pronunciation.sameSound(r.written, r.expected)
+        val note = when {
+            same && r.changes.all { it is Change.AsItSounds } -> ""
+            same -> " Suena igual: es de ortografía."
+            r.changes.any { it is Change.Swap && soundsAlike(it, r.written) } -> " Suena casi igual: es de ortografía."
+            else -> ""
+        }
+        return parts.joinToString("; ").replaceFirstChar { it.uppercase() } + "." + note
     }
 
-    /** Qué cambia, letra por letra (después de «Ver respuesta»): «En «었» va ㅆ abajo, no ㅅ.». */
-    fun explain(r: Result): String = r.changes.joinToString(" ") { c ->
+    /**
+     * Qué cambia, letra por letra (después de «Ver respuesta»): «En «었» va ㅆ abajo, no ㅅ.». Si las dos
+     * suenan igual, también cómo: «Las dos se pronuncian [머거요].».
+     */
+    fun explain(r: Result): String {
+        val same = Pronunciation.sameSound(r.written, r.expected)
+        val body = changesText(r, same)
+        return if (same) "$body Las dos se pronuncian [${Pronunciation.of(r.expected)}]." else body
+    }
+
+    private fun changesText(r: Result, same: Boolean): String = r.changes.joinToString(" ") { c ->
         when (c) {
             is Change.Swap -> {
                 val x = Hangul.parts(c.written)!!
@@ -255,7 +273,11 @@ object AnswerDiff {
                         }
                     }
                 }
-                "En «${c.expected}» $what" + (if (soundsAlike(c, r.written)) " (suenan casi igual)." else ".")
+                "En «${c.expected}» $what" + when {
+                    same -> " (suenan igual)."
+                    soundsAlike(c, r.written) -> " (suenan casi igual)."
+                    else -> "."
+                }
             }
             is Change.Missing -> "Falta «${c.expected}»" + if (c.at >= r.written.length) " al final." else "."
             is Change.Extra -> "Sobra «${c.written}»."

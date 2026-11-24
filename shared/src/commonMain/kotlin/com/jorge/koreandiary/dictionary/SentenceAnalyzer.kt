@@ -46,10 +46,16 @@ object SentenceLemmas {
     /** Las piezas que caen dentro de [start, end) de la oración. */
     fun pieces(morphs: List<Morph>, start: Int, end: Int): List<Morph> = morphs.filter { it.start < end && it.end > start }
 
-    /** La forma de diccionario de [start, end) de la oración ya analizada; null si no se sabe. */
-    fun lemma(analyzer: SentenceAnalyzer, dictionary: KoreanDictionary, morphs: List<Morph>, start: Int, end: Int): String? {
+    /**
+     * La forma de diccionario de [start, end) de la oración ya analizada ([surface] es ese pedazo); null
+     * si no se sabe.
+     */
+    fun lemma(analyzer: SentenceAnalyzer, dictionary: KoreanDictionary, morphs: List<Morph>, start: Int, end: Int, surface: String? = null): String? {
         val ms = pieces(morphs, start, end)
         if (ms.isEmpty()) return null
+        // Kiwi a veces parte una palabra común en una interjección y otra cosa («어제 친구를 만났어요» →
+        // 어 + 저 + 의): si la palabra entera está en el diccionario, va ella.
+        if (ms.first().tag == "IC" && ms.size > 1 && surface != null && dictionary.isWord(surface)) return surface
         withDictionary(analyzer, dictionary, ms)?.let { return it }
         // Lo que el diccionario no tiene armado: la primera pieza verbal + 다, o el sustantivo.
         return kiwiOnly(ms)?.takeIf { dictionary.isWord(it) }
@@ -57,7 +63,7 @@ object SentenceLemmas {
 
     /** La forma de diccionario de [start, end) analizando [sentence]. */
     fun lemmaIn(analyzer: SentenceAnalyzer, dictionary: KoreanDictionary, sentence: String, start: Int, end: Int): String? =
-        lemma(analyzer, dictionary, analyzer.analyze(sentence), start, end)
+        lemma(analyzer, dictionary, analyzer.analyze(sentence), start, end, sentence.substring(start, end))
 
     /** La forma de diccionario de [word] (tocada en la oración), mirando [sentence]; null si no se sabe. */
     fun lemmaOfWord(analyzer: SentenceAnalyzer, dictionary: KoreanDictionary, sentence: String, word: String): String? {
@@ -79,7 +85,7 @@ object SentenceLemmas {
             if (text.isEmpty()) return@mapNotNull null
             val start = m.range.first + lead
             val end = start + text.length
-            SentenceWord(text, start, end, lemma(analyzer, dictionary, morphs, start, end), pieces(morphs, start, end))
+            SentenceWord(text, start, end, lemma(analyzer, dictionary, morphs, start, end, text), pieces(morphs, start, end))
         }.toList()
     }
 
@@ -115,7 +121,8 @@ object SentenceLemmas {
     fun endingAfterVerb(dictionary: KoreanDictionary, morphs: List<Morph>, start: Int, end: Int): String? {
         val ms = pieces(morphs, start, end)
         val verb = ms.indexOfLast { it.tag in VERBALES }.takeIf { it >= 0 } ?: return null
-        val rest = ms.drop(verb + 1).filter { !it.tag.startsWith("S") }
+        // Kiwi escribe -ᆯ게요 con la ㄹ de juntar; el diccionario, -ㄹ게요.
+        val rest = ms.drop(verb + 1).filter { !it.tag.startsWith("S") }.map { it.copy(form = Hangul.compat(it.form)) }
         if (rest.isEmpty()) return null
         val candidates = mutableListOf<String>()
         // -는 동안, -은 다음에: la terminación que une y la palabra que sigue van separadas.

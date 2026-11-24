@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
@@ -70,6 +71,7 @@ import com.jorge.koreandiary.ui.AppTag
 import com.jorge.koreandiary.ui.ExplainRetryRow
 import com.jorge.koreandiary.ui.AppTextButton
 import com.jorge.koreandiary.ui.AppToggle
+import com.jorge.koreandiary.ui.BreakdownView
 import com.jorge.koreandiary.ui.DictionaryEntries
 import com.jorge.koreandiary.ui.fadingEdges
 import androidx.compose.foundation.layout.heightIn
@@ -407,6 +409,7 @@ private fun LiveContent(st: ConvUiState, vm: ConversationViewModel, blur: Boolea
         CoachPanelView(
             st.panel, onMore = vm::hint, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = st.hasCoach,
             howTo = HowToActions(onText = vm::setHowToText, onDictate = vm::dictateHowTo, onAsk = vm::askHowTo, onHear = vm::hear),
+            onBreakdown = vm::breakdown,
         )
 
         val compact = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
@@ -512,6 +515,8 @@ internal fun CoachPanelView(
     /** Solo en la preparación: quitar o volver a incluir el objetivo abierto. */
     includeLabel: String? = null,
     onToggleInclude: () -> Unit = {},
+    /** «Desglosar la oración» de la palabra tocada (conversación y escucha). */
+    onBreakdown: ((String) -> Unit)? = null,
 ) {
     if (panel == CoachPanel.None) return
     val scheme = MaterialTheme.colorScheme
@@ -548,6 +553,7 @@ internal fun CoachPanelView(
                     Text(if (base != r.written) "${r.written} → $base" else r.written, fontWeight = FontWeight.SemiBold)
                     DictionaryEntries(r)
                 }
+                is CoachPanel.BreakdownShown -> BreakdownView(panel.result)
                 is CoachPanel.WordShown -> {
                     val g = panel.gloss
                     Text(if (g.form != g.word) "${g.word} → ${g.form}" else g.word, fontWeight = FontWeight.SemiBold)
@@ -620,7 +626,11 @@ internal fun CoachPanelView(
                 }
                 CoachPanel.None -> Unit
             }
+            val sentence = (panel as? CoachPanel.DictShown)?.sentence
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                if (sentence != null && onBreakdown != null) {
+                    AppTextButton(onClick = { onBreakdown(sentence) }, modifier = Modifier.testTag("conv_desglosar")) { Text("Desglosar la oración") }
+                }
                 if (panel is CoachPanel.HintShown && panel.level < 3) AppTextButton(onClick = onMore) { Text("Más ayuda") }
                 if (panel is CoachPanel.TargetShown && panel.explanation == null && hasCoach) {
                     AppTextButton(onClick = onExplain) { Text("Explicar con IA") }

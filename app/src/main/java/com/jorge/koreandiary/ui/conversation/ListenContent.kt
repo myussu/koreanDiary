@@ -175,7 +175,7 @@ internal fun ListenLiveContent(ls: ListenState, engine: ListenEngine, conv: Conv
             }
         }
 
-        CoachPanelView(conv.panel, onMore = {}, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = conv.hasCoach)
+        CoachPanelView(conv.panel, onMore = {}, onClose = vm::closePanel, onExplain = vm::explainTarget, hasCoach = conv.hasCoach, onBreakdown = vm::breakdown)
 
         if (ls.phase == ListenPhase.COMPREHENSION && script != null && script.comprehension.isNotEmpty()) {
             Text(
