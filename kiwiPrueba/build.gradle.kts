@@ -16,8 +16,8 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "kiwi-${libs.versions.kiwi.get()}"
-        // Kiwi trae su librería nativa para estas dos (celular y emulador).
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // Solo la del celular: la de x86_64 (emulador) suma 18 MB al APK.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     signingConfigs {

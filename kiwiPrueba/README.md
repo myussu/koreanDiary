@@ -18,7 +18,7 @@ memoria usa en el Galaxy.
   3. «Copiar resultados» y pegarlos en el chat.
   4. «Probar una oración» sirve para ver qué piezas y qué forma de diccionario saca de una oración
      cualquiera.
-- **Qué lleva:** la librería de Kiwi para Android (AAR, ARM64 y x86_64) y su modelo, los dos del
+- **Qué lleva:** la librería de Kiwi para Android (del AAR solo la de ARM64, la del celular) y su modelo, los dos del
   release oficial, en la versión de `gradle/libs.versions.toml`, sin `multi.dict` (no cambia ningún
   resultado). También lleva las formas del diccionario de la app, para «Kiwi + diccionario». Nada de
   esto va en el repo: lo baja `preparar.sh`.
