@@ -708,13 +708,16 @@ class StudyRepository(
                 val text = Cloze.applyCorrections(s.text.trim(), fixes.filter { it.sentence == s.number }.map { it.original to it.suggestion })
                 // Con el diccionario también los irregulares (고팠다, 덥군요) y la gramática escrita de
                 // otra forma (-ㄹ 수 있다), que antes no se encontraban.
-                // Con el analizador (Kiwi) decide la oración: en «사과를 사는 사람» no está 살다.
+                // Con el analizador (Kiwi) decide la oración: en «사과를 사는 사람» no está 살다. Sin él
+                // (no está bajado: celular nuevo, tras «Quitar»), las palabras van igual por el
+                // diccionario y no por la comparación a ojo de [Cloze.blankIn], que ponía el hueco de
+                // 읽다 en 있어요, el de 같다 en 갔어요 y el de 일 en 일요일, y el repaso calificaba mal.
                 val dict = dictionary
-                val blank = if (analyzer != null && dict != null && kind != ClozeKind.GRAMMAR) {
+                val blank = if (dict != null && kind != ClozeKind.GRAMMAR) {
                     runCatching { DictionaryCloze.wordBlank(dict, text, label, kind, analyzer) }.getOrNull() ?: continue
                 } else {
                     Cloze.blankIn(text, label, kind)
-                        ?: dictionary?.let { d -> runCatching { DictionaryCloze.blank(d, text, label, kind) }.getOrNull() }
+                        ?: dict?.let { d -> runCatching { DictionaryCloze.blank(d, text, label, kind) }.getOrNull() }
                         ?: continue
                 }
                 return text to blank

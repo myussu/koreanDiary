@@ -814,7 +814,7 @@ private fun KiwiSettings(container: AppContainer) {
         is KiwiService.Install.Failed -> {
             Text(st.message, style = MaterialTheme.typography.bodySmall, color = scheme.error, modifier = Modifier.testTag("kiwi_estado"))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AppOutlinedButton(onClick = { container.kiwi.download() }) { Text("Reintentar") }
+                AppOutlinedButton(onClick = { container.kiwi.retry() }, modifier = Modifier.testTag("kiwi_reintentar")) { Text("Reintentar") }
                 if (container.kiwi.isInstalled()) AppTextButton(onClick = { container.kiwi.remove() }) { Text("Quitar") }
             }
         }

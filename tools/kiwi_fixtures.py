@@ -38,6 +38,11 @@ SENTENCES = [
     "제 친구는 귀가 얇아요.",
     # Kiwi lo parte mal: 어제 → 어 (IC) + 저 + 의.
     "어제 친구를 만났어요.",
+    # El hueco del repaso: 나라도 es 나라 (país) o 나 + 라도 (yo), 별로 no es 별 y 갔어요 no es 같다.
+    "우리 나라도 겨울에는 추워요.",
+    "나라도 갈게요.",
+    "별로 안 좋아요.",
+    "학교에 갔어요.",
 ]
 VERBAL = {"VV", "VA", "VX", "XSV", "XSA", "VCN"}
 NOMINAL = {"NNG", "NNP", "NNB", "NR", "NP", "XSN", "XR", "MAG", "MAJ", "MM", "IC"}

@@ -132,6 +132,21 @@ class KiwiService(private val context: Context, private val scope: CoroutineScop
         }
     }
 
+    /**
+     * «Reintentar» después de un fallo. Si el modelo no está, se baja otra vez. Si está y lo que falló
+     * fue cargarlo, se prueba a cargarlo de nuevo: antes el botón llamaba a [download], que con el
+     * modelo en su carpeta no hace nada, y quedaba sin efecto. Si vuelve a fallar, sale el aviso otra vez.
+     */
+    fun retry() {
+        if (!isInstalled()) {
+            download()
+            return
+        }
+        unusable = null
+        _install.value = Install.Ready(size(dir))
+        scope.launch { analyzer() }
+    }
+
     /** «Quitar»: suelta el analizador y borra el modelo (se puede volver a bajar). */
     fun remove() {
         download?.cancel()

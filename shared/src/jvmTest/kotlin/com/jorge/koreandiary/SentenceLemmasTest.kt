@@ -74,6 +74,20 @@ class SentenceLemmasTest {
     }
 
     @Test
+    fun elHuecoNoVaEnUnaPalabraMasLargaQueEmpiezaIgual() {
+        // 나라도 es «el país también» o «hasta yo»: lo dice la oración. Antes, si el analizador veía
+        // una palabra más larga que empezaba igual (나라), el hueco de 나 iba igual dentro de ella.
+        val country = "우리 나라도 겨울에는 추워요."
+        assertNull(DictionaryCloze.wordBlank(dictionary, country, "나", ClozeKind.WORD, analyzer))
+        assertEquals(3, DictionaryCloze.wordBlank(dictionary, country, "나라", ClozeKind.WORD, analyzer)?.start)
+        assertEquals(0, DictionaryCloze.wordBlank(dictionary, "나라도 갈게요.", "나", ClozeKind.WORD, analyzer)?.start)
+        assertNull(DictionaryCloze.wordBlank(dictionary, "별로 안 좋아요.", "별", ClozeKind.WORD, analyzer))
+        // 갔어요 es 가다: para 같다 esa oración no sirve.
+        assertNull(DictionaryCloze.wordBlank(dictionary, "학교에 갔어요.", "같다", ClozeKind.VERB, analyzer))
+        assertEquals("갔어요", DictionaryCloze.wordBlank(dictionary, "학교에 갔어요.", "가다", ClozeKind.VERB, analyzer)?.text)
+    }
+
+    @Test
     fun losEjemplosQueDeVerdadUsanLaPalabra() {
         val hear = dictionary.entries("듣다").first { it.isVerb }
         val lift = dictionary.entries("들다").first { it.isVerb }

@@ -281,4 +281,61 @@ class ClozeTest {
             db.close()
         }
     }
+
+    @Test
+    fun laConsonanteFinalSoloCambiaComoAlConjugar() {
+        // Antes valía cualquier cambio de la consonante final y el hueco caía en otra palabra.
+        assertFalse(Cloze.conjugated("읽", "있어요"))
+        assertFalse(Cloze.conjugated("같", "갔어요"))
+        assertFalse(Cloze.conjugated("받", "바다에"))
+        assertFalse(Cloze.conjugated("많", "말을"))
+        assertFalse(Cloze.conjugated("없", "언니가"))
+        assertFalse(Cloze.conjugated("먹", "멀어요"))
+        assertEquals("읽고", blank("책을 읽고 있어요.", "읽다", ClozeKind.VERB))
+        assertNull(blank("학교에 갔어요.", "같다", ClozeKind.VERB))
+        // Lo que de verdad cambia al conjugar sigue valiendo.
+        assertTrue(Cloze.conjugated("가", "갔어요"))
+        assertTrue(Cloze.conjugated("오", "왔어요"))
+        assertTrue(Cloze.conjugated("살", "사는"))
+        assertTrue(Cloze.conjugated("살", "삽니다"))
+        assertTrue(Cloze.conjugated("듣", "들어요"))
+        assertTrue(Cloze.conjugated("낫", "나아요"))
+        assertTrue(Cloze.conjugated("아름답", "아름다워요"))
+        assertTrue(Cloze.conjugated("그렇", "그러면"))
+    }
+
+    @Test
+    fun sinElAnalizadorTusOracionesTampocoPonenElHuecoEnOtraPalabra() = runBlocking {
+        // Sin Kiwi bajado (celular nuevo, tras «Quitar») el hueco de 같다 caía en 갔어요 y el de 일 en
+        // 일요일: la tarjeta pedía otra palabra y el repaso calificaba mal. Con el diccionario, no.
+        val db = Room.inMemoryDatabaseBuilder<AppDatabase>().setDriver(BundledSQLiteDriver()).build()
+        try {
+            val study = StudyRepository(db, StandardCatalog { emptyList() }, KiwiFixtures.dictionary)
+            val dao = db.studyDao()
+            val diary = db.diaryDao()
+            val memory = db.memoryDao()
+            val day = 24L * 60 * 60 * 1000
+            val now = 100 * day
+            val same = dao.insertWord(Word(baseForm = "같다", type = "adjetivo", meaning = "ser igual", source = "import"))
+            val work = dao.insertWord(Word(baseForm = "일", type = "sustantivo", meaning = "trabajo", source = "import"))
+            val entry = diary.insertEntry(DiaryEntry(date = "2026-08-01", createdAt = 0))
+            val page = diary.insertPage(DiaryPage(entryId = entry, status = PageStatus.REVIEWED, createdAt = 0, updatedAt = 0, kind = PageKind.DIARY))
+            listOf("일요일에 학교에 갔어요.", "오늘 날씨는 어제와 같아요.", "요즘 일이 많아요.").forEachIndexed { i, text ->
+                diary.insertSentence(Sentence(pageId = page, number = i + 1, text = text, tense = "presente"))
+            }
+            for (id in listOf(same, work)) {
+                memory.insertEvent(ReviewEvent(itemType = ItemType.WORD, itemId = id, at = 10 * day, kind = EventKind.CORRECT_SPONTANEOUS, rating = 3, pageId = page))
+                memory.upsert(MemoryState(itemType = ItemType.WORD, itemId = id, stability = 3.0, difficulty = 5.0, lastReviewAt = 10 * day, dueAt = 13 * day, reps = 1, lapses = 0))
+            }
+            val targets = study.quickReviewTargets(now, emptyList(), random = Random(1))
+            val sameCard = targets.first { it.code == "w$same" }
+            assertEquals("오늘 날씨는 어제와 같아요.", sameCard.sentence)
+            assertEquals("같아요", sameCard.blank?.text)
+            val workCard = targets.first { it.code == "w$work" }
+            assertEquals("요즘 일이 많아요.", workCard.sentence)
+            assertEquals(ClozeBlank(3, "일"), workCard.blank)
+        } finally {
+            db.close()
+        }
+    }
 }

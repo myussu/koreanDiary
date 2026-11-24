@@ -81,6 +81,32 @@ class DictionaryClozeTest {
     }
 
     @Test
+    fun sinAnalizadorElHuecoNoCaeEnOtraPalabra() {
+        fun verb(sentence: String, label: String) = DictionaryCloze.wordBlank(dictionary, sentence, label, ClozeKind.VERB)?.text
+        fun noun(sentence: String, label: String) = DictionaryCloze.wordBlank(dictionary, sentence, label, ClozeKind.WORD)?.start
+        // Lo que el lematizador reconoce como otra palabra no es el verbo del ítem (antes se comparaba a ojo).
+        assertEquals("읽고", verb("책을 읽고 있어요.", "읽다"))
+        assertNull(verb("학교에 갔어요.", "같다"))
+        assertNull(verb("바다에 갔어요.", "받다"))
+        assertNull(verb("친구하고 말을 했어요.", "많다"))
+        assertNull(verb("저는 서울에 살아요.", "사다"))
+        assertNull(verb("언니가 집에 왔어요.", "없다"))
+        assertEquals("갔어요", verb("학교에 갔어요.", "가다"))
+        assertEquals("살아요", verb("저는 서울에 살아요.", "살다"))
+        // Un sustantivo no sale de otra palabra más larga que empieza igual…
+        assertNull(noun("일요일에 친구를 만났어요.", "일"))
+        assertNull(noun("별로 안 좋아요.", "별"))
+        assertNull(noun("나이 때문에 힘들어요.", "나"))
+        assertNull(noun("회의 시간에 늦었어요.", "회"))
+        // …ni de una que puede ser las dos cosas (나라 + 도 o 나 + 라도): sin la oración no se sabe.
+        assertNull(noun("우리 나라도 겨울에는 추워요.", "나"))
+        // El sustantivo con su partícula sigue saliendo.
+        assertEquals(0, noun("나도 갈게요.", "나"))
+        assertEquals(4, noun("오늘은 일이 많아요.", "일"))
+        assertEquals(0, noun("별이 정말 예뻐요.", "별"))
+    }
+
+    @Test
     fun laGramaticaDiceQueExpresaYConQueVerbo() {
         // La tarjeta de Jorge del 2026-11-22: su oración sin el 에 de «-는 동안에».
         val sentence = "먹는 동안 다른 음식도 먹어 봤어요."

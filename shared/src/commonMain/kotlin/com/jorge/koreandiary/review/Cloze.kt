@@ -175,9 +175,33 @@ object Cloze {
 
     // Vocales (índice Unicode): ㅏ0 ㅐ1 ㅓ4 ㅕ6 ㅗ8 ㅘ9 ㅙ10 ㅚ11 ㅜ13 ㅝ14 ㅡ18 ㅣ20.
     private val VOWEL_CONTRACTIONS = mapOf(8 to 9, 13 to 14, 18 to 4, 20 to 6, 11 to 10)
-    // Finales posibles al conjugar: ninguna, ㄴ, ㄹ, ㅂ (ㅂ니다) y ㅆ (pasado).
+    // Finales que se le pegan a una raíz sin consonante final: ninguna, ㄴ, ㄹ, ㅂ (ㅂ니다) y ㅆ (pasado).
     private val CONJUGATED_FINALS = setOf(0, 4, 8, 17, 20)
     private const val HIEUT = 18
+    // Consonantes finales (índice Unicode) que cambian al conjugar.
+    private const val FINAL_NIEUN = 4
+    private const val FINAL_DIGEUT = 7
+    private const val FINAL_RIEUL = 8
+    private const val FINAL_BIEUP = 17
+    private const val FINAL_SIOT = 19
+    private const val FINAL_HIEUT = 27
+
+    /**
+     * ¿La consonante final de la raíz ([stem]) puede quedar como [word] al conjugar? Antes valía
+     * cualquier cambio a ninguna, ㄴ, ㄹ, ㅂ o ㅆ, y 읽다 «estaba» en 있어요, 같다 en 갔어요 y 받다 en 바다에
+     * (el hueco del repaso caía en otra palabra). Solo cambian: una raíz sin final (가 → 간, 갈, 갑니다,
+     * 갔); la ㄹ, que cae o se cambia (살다 → 사는, 산, 삽니다); y las irregulares ㄷ → ㄹ (듣다 → 들어요)
+     * y ㅂ, ㅅ, ㅎ, que caen (덥다 → 더워요, 낫다 → 나아요, 그렇다 → 그러면, 그런, 그럴).
+     */
+    private fun finalCanBecome(stem: Int, word: Int): Boolean = when (stem) {
+        word -> true
+        0 -> word in CONJUGATED_FINALS
+        FINAL_RIEUL -> word == 0 || word == FINAL_NIEUN || word == FINAL_BIEUP
+        FINAL_DIGEUT -> word == FINAL_RIEUL
+        FINAL_BIEUP, FINAL_SIOT -> word == 0
+        FINAL_HIEUT -> word == 0 || word == FINAL_NIEUN || word == FINAL_RIEUL
+        else -> false
+    }
     /** Lo que suele seguir a una raíz de una sílaba al conjugarla (가요, 가고, 갔어요…), no a un sustantivo (가방, 가족). */
     private val VERBAL_NEXT = "아어았었요고서면는니지세야도기려자다네며시셨으을은겠".toSet()
     /**
@@ -207,7 +231,7 @@ object Cloze {
         val b = jamo(word[stem.length - 1]) ?: return false
         if (a.initial != b.initial) return false
         val vowelOk = a.vowel == b.vowel || VOWEL_CONTRACTIONS[a.vowel] == b.vowel || (a.initial == HIEUT && a.vowel == 0 && b.vowel == 1)
-        val finalOk = b.final == a.final || b.final in CONJUGATED_FINALS
+        val finalOk = finalCanBecome(a.final, b.final)
         val nextOk = !single || word[1] in VERBAL_NEXT
         return vowelOk && finalOk && nextOk
     }

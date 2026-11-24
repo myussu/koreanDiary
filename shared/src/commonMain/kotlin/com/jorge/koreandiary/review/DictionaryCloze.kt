@@ -172,7 +172,16 @@ object DictionaryCloze {
      * Con el analizador ([analyzer], Kiwi) primero la palabra que en esta oración de verdad es esa: en
      * «사과를 사는 사람» 사는 es 사다, así que para 살다 esa oración no sirve, aunque el lematizador diga
      * que 사는 puede ser 살다. Si el analizador no la encuentra, el lematizador, salvo que el analizador
-     * diga que esa palabra es otra.
+     * diga que esa palabra es otra (también una más larga que empieza igual: 나라도 es 나라 en «우리
+     * 나라도 추워요», no 나).
+     *
+     * Sin analizador decide el lematizador, y con cuidado, porque un hueco en otra palabra califica
+     * mal el repaso (una oración que no se usa no cuesta nada: sale otra tuya o una del diccionario):
+     * - un verbo que el lematizador no reconoce se compara a ojo ([Cloze.conjugated]) solo si tampoco
+     *   reconoce la palabra como otra cosa: 갔어요 es 가다, así que no es 같다, y 바다에 no es 받다;
+     * - un sustantivo no se saca de una palabra que también puede ser otra más larga que empieza igual:
+     *   별 de 별로, 나 de 나이, 회 de 회의, ni 나 de 나라도 (que también es 나라 + 도: sin la oración no
+     *   se sabe cuál).
      */
     fun wordBlank(dictionary: KoreanDictionary, sentence: String, label: String, kind: ClozeKind, analyzer: SentenceAnalyzer? = null): ClozeBlank? {
         val form = label.trim()
@@ -186,14 +195,18 @@ object DictionaryCloze {
         val words = tokens(sentence)
         val old = if (kind == ClozeKind.VERB) {
             words.lastOrNull { w -> dictionary.baseForms(w.text).any { it.form == form } }
-                ?: words.lastOrNull { w -> Cloze.conjugated(Cloze.stem(form), w.text) }
+                ?: words.lastOrNull { w -> dictionary.baseForms(w.text).isEmpty() && Cloze.conjugated(Cloze.stem(form), w.text) }
         } else {
-            words.firstOrNull { w -> w.text.startsWith(form) && (w.text == form || dictionary.baseForms(w.text).any { it.form == form }) }
-                ?.let { ClozeBlank(it.start, form) }
+            words.firstOrNull { w ->
+                if (!w.text.startsWith(form)) return@firstOrNull false
+                if (w.text == form) return@firstOrNull true
+                val readings = dictionary.baseForms(w.text)
+                readings.any { it.form == form } && readings.none { !it.isVerb && it.form != form && it.form.startsWith(form) }
+            }?.let { ClozeBlank(it.start, form) }
         } ?: return null
-        // El analizador dice que esa palabra es otra (사는 = 사다): esta oración no sirve.
+        // El analizador dice que esa palabra es otra (사는 = 사다, 나라도 = 나라): esta oración no sirve.
         val other = analyzed?.firstOrNull { it.start <= old.start && old.start < it.end }?.lemma
-        return if (other != null && other != form && !(kind != ClozeKind.VERB && other.startsWith(form))) null else old
+        return if (other != null && other != form) null else old
     }
 
     /** La gramática con cualquiera de sus formas: las palabras que la llevan; una partícula, solo ella. */
