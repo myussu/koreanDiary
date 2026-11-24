@@ -66,6 +66,10 @@ object SentenceLemmas {
         return words(analyzer, dictionary, sentence).firstOrNull { it.text == clean }?.lemma
     }
 
+    /** Las formas de diccionario de todas las palabras de [sentences], sin repetir. */
+    fun lemmasIn(analyzer: SentenceAnalyzer, dictionary: KoreanDictionary, sentences: List<String>): Set<String> =
+        sentences.flatMap { s -> words(analyzer, dictionary, s).mapNotNull { it.lemma } }.toSet()
+
     /** Las palabras de la oración con su forma de diccionario. */
     fun words(analyzer: SentenceAnalyzer, dictionary: KoreanDictionary, sentence: String): List<SentenceWord> {
         val morphs = analyzer.analyze(sentence)

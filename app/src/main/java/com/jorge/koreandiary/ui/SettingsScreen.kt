@@ -767,7 +767,7 @@ private fun KiwiSettings(container: AppContainer) {
     fun mb(bytes: Long) = (bytes + 512 * 1024) / (1024 * 1024)
     Text(
         "Kiwi mira la oración entera para saber qué palabra es (들어요 en «음악을 들어요» es 듣다; en «가방을 들어요», 들다). " +
-            "Lo usan tocar una palabra, el hueco y las respuestas del repaso rápido. Funciona sin internet una vez bajado.",
+            "Lo usan tocar una palabra, el repaso rápido, la escena viva y «Revisar». Funciona sin internet una vez bajado.",
         style = MaterialTheme.typography.bodySmall,
     )
     when (val st = install) {

@@ -230,7 +230,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
                 lexicon = SceneDictionary.withCustom(list)
                 if (isScene) {
                     val text = if (lineTexts.isEmpty()) _state.value.page?.confirmedText.orEmpty() else liveText()
-                    detected = withContext(Dispatchers.Default) { lexicon.detect(text) }
+                    detected = withContext(Dispatchers.Default) { lexicon.detect(text, c.kiwi.loadedOrNull()) }
                     publishScene()
                 }
             }
@@ -329,8 +329,16 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         _state.update { it.copy(page = page, suggestions = chips.filterNot { c -> c.isNew }, newGrammar = chips.filter { c -> c.isNew }) }
         if (page.kind == PageKind.SCENE) {
             // Hasta que se lea la tinta, la escena parte del texto ya confirmado.
-            if (lineTexts.isEmpty()) detected = lexicon.detect(page.confirmedText.orEmpty())
+            if (lineTexts.isEmpty()) detected = lexicon.detect(page.confirmedText.orEmpty(), c.kiwi.loadedOrNull())
             publishScene()
+            // En una escena, Kiwi (si está bajado) mira cada palabra para que 산 de «어제 산 옷» no traiga
+            // una montaña. Se carga en segundo plano y la escena se vuelve a armar cuando está.
+            viewModelScope.launch {
+                val analyzer = c.kiwi.analyzer() ?: return@launch
+                val text = if (lineTexts.isEmpty()) _state.value.page?.confirmedText.orEmpty() else liveText()
+                detected = withContext(Dispatchers.Default) { lexicon.detect(text, analyzer) }
+                publishScene()
+            }
         }
     }
 
@@ -921,7 +929,7 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         readCache.keys.retainAll(keys.values.toSet())
         lineTexts = texts
         val text = liveText()
-        detected = withContext(Dispatchers.Default) { lexicon.detect(text) }
+        detected = withContext(Dispatchers.Default) { lexicon.detect(text, c.kiwi.loadedOrNull()) }
         // Lo que vio la IA en «¿Cómo digo?» aparece cuando escribes sus palabras; y lo leído de cada
         // renglón queda guardado con la escena.
         val reads = HashMap(readCache)
@@ -1065,7 +1073,8 @@ class PageViewModel(private val c: AppContainer, private val pageId: Long) : Vie
         if (deleted) return
         val page = _state.value.page ?: return
         // Una sola transacción: correcciones, FSRS y el estado "revisada" quedan todos o ninguno.
-        val summary = c.study.applyCorrection(page, response, System.currentTimeMillis())
+        // Con Kiwi, lo de tu lista que usaste bien y la IA no nombró también cuenta para el repaso.
+        val summary = c.study.applyCorrection(page, response, System.currentTimeMillis(), analyzer = c.kiwi.analyzer())
         if (deleted) return
         _state.update { it.copy(reviewSeq = it.reviewSeq + 1) }
         // El estado ya está en la base; esto lo refleja en pantalla y guarda la tinta más reciente.

@@ -2,21 +2,16 @@ package com.jorge.koreandiary
 
 import com.jorge.koreandiary.dictionary.DictionaryExplain
 import com.jorge.koreandiary.dictionary.DictionaryLookup
-import com.jorge.koreandiary.dictionary.KoreanDictionary
-import com.jorge.koreandiary.dictionary.Morph
-import com.jorge.koreandiary.dictionary.SentenceAnalyzer
 import com.jorge.koreandiary.dictionary.SentenceLemmas
 import com.jorge.koreandiary.review.ClozeCard
 import com.jorge.koreandiary.review.ClozeKind
 import com.jorge.koreandiary.review.DictionaryCloze
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * La forma de diccionario mirando la oración entera, con lo que Kiwi de verdad devolvió para estas
@@ -24,31 +19,8 @@ import java.io.File
  */
 class SentenceLemmasTest {
 
-    /** Kiwi grabado: las piezas de cada oración y lo que devuelve al unirlas. */
-    private class FixtureAnalyzer(private val analyses: Map<String, List<Morph>>, private val joins: Map<String, String>) : SentenceAnalyzer {
-        override fun analyze(sentence: String): List<Morph> = analyses[sentence] ?: error("Falta en los datos de prueba: $sentence")
-        override fun join(pieces: List<Morph>): String? = joins[pieces.joinToString("+") { "${it.form}/${it.tag}${if (it.irregular) "-I" else ""}" }]
-    }
-
-    private val dictionary by lazy {
-        val dir = listOf("../app/src/main/assets/dictionary", "app/src/main/assets/dictionary").map(::File).first { it.isDirectory }
-        KoreanDictionary { name -> File(dir, name).readLines() }
-    }
-
-    private val analyzer: SentenceAnalyzer by lazy {
-        val file = listOf("src/jvmTest/resources/kiwi-fixtures.json", "shared/src/jvmTest/resources/kiwi-fixtures.json").map(::File).first { it.isFile }
-        val o = JSONObject(file.readText())
-        val a = o.getJSONObject("analyses")
-        val analyses = a.keys().asSequence().associateWith { s ->
-            val arr = a.getJSONArray(s)
-            (0 until arr.length()).map { i ->
-                val m = arr.getJSONArray(i)
-                Morph(m.getString(0), m.getString(1), m.getInt(2), m.getInt(3), m.getBoolean(4))
-            }
-        }
-        val j = o.getJSONObject("joins")
-        FixtureAnalyzer(analyses, j.keys().asSequence().associateWith { j.getString(it) })
-    }
+    private val dictionary get() = KiwiFixtures.dictionary
+    private val analyzer get() = KiwiFixtures.analyzer
 
     private fun lemma(sentence: String, word: String): String? {
         val start = sentence.indexOf(word)
@@ -120,5 +92,13 @@ class SentenceLemmasTest {
         assertEquals("El verbo está bien (먹다), pero aquí va otra gramática: la de «Usa:».", DictionaryCloze.nearMiss(dictionary, card, "먹으면서"))
         val morphs = analyzer.analyze("먹는 동안 다른 음식도 먹어 봤어요.")
         assertEquals("-는 동안", SentenceLemmas.endingAfterVerb(dictionary, morphs, 0, 5))
+    }
+
+    @Test
+    fun lasPalabrasDeUnaPaginaEnFormaDeDiccionario() {
+        // Lo que «Revisar» compara con tu lista: 친구와 → 친구, 봤어요 → 보다.
+        val lemmas = SentenceLemmas.lemmasIn(analyzer, dictionary, listOf("친구와 같이 영화를 봤어요.", "음악을 들어요."))
+        for (w in listOf("친구", "영화", "보다", "음악", "듣다")) assertTrue("$w en $lemmas", w in lemmas)
+        assertFalse(lemmas.toString(), "들다" in lemmas)
     }
 }

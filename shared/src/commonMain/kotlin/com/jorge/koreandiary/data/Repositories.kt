@@ -30,6 +30,7 @@ import com.jorge.koreandiary.data.standard.StdWord
 import com.jorge.koreandiary.dictionary.DictEntry
 import com.jorge.koreandiary.dictionary.KoreanDictionary
 import com.jorge.koreandiary.dictionary.SentenceAnalyzer
+import com.jorge.koreandiary.dictionary.SentenceLemmas
 import com.jorge.koreandiary.dictionary.PeruSpanish
 import com.jorge.koreandiary.progress.LevelCoverage
 import com.jorge.koreandiary.progress.LevelEstimate
@@ -277,7 +278,34 @@ class StudyRepository(
      * Todo va en una transacción, junto con marcar la página como revisada: si la app se cierra a la
      * mitad no queda nada aplicado, y al reintentar no se cuenta dos veces.
      */
-    suspend fun applyCorrection(page: DiaryPage, response: CorrectionResponse, now: Long): ApplySummary = db.withWriteTransaction {
+    suspend fun applyCorrection(page: DiaryPage, response: CorrectionResponse, now: Long, analyzer: SentenceAnalyzer? = null): ApplySummary {
+        // Con el analizador (Kiwi) se suma lo de tu lista que usaste bien y la IA no puso en «usados»
+        // (pedido por Jorge el 2026-11-24): así el repaso no depende de que la IA no se olvide.
+        val extra = if (analyzer != null && dictionary != null) usedByAnalyzer(response, analyzer, dictionary) else emptyList()
+        return applyCorrectionNow(page, if (extra.isEmpty()) response else response.copy(used = response.used + extra), now)
+    }
+
+    /**
+     * Las palabras de tu lista que están en las oraciones sin ninguna corrección (ahí se usaron bien) y
+     * que la IA no nombró. Solo palabras de la lista: lo nuevo lo sigue decidiendo la IA.
+     */
+    suspend fun usedByAnalyzer(response: CorrectionResponse, analyzer: SentenceAnalyzer, dictionary: KoreanDictionary): List<UsedItemDto> {
+        val corrected = response.corrections.map { it.sentence }.toSet()
+        val clean = response.sentences.filter { it.number !in corrected }.map { it.text }
+        if (clean.isEmpty()) return emptyList()
+        val lemmas = withContext(Dispatchers.Default) {
+            runCatching { SentenceLemmas.lemmasIn(analyzer, dictionary, clean) }.getOrDefault(emptySet())
+        }
+        val named = response.used.map { it.form }.toSet()
+        val namedRefs = response.used.mapNotNull { it.itemRef }.toSet()
+        return lemmas.filter { it !in named }.sorted().mapNotNull { lemma ->
+            study.findWord(lemma)?.takeIf { "w${it.id}" !in namedRefs }?.let { w ->
+                UsedItemDto(itemRef = "w${w.id}", form = w.baseForm, kind = w.type, correct = true, meaning = w.meaning)
+            }
+        }
+    }
+
+    private suspend fun applyCorrectionNow(page: DiaryPage, response: CorrectionResponse, now: Long): ApplySummary = db.withWriteTransaction {
         val diary = db.diaryDao()
         // La página se pudo borrar mientras la IA respondía (la revisión sigue aunque salgas): de una
         // página que ya no existe no se guarda nada. Antes quedaban correcciones y oraciones sueltas.

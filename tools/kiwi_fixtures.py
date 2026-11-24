@@ -15,6 +15,15 @@ SENTENCES = [
     "날씨가 추워서 집에 있었어요.",
     "일반적으로 늦어지면 연락해요.",
     "저는 매운맛을 좋아해요.",
+    # Escena viva: 산 de comprar o la montaña, 해 del sol o de hacer, 맑 de 맑다.
+    "어제 산 옷이 예뻐요.",
+    "엄마가 산 케이크가 맛있었어요.",
+    "주말에 산에 갔어요.",
+    "하늘이 맑아요.",
+    "해가 떴어요.",
+    "숙제를 해 봤어요.",
+    # «Usados» del diario.
+    "친구와 같이 영화를 봤어요.",
 ]
 VERBAL = {"VV", "VA", "VX", "XSV", "XSA", "VCN"}
 NOMINAL = {"NNG", "NNP", "NNB", "NR", "NP", "XSN", "XR", "MAG", "MAJ", "MM", "IC"}

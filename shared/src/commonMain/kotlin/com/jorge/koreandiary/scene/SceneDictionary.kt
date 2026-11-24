@@ -1,5 +1,8 @@
 package com.jorge.koreandiary.scene
 
+import com.jorge.koreandiary.dictionary.Morph
+import com.jorge.koreandiary.dictionary.SentenceAnalyzer
+
 /**
  * Dónde aparece un elemento en los bordes de la página, como si miraras la escena desde adentro:
  * lo que pisas abajo, lo que está a tu altura a los lados, el cielo arriba y lo que está en el aire
@@ -153,10 +156,10 @@ object SceneDictionary {
      * Elementos que aparecen en [text], en el orden en que se escribieron, sin repetir: la escena
      * se arma elemento por elemento a medida que escribes.
      */
-    fun detect(text: String): List<SceneElement> = builtIn.detect(text)
+    fun detect(text: String, analyzer: SentenceAnalyzer? = null): List<SceneElement> = builtIn.detect(text, analyzer)
 
     /** Dónde aparece cada palabra de la app (para la ventana de dibujos y sus pruebas). */
-    fun detectWithKeys(text: String): List<Pair<SceneElement, String>> = builtIn.detectWithKeys(text)
+    fun detectWithKeys(text: String, analyzer: SentenceAnalyzer? = null): List<Pair<SceneElement, String>> = builtIn.detectWithKeys(text, analyzer)
 
     /** Las claves de la app de un elemento, en el orden del diccionario. */
     fun keysOf(id: String): List<String> = keys.filterValues { it == id }.keys.toList()
@@ -187,7 +190,7 @@ object SceneDictionary {
  */
 class SceneLexicon internal constructor(
     keys: List<Pair<String, String>>,
-    stems: Set<String>,
+    private val stems: Set<String>,
     private val particles: List<String>,
     private val needsParticle: Set<String>,
     /** Frases donde una sílaba suelta no es la de la escena (ver [SceneDictionary.notScene]). */
@@ -212,19 +215,32 @@ class SceneLexicon internal constructor(
     /** ¿Este sustantivo ya trae un dibujo? (게 sí, aunque solo cuente con partícula.) */
     fun knows(noun: String): Boolean = owner(noun) != null || detect(noun).isNotEmpty()
 
-    fun detect(text: String): List<SceneElement> = detectWithKeys(text).map { it.first }
+    fun detect(text: String, analyzer: SentenceAnalyzer? = null): List<SceneElement> = detectWithKeys(text, analyzer).map { it.first }
 
-    /** Lo que aparece en [text] con la palabra que lo trajo, en orden de escritura y sin repetir. */
-    fun detectWithKeys(text: String): List<Pair<SceneElement, String>> {
+    /**
+     * Lo que aparece en [text] con la palabra que lo trajo, en orden de escritura y sin repetir.
+     *
+     * Con el analizador ([analyzer], Kiwi; pedido por Jorge el 2026-11-24) cada palabra que coincide se
+     * mira en la oración: tiene que ser el sustantivo (o la raíz, en 맑/밝) y no otra cosa que empieza
+     * igual. Así 산 de «어제 산 옷» (comprar) o 해 de «해 봤어요» (hacer) no traen dibujo, sin esperar a
+     * que estén en [notScene]. Sin analizador, las reglas de siempre.
+     */
+    fun detectWithKeys(text: String, analyzer: SentenceAnalyzer? = null): List<Pair<SceneElement, String>> {
         if (text.isBlank()) return emptyList()
+        val morphs = analyzer?.let { a -> runCatching { a.analyze(text) }.getOrNull() }
         val found = LinkedHashMap<String, Pair<Int, String>>()
         fun add(id: String, at: Int, key: String) {
+            if (morphs != null && !looksLike(morphs, at, key)) return
             val prev = found[id]
             if (prev == null || prev.first > at) found[id] = at to key
         }
         phraseKeys.forEach { (key, id) ->
             val i = text.indexOf(key)
-            if (i >= 0) add(id, i, key)
+            // Una frase (해가 지) ya dice qué es: no se mira pieza por pieza.
+            if (i >= 0) {
+                val prev = found[id]
+                if (prev == null || prev.first > i) found[id] = i to key
+            }
         }
         var position = 0
         for (word in text.split(wordSplit)) {
@@ -243,6 +259,18 @@ class SceneLexicon internal constructor(
         }
         return found.entries.sortedBy { it.value.first }.mapNotNull { (id, v) -> elementOf(id)?.let { it to v.second } }
     }
+
+    /**
+     * ¿La pieza que empieza en [at] es la clave como sustantivo (바다를 → 바다; 바닷가 → 바닷; 단풍나무 →
+     * 단풍 + 나무) o, en una raíz (맑, 밝), como adjetivo o verbo?
+     */
+    private fun looksLike(morphs: List<Morph>, at: Int, key: String): Boolean {
+        val first = morphs.firstOrNull { it.start == at } ?: return true
+        return if (key in stems) first.form == key && (first.tag == "VA" || first.tag == "VV")
+        else first.tag in NOUN_TAGS && (first.form.startsWith(key) || key.startsWith(first.form))
+    }
+
+    private val NOUN_TAGS = setOf("NNG", "NNP", "NNB", "NR", "NP")
 
     /** ¿La sílaba [head] escrita en [at] es parte de una frase de [notScene]? */
     private fun inOtherSense(text: String, at: Int, head: String): Boolean = notScene.any { phrase ->
