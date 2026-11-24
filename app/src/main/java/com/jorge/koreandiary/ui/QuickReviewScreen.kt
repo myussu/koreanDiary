@@ -64,6 +64,7 @@ import com.jorge.koreandiary.dictionary.DictionaryLookup
 import com.jorge.koreandiary.review.ClozeCard
 import com.jorge.koreandiary.review.DictionaryCloze
 import com.jorge.koreandiary.review.ClozeKind
+import com.jorge.koreandiary.review.ClozeTarget
 import com.jorge.koreandiary.srs.Fsrs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
