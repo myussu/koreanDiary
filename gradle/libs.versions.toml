@@ -14,6 +14,9 @@ junit = "4.13.2"
 orgJson = "20260814"
 # WebSocket para la Live API de Gemini (Android no trae cliente WebSocket). 5.5.0: 2026-08-16.
 okhttp = "5.5.0"
+# Kiwi (analizador morfológico coreano), solo para la app de prueba kiwiPrueba: su AAR y su modelo
+# se bajan del release de github.com/bab2min/Kiwi (kiwiPrueba/preparar.sh). v0.25.0: la última al 2026-11-24.
+kiwi = "0.25.0"
 # Escritorio. Compose Multiplatform 1.12.2: última estable (2026-10-15). Su material3 va con
 # versión propia según la tabla oficial de dependencias de 1.12.
 composeMultiplatform = "1.12.2"
