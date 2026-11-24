@@ -82,6 +82,7 @@ object DictionaryCloze {
      * Null si no es el caso.
      */
     fun nearMiss(dictionary: KoreanDictionary, card: ClozeCard, written: String): String? {
+        if (card.kind != ClozeKind.GRAMMAR) relatedMiss(dictionary, card, written)?.let { return it }
         if (card.kind == ClozeKind.WORD) return null
         val mine = verbOf(dictionary, written) ?: return null
         val expected = card.base?.let { b -> dictionary.entries(b).firstOrNull { it.isVerb } } ?: verbOf(dictionary, card.answer) ?: return null
@@ -93,6 +94,52 @@ object DictionaryCloze {
 
     private fun verbOf(dictionary: KoreanDictionary, text: String): DictEntry? =
         tokens(text).firstOrNull()?.let { t -> dictionary.baseForms(t.text).firstOrNull { it.isVerb } }
+
+    /**
+     * Si escribiste un sinónimo, el contrario o la forma corta de la palabra del hueco (pedido por
+     * Jorge el 2026-11-24: antes salía solo «no es»), lo dice sin dar la respuesta. Lo saca de las
+     * relaciones de cada sentido del 한국어기초사전, en los dos sentidos (기쁘다 → 슬프다 y al revés).
+     */
+    fun relatedMiss(dictionary: KoreanDictionary, card: ClozeCard, written: String): String? {
+        val first = tokens(written).firstOrNull()?.text ?: return null
+        val mine = dictionary.baseForms(first).take(MAX_RELATED_CANDIDATES)
+        val expected = dictionary.entries(card.base ?: card.label).filter { !it.grammar }.take(MAX_RELATED_CANDIDATES)
+        if (mine.isEmpty() || expected.isEmpty()) return null
+        // La misma palabra con otra forma no es esto: de eso se ocupa el resto de [nearMiss].
+        if (mine.any { m -> expected.any { it.form == m.form } }) return null
+        fun relationsOf(e: DictEntry) = dictionary.detail(e)?.senses?.flatMap { it.relations }.orEmpty()
+        for (e in expected) {
+            for (r in relationsOf(e)) {
+                val m = mine.firstOrNull { it.form == r.form } ?: continue
+                RELATED_MISS[r.type]?.let { return it(m.form) }
+            }
+        }
+        for (m in mine) {
+            for (r in relationsOf(m)) {
+                if (expected.none { it.form == r.form }) continue
+                // Al revés: si 학원 es sinónimo de 학교, 학교 lo es de 학원; si es su forma corta, la otra es la completa.
+                RELATED_MISS[REVERSE[r.type] ?: r.type]?.let { return it(m.form) }
+            }
+        }
+        return null
+    }
+
+    private const val MAX_RELATED_CANDIDATES = 4
+
+    private val REVERSE = mapOf("준말" to "본말", "본말" to "준말", "높임말" to "낮춤말", "낮춤말" to "높임말")
+
+    /**
+     * Qué decir según la relación que la palabra del hueco tiene con lo que escribiste ([form]): en el
+     * diccionario, «준말 X» en una entrada quiere decir que X es su forma corta.
+     */
+    private val RELATED_MISS: Map<String, (String) -> String> = mapOf(
+        "유의어" to { f -> "«$f» significa casi lo mismo que la del hueco, pero aquí va otra palabra: mira la traducción." },
+        "반대말" to { f -> "«$f» es lo contrario de la del hueco." },
+        "준말" to { f -> "«$f» es la forma corta de la del hueco: aquí va la completa. Si también cabe, «La mía también vale»." },
+        "본말" to { f -> "«$f» es la forma completa de la del hueco: aquí va la corta. Si también cabe, «La mía también vale»." },
+        "높임말" to { f -> "«$f» es la forma más respetuosa de la del hueco: aquí va la común." },
+        "낮춤말" to { f -> "«$f» es menos respetuosa que la del hueco: aquí va la más respetuosa." },
+    )
 
     /**
      * El ítem en una oración (también tuya, cuando [Cloze.blankIn] no lo encuentra): un verbo

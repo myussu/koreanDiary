@@ -119,6 +119,22 @@ class DictionaryClozeTest {
     }
 
     @Test
+    fun unSinonimoOUnContrarioLoDiceSinDarLaRespuesta() {
+        // 학교 trae a 학원 como sinónimo; 크다, a 작다 como contrario (relaciones del 한국어기초사전).
+        val school = ClozeCard("w3", "학교", ClozeKind.WORD, null, "학교에 가요.", 0, "학교")
+        val synonym = DictionaryCloze.nearMiss(dictionary, school, "학원")
+        assertEquals("«학원» significa casi lo mismo que la del hueco, pero aquí va otra palabra: mira la traducción.", synonym)
+        assertTrue(!synonym!!.contains("학교"))
+        val big = ClozeCard("w4", "크다", ClozeKind.VERB, null, "집이 정말 커요.", 6, "커요", base = "크다")
+        assertEquals("«작다» es lo contrario de la del hueco.", DictionaryCloze.nearMiss(dictionary, big, "작아요"))
+        // Al revés también: 작다 no trae a 크다, pero 크다 sí trae a 작다.
+        val small = ClozeCard("w5", "작다", ClozeKind.VERB, null, "방이 작아요.", 3, "작아요", base = "작다")
+        assertEquals("«크다» es lo contrario de la del hueco.", DictionaryCloze.nearMiss(dictionary, small, "커요"))
+        // Lo que no tiene relación sigue sin mensaje.
+        assertNull(DictionaryCloze.nearMiss(dictionary, school, "사과"))
+    }
+
+    @Test
     fun traducirMarcaElHueco() {
         // El hueco va marcado en la oración: si solo se nombraba, la IA resaltó «probé» en vez de «Mientras comía».
         val prompt = Cloze.translatePrompt(ClozeCard("w1", "덥다", ClozeKind.VERB, null, "날씨가 무척 덥군요.", 7, "덥군요"))

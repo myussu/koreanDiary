@@ -34,6 +34,7 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -56,6 +57,7 @@ import com.jorge.koreandiary.ink.HandwritingRecognizer
 import com.jorge.koreandiary.ink.InkCanvas
 import com.jorge.koreandiary.ink.InkStroke
 import com.jorge.koreandiary.ink.InkTool
+import com.jorge.koreandiary.review.AnswerDiff
 import com.jorge.koreandiary.review.Cloze
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +122,8 @@ data class QuickReviewState(
     val read: String? = null,
     /** Fallaste pero con la misma palabra y otra terminación (먹으면서 por 먹는 동안): qué cambia. */
     val nearMiss: String? = null,
+    /** Lo último que escribiste mal: tras «Ver respuesta» se dice qué letra cambiaba ([AnswerDiff]). */
+    val lastWrong: String? = null,
     /**
      * Después de «Ver respuesta» el recuadro queda para copiarla a mano: si la comprobaste, si
      * coincidió (null = no la comprobaste). Es solo práctica: la calificación ya quedó.
@@ -307,7 +311,10 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
             close(ClozeOutcome.RIGHT, Cloze.rating(_state.value.hints, _state.value.wrong, revealed = false))
         } else {
             _state.update {
-                it.copy(checking = false, wrong = it.wrong + 1, outcome = ClozeOutcome.WRONG, read = candidates.firstOrNull() ?: "(nada)", nearMiss = null)
+                it.copy(
+                    checking = false, wrong = it.wrong + 1, outcome = ClozeOutcome.WRONG, read = candidates.firstOrNull() ?: "(nada)", nearMiss = null,
+                    lastWrong = candidates.firstOrNull() ?: it.lastWrong,
+                )
             }
             // ¿La misma palabra con otra terminación? Entonces se dice qué cambia, no solo «no es».
             val written = candidates.firstOrNull() ?: return
@@ -345,7 +352,7 @@ class QuickReviewViewModel(private val c: AppContainer) : ViewModel() {
 
     fun next() = _state.update {
         it.copy(
-            index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, nearMiss = null, copied = null, strokes = emptyList(), note = null,
+            index = it.index + 1, hints = 0, wrong = 0, outcome = null, rating = null, read = null, nearMiss = null, lastWrong = null, copied = null, strokes = emptyList(), note = null,
             checking = false, explain = null, explaining = false, explainNote = null, explainParts = null, explainPartsLoading = false, lookup = null,
             translateNote = null, translateFailed = false, explainFailed = false,
         )
@@ -759,12 +766,30 @@ private fun UseLine(card: ClozeCard, hasTranslation: Boolean) {
     )
 }
 
+/**
+ * «LEÍ» y lo que la app leyó. Con [diff] (casi correcta), las sílabas que están mal van en [color] y
+ * subrayadas, y las demás normales: así se ve dónde está el error (pedido por Jorge el 2026-11-24).
+ */
 @Composable
-private fun ReadBack(read: String?, color: androidx.compose.ui.graphics.Color) {
+private fun ReadBack(read: String?, color: androidx.compose.ui.graphics.Color, diff: AnswerDiff.Result? = null) {
     if (read.isNullOrBlank()) return
     Column(Modifier.testTag("repaso_leido")) {
         Text("LEÍ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(read, style = MaterialTheme.typography.headlineMedium, color = color)
+        if (diff == null) {
+            Text(read, style = MaterialTheme.typography.headlineMedium, color = color)
+        } else {
+            val wrong = AnswerDiff.wrongIn(read, diff)
+            val normal = MaterialTheme.colorScheme.onSurface
+            Text(
+                buildAnnotatedString {
+                    read.forEachIndexed { i, ch ->
+                        if (i in wrong) withStyle(SpanStyle(color = color, textDecoration = TextDecoration.Underline)) { append(ch) }
+                        else withStyle(SpanStyle(color = normal)) { append(ch) }
+                    }
+                },
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        }
     }
 }
 
@@ -805,6 +830,7 @@ private fun CardView(
     val padHeightPx = with(density) { 120.dp.toPx() }
     val answering = state.outcome == null
     val shown = state.outcome == ClozeOutcome.RIGHT || state.outcome == ClozeOutcome.REVEALED
+    val voice = rememberKoreanVoice()
 
     // Arriba lo que se lee (se desplaza si hace falta); abajo, fijo, el recuadro para escribir.
     Column(Modifier.fillMaxSize()) {
@@ -902,14 +928,24 @@ private fun CardView(
             when (state.outcome) {
                 ClozeOutcome.RIGHT -> {
                     ReadBack(state.read, scheme.tertiary)
-                    Text(
-                        if (state.rating == Fsrs.Rating.GOOD) "Bien." else "Bien, con ayuda: vuelve un poco antes.",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = scheme.tertiary,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (state.rating == Fsrs.Rating.GOOD) "Bien." else "Bien, con ayuda: vuelve un poco antes.",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = scheme.tertiary,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // La oración completa, con la voz del celular.
+                        SpeakButton(card.sentence, voice)
+                    }
                 }
                 ClozeOutcome.WRONG -> {
-                    ReadBack(state.read, scheme.error)
+                    // Casi: marca la sílaba y dice qué revisar, sin dar la respuesta.
+                    val diff = remember(state.read, card.answer) { state.read?.let { AnswerDiff.compare(it, card.answer) } }
+                    ReadBack(state.read, scheme.error, diff)
+                    diff?.let {
+                        Text(AnswerDiff.where(it), style = MaterialTheme.typography.titleSmall, color = scheme.error, modifier = Modifier.testTag("repaso_donde"))
+                    }
                     state.nearMiss?.let {
                         Text(it, style = MaterialTheme.typography.titleSmall, color = scheme.error, modifier = Modifier.testTag("repaso_casi"))
                     }
@@ -920,7 +956,25 @@ private fun CardView(
                     )
                 }
                 ClozeOutcome.REVEALED -> {
-                    Text("Era «${card.answer}». Vuelve pronto.", style = MaterialTheme.typography.titleMedium, color = scheme.error)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Era «${card.answer}». Vuelve pronto.",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = scheme.error,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        SpeakButton(card.sentence, voice)
+                    }
+                    // Lo que escribiste antes de verla: qué letra cambiaba.
+                    val before = remember(state.lastWrong, card.answer) { state.lastWrong?.let { AnswerDiff.compare(it, card.answer) } }
+                    if (before != null && state.copied == null) {
+                        Text(
+                            "Escribiste «${state.lastWrong}»: ${AnswerDiff.explain(before)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = scheme.error,
+                            modifier = Modifier.testTag("repaso_letra"),
+                        )
+                    }
                     when (state.copied) {
                         null -> Text("Si tienes tiempo, cópiala abajo a mano.", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         true -> {
@@ -928,7 +982,11 @@ private fun CardView(
                             Text("Bien escrita.", style = MaterialTheme.typography.titleMedium, color = scheme.tertiary)
                         }
                         false -> {
-                            ReadBack(state.read, scheme.error)
+                            val copyDiff = remember(state.read, card.answer) { state.read?.let { AnswerDiff.compare(it, card.answer) } }
+                            ReadBack(state.read, scheme.error, copyDiff)
+                            copyDiff?.let {
+                                Text(AnswerDiff.explain(it), style = MaterialTheme.typography.bodyMedium, color = scheme.error, modifier = Modifier.testTag("repaso_letra"))
+                            }
                             Text(
                                 "No coincide: mírala arriba y prueba otra vez, o sigue. Si la escribiste bien y la app leyó mal, no pasa nada.",
                                 style = MaterialTheme.typography.bodyMedium,
